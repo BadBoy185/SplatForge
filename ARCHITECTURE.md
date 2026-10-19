@@ -87,7 +87,6 @@ flowchart TD
     mapping --> component_selection[ReconstructionSelection]
     validation --> component_selection
     component_selection --> dataset[DatasetPreparation]
-    mapping --> dataset
     validation -.-> dataset
     dataset --> dataset_export[Dataset export]
     dataset --> training[Training]
