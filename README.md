@@ -1,35 +1,83 @@
 # SplatForge
 
-SplatForge is an extensible Windows-first pipeline for turning ordinary camera video/photos into datasets ready for 3D Gaussian Splatting.
+SplatForge is a Windows-first, local-first application in early development for
+turning photos and videos into high-quality 3D Gaussian Splatting scenes. The product
+aims for the breadth and convenience of desktop tools such as 360 Gaussian / 360
+Gaussian Pro, while keeping processing methods replaceable. This is a product goal,
+not a claim of current feature parity.
 
-The first milestone focuses on flat (non-360) cameras. 360/fisheye support is deliberately postponed until the flat-camera pipeline is reliable.
+Phase 1 targets drone and phone video, DSLR/mirrorless photographs, multiple clips
+and mixed ordinary-camera sources. "Flat camera" means a perspective camera, with
+ordinary lens distortion supported through an explicit camera model; it does not
+mean every input must already be distortion-free. 360, fisheye and equirectangular
+inputs come later through preprocessing into perspective views.
 
-## Design goals
+## Current status
 
-- Local-first processing.
-- Every major pipeline task is replaceable by another method/backend.
-- Resume/caching is a first-class requirement.
-- GUI stays independent from processing logic.
-- Command-line pipeline works before the GUI is built.
-- External engines (FFmpeg, COLMAP, trainers) are wrapped behind adapters.
-- Recommended initial SfM profile: ALIKED features + LightGlue matching + COLMAP global mapper.
-- SIFT and alternative matchers/mappers remain available as fallbacks.
+The repository contains Pydantic configuration models, a method catalog, a basic
+compatibility validator, a default profile, three tests and a development CLI.
+It does **not** yet create projects, ingest media, execute FFmpeg/COLMAP, train splats
+or provide a GUI. Catalog entries describe intended methods, not installed or
+implemented capabilities. The current configuration is a prototype, not a project
+file format. See the [architecture review](docs/ARCHITECTURE_REVIEW.md) for its gaps.
 
-## Planned pipeline
-
-Media ingest -> frame selection -> masking (optional) -> feature extraction -> pair selection -> feature matching -> mapping -> validation -> training -> export/viewer
-
-## Quick start (foundation only)
+These commands work in the foundation:
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-pip install -e ".[dev]"
-
-splatforge methods
-pytest
-ruff check .
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\splatforge.exe version
+.\.venv\Scripts\splatforge.exe methods
+.\.venv\Scripts\splatforge.exe show-default-config
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m ruff check .
 ```
 
-This repository is a foundation. It intentionally does **not** run COLMAP/FFmpeg/3DGS yet. Add those incrementally following `docs/CODEX_PROMPTS.md` and `ROADMAP.md`.
+Python 3.12 is the tested baseline. Windows 10/11 and Windows Server 2022 are target
+platforms; support must be established by tests as adapters are added. FFmpeg, COLMAP,
+CUDA and trainer installation are not required for the foundation. At the architecture
+review baseline, the three tests pass and Ruff reports 18 existing source violations.
+
+## Intended workflow
+
+Create project -> register sources -> decode/preprocess candidate views -> assess
+quality and select views -> optional masks -> extract features and select pairs ->
+match and geometrically verify -> reconstruct -> validate -> prepare training
+dataset -> optional training -> export/view.
+
+Feature extraction and pair selection have independent inputs; this summary is not
+a mandatory linear execution order. A project can stop at a validated training
+dataset for use in an external trainer.
+
+- Preferred learned route: ALIKED + compatible LightGlue, then COLMAP Global Mapper,
+  where the installed backend supports the complete route.
+- Fallback routes: SIFT with compatible matching, COLMAP Incremental Mapper and
+  Hierarchical Mapper. A fallback is an explicit, recorded choice.
+- Ordered video starts with within-clip sequential pairs. Unordered photos and
+  multiple clips need a deliberate coverage strategy; sequential ordering alone
+  does not solve cross-clip reconstruction.
+- Preserve originals; show progress, failures and reconstruction quality; resume
+  valid work. Training changes must not rerun decoding or SfM.
+
+The first usable release is a complete CLI pipeline producing a validated dataset.
+Training integration follows, then a GUI using the same application services.
+Later work includes masks/segmentation, GPS, LiDAR, alternative SfM/training methods,
+large-scene automation, batch jobs and 360 workflows. Previously successful 3DGS work
+will be inspected and evaluated for reusable training presets, not discarded.
+
+## Documentation
+
+| Document | Responsibility |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | Authoritative engineering rules and task completion checks |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Product boundaries, dependency direction and decisions |
+| [Pipeline contracts](docs/PIPELINE.md) | Stage inputs/outputs, compatibility and invalidation |
+| [Project format and state](docs/PROJECT_FORMAT.md) | Storage ownership, migrations, attempts and recovery |
+| [Development guide](docs/DEVELOPMENT.md) | Testing, diagnostics and Windows/backend risks |
+| [Architecture review](docs/ARCHITECTURE_REVIEW.md) | Evidence from the original foundation and deferred decisions |
+| [ROADMAP.md](ROADMAP.md) | Incremental, verifiable milestones |
+| [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
+
+Keep source media, generated projects, model weights and training output outside
+the repository. Start implementation with **M1a: project persistence**; review the
+diff after each task and commit only when explicitly requested.
