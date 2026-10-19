@@ -15,6 +15,7 @@ project/
   sources/
     <inventory-id>.jsonl                # Immutable inventory revisions; no originals
   state.sqlite                         # Run/attempt/artifact index and execution state
+  project.lock                         # Stable file for the OS-held writer lock
   artifacts/
     <stage>/<artifact-id>/
       manifest.json                    # Contract, provenance, digests, relative files
@@ -24,6 +25,7 @@ project/
   runs/
     <run-id>/run.json                   # Frozen resolved plan and environment snapshot
     <run-id>/events.jsonl               # Structured operational events
+    <run-id>/cancel.request             # Atomic request carrying this run's ownership token
     <run-id>/logs/<attempt-id>/...      # Raw backend stdout/stderr and invocation metadata
   checkpoints/
     <run-id>/<attempt-id>/...           # Explicitly retained trainer checkpoints
@@ -33,8 +35,9 @@ project/
     <migration-id>/...                  # Consistent pre-migration copies
 ```
 
-Create the empty ownership directories at M1a; create inventory/run/artifact files
-only when needed. Payload details are adapter-owned. Reconstruction and training
+The layout reserves ownership names, not an eager directory skeleton. M1a1 creates
+only its project document and SQLite metadata; later tasks create their directories
+when needed. Do not create checkpoint/export/run files before those features exist. Payload details are adapter-owned. Reconstruction and training
 results use the same manifest convention rather than separate mutable "latest"
 directories. Stable IDs provide deterministic naming, not identical run IDs on rerun.
 
@@ -48,25 +51,28 @@ future managed copies require an explicit import mode and separate provenance.
 | Record | Required meaning |
 | --- | --- |
 | Project document | Format version, project ID, revision, label, creation/update times, current inventory reference, saved stage settings and preset provenance |
-| Source inventory | Source ID and digest/size, original locator/name, media type/probe result, source group, camera group and calibration policy; add view lineage as artifacts |
-| Pipeline settings | Separate stage selections with method/settings schema versions and resolved values; no runtime statuses |
-| Run snapshot | Project revision, resolved settings, dependency plan, source verification, environment/capabilities, seeds and resource policy |
-| Stage attempt | Run/stage/attempt IDs, recipe fingerprint, consumed artifact IDs, status, timestamps, workspace, process/log references, failure and retry relation |
+| Source inventory | Source ID and digest/size, last full-hash time and evidence snapshot, original locator/name, media type/probe result, source group, camera group and calibration policy |
+| Pipeline settings | Separate versioned method/settings envelopes with resolved values; current known configs plus preserved opaque settings, no speculative future schemas or runtime statuses |
+| Run snapshot | Project revision, resolved settings, selected target/route and node/output references, source policy/preflight evidence, expected environment, seeds, resource policy and run ownership token |
+| Stage attempt | Run/node/attempt IDs, recipe key, bound input artifact IDs, actual environment/source-verification evidence, status, cancellation acceptance, expected publication identity, timestamps, process/log references, failure and retry relation |
 | Artifact manifest | Manifest/contract versions, artifact ID/type, producer attempt, recipe key, semantic content digest, input lineage, relative payload paths with sizes/digests and validation result |
+| ReconstructionSelection artifact | Referenced ReconstructionSet, chosen component IDs, manual/policy mode, policy/version/settings, validation evidence, reasons and decision fingerprint; published under the normal artifact convention |
 | Checkpoint manifest | Trainer/version, dataset and settings identity, completed work, resume requirements, retained files and integrity checks |
 
 `project.json` is authoritative for editable intent; `state.sqlite` is authoritative
-for attempt history and indexed publications. Run snapshots preserve what actually
-executed. Editing intent creates a new revision and future run; it does not rewrite
-an active run. No requirement for a distributed transaction between JSON and SQLite:
-read a complete project revision under the writer lock, freeze it into a new run,
-then persist that run's state. On restart reconcile only complete frozen snapshots.
+for attempt history and indexed publications. Run snapshots preserve intended execution; attempts record what actually executed. Save intent only while no run owns the writer lock in the initial release;
+other saves return busy and may leave an unsaved UI draft. Freeze the complete revision
+into run.json, then persist the run's state; do not attempt a distributed transaction.
+Future outputs are node/output references in that snapshot. Attempts bind real input
+artifact IDs and record actual runtime/verification evidence before consuming inputs;
+new evidence never edits run.json. A complete orphan snapshot with no state/attempts
+can be inspected, not assumed executed. On restart reconcile complete records only.
 
 Ingest is an application operation that can run recorded probe/hash attempts. Its
 inventory is a versioned project input, published by the inventory/project-save
 protocol below, rather than by the derived-artifact publication protocol.
 
-The SQLite schema can start with metadata at M1a and add runs, attempts, artifact
+The SQLite schema starts with metadata at M1a1 and adds runs, attempts, artifact
 indexes and their relationships at M1b. Do not put descriptor arrays, media or raw
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
@@ -78,32 +84,97 @@ resolve them with `Path` at the storage boundary. Reject absolute/drive-qualifie
 paths, `..` traversal and symlink/junction escapes in owned manifests. Preserve
 external Windows/UNC source locators separately; they may legitimately be absolute.
 Do not lowercase arbitrary paths to derive identity or assume case distinguishes files.
+Reject device/alternate-stream names and ambiguous owned path components. A lexical
+prefix check or Path.resolve at project open is not a lifetime guarantee: validate
+containment/reparse points at each create, publish and cleanup boundary. Own the root
+and generated names; fail closed on changes during an operation. Do not claim a
+security boundary against another hostile process with write access to the same root.
+Backend Unicode/long-path support must be tested independently of Python's Path support.
 
 Assign source IDs independently of names and locations. Stream a full content digest
-at ingest with progress/cancellation. Equal content may be deduplicated for processing
-while preserving distinct source occurrences and provenance. Size/mtime are useful
-change hints, not sufficient evidence for cache correctness.
+at initial ingest with progress/cancellation; save the size, metadata/identity evidence
+and verification time alongside it. Equal content may be deduplicated for processing
+while preserving distinct source occurrences, camera/timeline metadata and provenance.
+Equal bytes do not authorize merging observations or calibration groups. A relink preserves
+identity only after a full digest match; different bytes are a new source revision.
 
-Default processing preflight revalidates referenced source content for a new run;
-hash once per source per run and reuse that verification during the run. A later fast
-trust policy must be explicit, recorded and labeled weaker. Detect changing sources
-while reading and fail rather than certify an unstable input. A relink preserves
-identity only after a digest match; different bytes are a new source revision.
+## Source verification policies
+
+Later runs choose a versioned verification policy, saved in project intent and frozen
+in run provenance. Do not unconditionally reread every multi-gigabyte source. Record
+per source: policy, prior digest and full-hash time, current metadata/identity/change
+indicators, evidence availability, check time, rehash reason/result and assurance.
+
+| Policy | Behavior and recorded assurance |
+| --- | --- |
+| Balanced/local (default) | Compare size and last-write metadata plus file identity/change indicators where available with the last content-verified snapshot. If trusted indicators are unchanged, accept the stored digest as `metadata_unchanged`; do not label it freshly content-verified. Rehash fully when indicators change, contradict one another, are insufficiently trustworthy, or stronger verification is requested. |
+| Strict | Fully hash required source content and consume the same stable byte identity. Reuse the check only while the protected source/snapshot remains valid; reverify when that guarantee ends. Record `content_verified` and the stability mechanism. |
+| Any future weaker/faster policy | Explicit selection and versioned rules are required. Record the reduced checks and assurance; never silently substitute it when hashing or metadata access fails. No additional fast policy is required for the initial implementation. |
+
+Balanced/local is a stated trust/performance tradeoff, not cryptographic proof of
+unchanged bytes. It can miss edits that preserve the observed indicators. Define the
+minimum trusted indicators for the storage type; optional file IDs/change journals
+need not exist on every source. Network/removable storage may supply weaker or stale
+evidence: record this and require full rehash or block source-dependent work when the
+minimum evidence is not met. Metadata access errors are not an unchanged result.
+
+A full preflight hash followed by an unprotected backend reopen is not Strict input
+verification. Keep a tested read lease denying writes/replacement through verification
+and consumption, or use an explicitly selected, space-budgeted project-owned snapshot
+of the bytes read. Never silently copy a huge source. If neither mechanism is supported,
+report Strict unavailable for that source/backend. Balanced uses before/after evidence
+checks and retains its weaker assurance. These are source-adapter responsibilities,
+not a distributed file-watch service.
+
+If rehash confirms the same bytes, record new verification evidence in run/attempt
+metadata and retain content identity/cache eligibility. Do not rewrite an immutable
+inventory or bump editable project revision merely to record a check. Later checks use
+the latest completed content-verified evidence for that source revision/digest, indexed
+in state; a Balanced acceptance does not reset that baseline. Otherwise unchanged
+sources would be rehashed forever against obsolete ingest metadata. Changed bytes
+require a new source revision and invalidate only its consumers. Stop/replan affected
+work against that revision; never silently replace a frozen run's inputs. Preserve
+historical artifacts. Detect changes during a read and
+fail or retry rather than certify unstable input. Hashing remains streamed/cancellable.
+
+Cache keys use the stored content digest; source verification is an additional
+eligibility gate. Balanced reuse carries its weaker assurance into run/artifact lineage.
+A Strict run must check that source-consuming artifact provenance meets its policy;
+rehashing now does not retroactively prove what a previous weakly verified attempt
+read. Rebuild affected lineage when assurance cannot be established. A policy change
+alone does not invalidate numerical artifacts already supported by sufficient evidence.
 
 Missing or changed originals do not prevent project inspection. Block operations
 that need those originals with diagnostics. Already materialized, validated artifacts
 can support downstream work offline when their contracts do not require source access;
-record that originals were unavailable, not freshly verified. Moving the project must
-not invalidate artifact fingerprints. Relocating originals is a separate relink action.
+record that originals were unavailable, not freshly verified. This is explicitly
+recorded artifact-only reuse, not a claim that Strict verified the current originals.
+Moving the project must not invalidate artifact fingerprints. Relocating originals is a separate relink action.
 
 ## Safe writes and migrations
+
+Adopt this completed contract in two reviewable steps: M1a1 implements the basic
+single-process development slice (document/settings, versions, directories, SQLite
+metadata, create/open/save/show and basic validated temporary-file replacement);
+M1a2 completes revision/stale-save checks,
+writer locking, atomic replacement, migration boundaries and Windows fault recovery.
+M1a1 is not a durability/concurrency release. Complete M1a2 before run infrastructure
+or processing uses persisted projects. The rules below describe the completed contract.
+
+No older production project format exists yet. M1a2 establishes migration dispatch,
+unsupported-version refusal and backup/recovery interfaces without inventing historical
+versions or shipping speculative transforms. Prototype configuration conversion is not
+a historical project migration. M1a2 needs a dispatcher and backup/restore boundaries,
+not a generalized migration journal engine. When a real multi-file format change
+arrives, add its concrete recovery marker/rollback sequence and failure fixtures.
 
 - Create only at an absent or empty destination. Refuse a non-empty destination;
   there is no overwrite flag in the initial API. Do not remove a failed create target
   unless every removed file is proven to belong to that failed operation.
-- Use one local writer lock shared by CLI and GUI. Readers may inspect committed
-  state. Lock acquisition must distinguish a live owner from an abandoned process;
-  a PID alone is insufficient because it may be reused.
+- Use an OS-held lock on the stable project.lock file, shared by CLI and GUI; the
+  existence of a lock file is not ownership. Do not unlink/recreate a locked file.
+  Readers inspect committed state; SQLite transactions stay short, not run-long.
+  Record process start identity and a run token for diagnosis; never kill by PID alone.
 - Save JSON using a validated temporary sibling, flushed writes and same-volume
   atomic replacement. Record a revision and reject stale concurrent saves. Close
   handles before replacement; report Windows sharing violations without losing the
@@ -116,18 +187,40 @@ not invalidate artifact fingerprints. Relocating originals is a separate relink 
   method IDs, resolved user values and preset provenance. Back up the project,
   referenced inventories and a consistent SQLite snapshot before mutation; a live
   database file copy alone is not a valid backup procedure.
-- Journal a migration with old/target versions and phase. On interruption, finish a
-  verified step or restore the consistent backup before permitting writes. Test
-  failures between file replacement and database commit; do not leave mixed versions.
+- When a real migration touches multiple stores, record old/target versions and
+  its phase. On interruption, finish a verified step or restore a consistent backup
+  before writes. Test failure between file replacement and database commit. Atomic
+  rename is not a blanket power-loss guarantee; detect/recover incomplete generations.
 - A newer unsupported project/state format is refused without writes. Unknown method
   IDs/settings in a supported format must round-trip unchanged in an opaque versioned
-  settings envelope; opening is allowed, execution is blocked. Known settings are
-  validated strictly. Never silently discard fields through permissive model loading.
+  settings envelope; opening is allowed, dependent execution is blocked. Known settings are
+  validated strictly. An unknown settings-schema version remains opaque even for a
+  known method ID. Unknown top-level fields without an extension contract prevent
+  saving rather than being silently dropped. Unknown settings block only a requested
+  operation that needs them, not inspection or unrelated targets. IDs are data, never
+  instructions to import code. Never rewrite frozen historical runs or native payloads
+  during project migration; a payload conversion publishes a new versioned artifact.
 
 Initial active project storage is a local filesystem with tested locking/rename
 behavior (Windows baseline: NTFS). Network shares and cloud-synced project roots are
 unsupported for active writes until tested. External sources may be on removable or
 network storage; failures there must remain recoverable.
+
+## Writer ownership and cancellation
+
+One owner serializes project/state writes for a run. A second CLI can read status and
+atomically create the bounded cancel.request file with the run ID/token; it does not
+acquire the writer lock or edit SQLite. The owner validates and persists cancellation
+acceptance before signalling workers. Request creation means requested, not yet
+acknowledged. Repeated requests are idempotent; stale tokens cannot cancel a later run.
+This one control file is sufficient; no daemon, general message bus or multiwriter store.
+
+Publication and cancellation acceptance are serialized by the owner. If cancellation
+was accepted before success commits, success is forbidden. If success committed first,
+report too late. Recovery checks a valid outstanding request before adopting an orphan
+publication and never promotes a durably accepted cancellation. Keep the request until
+its terminal outcome is durable. A UI thread can use the same application cancellation
+use case; widgets do not mutate the state database themselves.
 
 ## Attempts, publication and recovery
 
@@ -151,23 +244,28 @@ Publication protocol:
 1. Persist the running attempt and create an owned workspace. Stream logs/events.
 2. Complete processing, close backend handles/databases, validate required payloads
    and write the completed manifest with content checksums inside the workspace.
+   Persist the intended artifact ID and completed manifest digest before moving it.
 3. Move the completed payload directory on the same volume to a new artifact ID.
    Never overwrite an existing artifact; keep scratch and publication storage together.
-4. In a SQLite transaction, index the manifest and mark the attempt succeeded.
-   Only indexed, validated publications are eligible for automatic reuse.
+4. After checking accepted cancellation, transactionally index the expected manifest
+   and mark the attempt succeeded. Only indexed, validated publications are eligible
+   for automatic reuse; event/log append failures cannot invent numerical success.
 
 On open, acquire the writer lock before recovery. Do not mark a live process's attempt
 interrupted. After confirming the owner/process tree is gone, interrupted attempts
 remain incomplete even if some files exist. A complete unindexed publication can be
-validated and adopted only when its producer, manifest and run agree and the attempt
-has no failed/cancelled terminal decision. Never promote cancelled or rejected outputs
+validated and adopted only when its producer, expected manifest digest and run agree,
+with no accepted cancellation, pending valid cancellation request or failed/cancelled
+terminal decision. Never promote cancelled or rejected outputs
 during recovery; quarantine/report them. A success record with missing/corrupt output loses cache
 eligibility and receives a diagnostic; preserve history instead of inventing success.
 
-If cancellation arrives before publication commits, cancel the attempt and leave
-outputs unpublished (or report a recoverable orphan after a rename). If publication
-already committed, keep success and report cancellation came too late. Stop only
-processes belonging to the attempt; never kill all processes named `colmap.exe`.
+An accepted cancellation becomes terminal cancelled only after owned workers/children
+are confirmed stopped and handles closed. If teardown cannot be confirmed within a
+bounded deadline, retain an unresolved attempt and block workspace reuse/recovery;
+do not fabricate cancellation success or start a competing retry. Stop only the owned
+process tree; never kill all processes named `colmap.exe`. On owner death, verify child
+termination before marking interrupted or adopting any publication.
 
 Retry transient I/O/process failures with bounded policy. Invalid settings, unsupported
 capabilities and resource exhaustion require an actionable decision rather than an
@@ -178,10 +276,14 @@ validated checkpoint. An external/manual training handoff is not resumable execu
 
 ## Retention and diagnosis
 
-Invalidation never deletes files. Initially retain all artifacts; later cleanup previews
-eligible generated files, their sizes and references, and requires explicit action.
-Protect originals, active attempts, pinned artifacts, exports and retained checkpoints.
-Resolve every deletion target under the owned root and reject junction/symlink escapes.
+Invalidation never deletes files. Retain artifacts during foundation work; by M10 add
+explicit manual cleanup with a size/reference preview. Historical lineage references
+are not automatic retention pins forever. An explicit eviction may remove unpinned
+generated payloads from completed runs while retaining manifests and an evicted marker;
+those results cease to be cache hits. Protect current selected results, originals,
+active attempts, explicit pins, exports and retained checkpoints. Do not delete source
+snapshots still needed by a run. Resolve targets under the owned root and reject
+junction/symlink escapes. Advanced automatic retention/compaction remains M13d.
 
 If `state.sqlite` is lost, manifests may recover validated artifact inventory, not
 complete attempt history. Say so explicitly; do not infer successful runs from folder

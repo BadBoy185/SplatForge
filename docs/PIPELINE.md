@@ -18,11 +18,18 @@ members or promises that every stage already has an implementation.
 | PairSelection | Selected view IDs and the chronology, retrieval or spatial inputs actually used | PairSet: canonical unordered pairs, no self/duplicate pairs, coverage statistics, selection reasons |
 | FeatureMatching | FeatureSet and PairSet | MatchSet: valid feature indices, counts/confidence, descriptor and matcher identities |
 | GeometricVerification | MatchSet, keypoints and camera assumptions | VerifiedGeometry: inliers, pair models/relative constraints, rejection reasons and convention metadata |
-| Mapping | Verified geometry, views, cameras and optional declared priors | ReconstructionSet: all components, camera/pose/point metadata, native payloads, ID mappings and coordinate frames |
+| Mapping (initial sparse route) | Verified geometry, views, cameras and optional declared priors | ReconstructionSet: all components, camera/pose/point metadata, native payloads, ID mappings and coordinate frames |
 | ReconstructionValidation | ReconstructionSet and relevant views/observations | ValidationReport: metrics, warnings, missing measurements, policy result and component coverage; no model mutation |
-| DatasetPreparation | Selected reconstruction components, views, validation gate and target input format | TrainingDataset: images, cameras/poses, sparse points where required, masks if used, units/transforms and conversion manifest |
+| ReconstructionSelection (application decision) | ReconstructionSet, ValidationReport and explicit manual choices or configured policy | ReconstructionSelection: referenced set, selected component IDs, selection mode, policy/version/settings and evidence; no reconstruction mutation |
+| DatasetPreparation | ReconstructionSelection, its referenced ReconstructionSet, views, validation gate and target input format | TrainingDataset: images, cameras/poses, sparse points where required, masks if used, units/transforms and conversion manifest |
 | Training | TrainingDataset, trainer settings and optional compatible checkpoint | TrainingResult: scene payload, metrics, logs and checkpoints with recipe provenance |
 | Export | Explicit dataset or training result, format/settings | ExportManifest: output files, consumer/format versions, checksums and any lossy conversion |
+
+The table describes the initial route. Explicit composite SfM or detector-free routes
+may use different typed inputs and omit unavailable intermediate artifacts, as defined
+in ARCHITECTURE.md. Validate only the operations needed by the requested target;
+an unavailable trainer must not block a dataset-only plan. A fused route's settings,
+recipe key, output bundle and restart boundary cover the complete native operation.
 
 MediaIngest publishes versioned project input inventories through the project-save
 protocol; subsequent stages publish derived artifacts through the attempt-publication
@@ -52,9 +59,34 @@ Persist image dimensions and transforms so masks, keypoints and intrinsics refer
 the same pixels. Distortion models remain explicit. Undistortion for a trainer belongs
 to DatasetPreparation and must update cameras and image references together.
 
+Candidate storage must be budgeted before decoding: frame count, pixels, scratch and
+retained output bytes. M3 starts with bounded materialized candidates, not every full
+resolution frame by default. The contract may also carry exact source-frame locators
+and analysis proxies for a later streaming/scoring route. Mark pixel availability
+explicitly; before feature extraction publish materialized selected views using a
+declared adapter operation with its decoding settings and source verification. Do not
+introduce a generic lazy filesystem or promise reuse of pixels that were never retained.
+
 Future virtual perspective views additionally describe parent capture, projection,
 virtual intrinsics and relative orientation/rig information. Do not infer metric
 baseline from multiple projections of one 360 capture.
+
+## Reconstruction interchange
+
+Each ReconstructionSet needs an adapter reader exposing component identity, view-to-
+camera/pose mapping, image dimensions/transforms, projection model and parameters,
+pose transform direction, axis/handedness, numeric ordering and coordinate-frame ID.
+State scale units as known or unknown; include any applied similarity/alignment transform.
+Sparse points/tracks are optional capabilities, not a universal prerequisite for SfM.
+A dataset target states which records it requires and fails clearly when unavailable.
+
+Component IDs are scoped to a ReconstructionSet and cannot identify numerical content
+across reruns. A component digest covers the consumed cameras/poses/geometry and view
+mapping; do not key datasets only by labels such as component 0 or image count. Start
+with conservative payload digests if a trustworthy semantic digest is unavailable.
+Camera/GPS/LiDAR metadata must carry frame/units, timing and uncertainty where relevant;
+convert explicitly or reject unsupported combinations. Add concrete schemas only when
+implementing a consumer, not a universal sensor framework in M1a1.
 
 ## Method execution contract
 
@@ -69,6 +101,8 @@ Each method declaration supplies:
 - Stable method ID, method version, settings schema version and explicit defaults.
 - Stage role, implementation/adapter identity and available checkpoint behavior.
 - Consumed artifact formats/fields, optional inputs and compatibility requirements.
+  Implement versioned dependency-key functions for concrete methods; do not add a
+  reflection-based field-projection language or generic schema/graph compiler.
 - Model/index digests, supported camera/descriptor variants and runtime requirements.
 - Output contract, integrity validator, progress units and failure categories.
 
@@ -86,14 +120,32 @@ alone do not establish compatibility. Report all actionable plan errors before w
 
 Sequential pairing operates within a source group by timestamp or explicit order.
 Exhaustive pairing estimates `N * (N - 1) / 2` pairs before materialization and enforces
-a configured budget. For multiple clips, explicitly include cross-clip pairs through
-bounded exhaustive/manual policies initially and retrieval/hybrid strategies later.
+a configured budget. M6 uses budgeted exhaustive/manual cross-group pairs for early
+fixtures. M7c adds practical cross-clip retrieval/hybrid pairing and is required for
+the complete multi-video CLI: Sequential within clips plus bounded retrieved neighbors
+across clips. Manual pairs and exhaustive matching remain optional diagnostic tools.
 Warn or block when a requested whole-scene plan has no cross-group candidate edges;
 never promise that candidate connectivity guarantees reconstruction connectivity.
 
-Retrieval may depend on local features or separate image embeddings. Spatial pairing
-consumes coordinates with a known frame, units and uncertainty. Missing GPS must not
-be interpreted as zero. Hybrid policies merge/deduplicate PairSets with provenance.
+Retrieval has an explicit representation contract: embedding/aggregation method and
+version, weights digest, image preprocessing, descriptor dimensions/normalization,
+indexed view IDs and corpus digest, distance metric, index format/version/settings,
+query limits and deterministic tie handling. The corpus identity covers actual view
+pixels/transforms and source-group membership, not just its filenames/count. Cache its representation/index artifacts
+separately where supported. ALIKED local descriptors alone do not establish retrieval
+compatibility; any local-feature aggregation needs its own validated representation.
+
+Bound cross-clip neighbors and total candidate pairs, merge/deduplicate with Sequential
+pairs, and retain provenance and per-group coverage. Measure retrieval time/memory as
+well as matching pair count; a small PairSet does not prove cheap index/query work.
+Test known overlapping clip regions and verified matches rather than only output size.
+Also test non-overlapping clips, near-duplicate bursts and group/temporal diversity so
+one easy overlap does not hide disconnected coverage. Embeddings/indexes are immutable;
+adding a clip produces a new corpus/index identity. Initial retrieval must not depend
+on the reconstruction it is meant to enable. Pose-assisted refinement is a subsequent
+explicit pass consuming a previous result, never a cycle in the same plan.
+GPS/spatial pairing consumes coordinates with frame, units and uncertainty in M13a;
+missing GPS is not zero. Advanced retrieval optimization also remains in M13a.
 
 A native COLMAP command may combine pair selection, matching and verification. The
 adapter must preserve the declared PairSet, either through a verified pair-import
@@ -101,6 +153,40 @@ route or a tested equivalent. If it cannot, mark that combination unsupported or
 expose the native operation as an explicitly coupled execution unit. Coupling must
 be visible in the plan, settings and cache behavior; UI/core boundaries stay separate.
 Do not promise independent verification reuse for a fused backend operation.
+
+## Reconstruction component selection
+
+After Mapping and ReconstructionValidation, the application publishes an immutable
+ReconstructionSelection decision artifact. This is a small typed decision/policy
+function, not a new scheduler or plugin framework. Use the existing artifact manifest
+and attempt/publication machinery. DatasetPreparation requires it.
+The original ReconstructionSet and ValidationReport remain unchanged.
+
+Record the referenced reconstruction artifact, stable component IDs, manual versus
+policy selection, policy ID/version/resolved settings when applicable, chosen IDs,
+excluded-component reasons and report/metric evidence used. Manual choices are saved
+explicitly. A configured policy may select the only component or apply stated quality
+criteria, but must record its decision; no implicit largest-component default exists.
+Missing, empty or obsolete selections block preparation with a diagnostic. A new
+ReconstructionSet requires selection revalidation, never unchecked component-ID reuse.
+
+Fingerprint the selection decision from the set identity, explicit choices or policy
+settings and metric values actually consumed. Dataset keys use the selected components'
+content digests, view/camera data and material preparation settings, not a run-specific
+artifact UUID or component label alone. Keep exact set/artifact IDs and full decision
+provenance in lineage; conservative payload-based invalidation remains valid. A policy/report change re-evaluates selection. If chosen data and preparation
+settings are unchanged, reuse the existing dataset after its gate passes. If a report
+is only an eligibility gate, it does not enter the numerical dataset key. Manual
+selection does not override a failed quality gate; overrides are separately recorded.
+Reports distinguish per-component quality from whole-project coverage. A configured
+gate states its scope: rejecting another component need not fail a valid selected one,
+but a whole-scene coverage requirement still applies. Bind overrides to the exact
+report, selected content and gate policy; a new reconstruction cannot inherit one.
+
+Selecting several disconnected components creates separate datasets with explicit
+component-to-output mapping. Do not concatenate unrelated coordinate frames. A future
+aligned union needs an explicit alignment artifact and its own validation. Validation
+continues to report all components, including excluded ones, to preserve coverage context.
 
 ## Stage fingerprints and cache eligibility
 
@@ -117,9 +203,15 @@ fingerprint schema version + stage contract version
 Canonicalize object keys, ordered versus unordered collections, numbers, enums and
 relative logical paths. Reject non-finite numeric settings. Include resolved defaults;
 do not depend on dictionary insertion order, Python object hashes or a preset label.
-Exclude display labels, project location, run/attempt IDs, timestamps and log paths.
+Exclude display labels, project location, run/attempt IDs, bookkeeping timestamps
+and log paths. Capture timestamps, video time bases, stream/frame identities and
+ordering are semantic inputs wherever selection, pairing or synchronization uses them.
 Record the full environment for diagnosis, but hash only declared output-affecting
 parts; for a new backend use a conservative identity until narrower reuse is tested.
+Resolve automatic choices before keying the attempt: actual backend/environment,
+model, device policy, defaults and seeds. Include implementation revision and tested
+native/library identity, not just a display version. Never change such choices inside
+an attempt. Unknown settings fail validation rather than disappearing from the key.
 
 Input identity consists of consumed content digests, contract/format identity and
 declared metadata projections, not an absolute path or mere modification time. Retain
@@ -137,10 +229,20 @@ consumer's numerical recipe. If a method actually consumes report values to alte
 output, those values are a data dependency and must be fingerprinted.
 
 A recipe key may have several executions with different numerical results. Published
-artifacts have separate immutable IDs and content digests. A run pins the actual
-artifact IDs it consumed. Never overwrite an older result just because its recipe
+artifacts have separate immutable IDs and content digests. A run records consumed artifact IDs through its attempt records. Frozen plans refer to
+future outputs by node/output reference; attempts bind those to real artifact IDs
+before execution without rewriting the run snapshot. Never overwrite an older result just because its recipe
 key matches. Reuse requires a successful publication, compatible contracts and
-verified required files/checksums; interrupted workspaces are not cache hits.
+verified required files/checksums; interrupted workspaces are not cache hits. Validators
+are versioned too: revalidate when the integrity contract changes even if numerical
+settings do not. Record which check ran; cached success is not perpetual certification.
+
+Source digest identity and current verification assurance are separate. Cache keys
+continue to use content identities; the run records whether a digest was freshly
+verified or accepted under Balanced/local metadata evidence. Apply the requested
+verification policy before reuse and report uncertainty/change diagnostics; policy
+changes alone do not alter numerical keys when the same content is established.
+See [verification policies](PROJECT_FORMAT.md#source-verification-policies).
 
 ## Invalidation examples
 
@@ -151,24 +253,30 @@ as a unit. Re-evaluate affected descendants only, and preserve unchanged branche
 | --- | --- | --- |
 | Trainer iterations, loss, densification or seed | Training and consuming scene exports | Views, features, pairs, SfM, validation, prepared dataset |
 | Dataset undistortion, resize or target layout | DatasetPreparation, training and dataset/scene exports | SfM and reconstruction validation |
-| Reconstruction validation thresholds | Report and downstream eligibility gates | Reconstruction and payloads whose inputs remain identical |
+| Reconstruction validation thresholds | Report, metric-dependent component selection and downstream gates | Reconstruction and datasets/training whose selected data remain identical and pass the gate |
+| Selected reconstruction components or selection policy | ReconstructionSelection and affected datasets/training/exports | Mapping and validation; dataset reuse when selected data/settings remain identical |
 | Mapper method/settings | Mapping and consumers | Features, PairSet, matches and verified geometry |
 | Geometric verification thresholds | Verification, mapping and consumers | Raw matches and earlier artifacts, if separable |
 | Matcher weights/settings | Matching and consumers | Features and PairSet |
 | Sequential overlap/window | PairSet, matching and consumers | Features and selected views |
+| Retrieval representation/model or corpus | Retrieval artifacts, dependent PairSets, matching and consumers | Local features when independently computed |
+| Retrieval neighbor budget or query policy | PairSet, matching and consumers | Compatible retrieval representations/index and local features |
 | Feature extractor/model/settings | Features, matching and consumers; retrieval only if it consumes these features | Views and feature-independent PairSets |
 | SfM mask | Features and consumers; mask-aware retrieval if declared | Decoded views and unrelated pair selection |
 | Training-only mask | DatasetPreparation/training according to declared use | SfM |
 | Selection threshold using existing scores | Selection and its dependent stages under the conservative stage cache | Candidate pixels and quality scores |
 | Candidate sampling, crop, orientation or source content | Affected prepared views and descendants | Unrelated source branches when independently materialized |
 | Source relocation with identical verified content | Locator validation only | All compatible artifacts |
-| Camera calibration/prior or GPS update | Only stages consuming the changed metadata and their descendants | Pixel-only stages and unrelated pairing policies |
+| Stronger source verification policy, unchanged content | Verification/assurance gate; rebuild only provenance that cannot meet it | Compatible artifacts with sufficient source assurance |
+| Camera calibration/prior or GPS update | Actual metadata consumers, downstream native-database assembly and descendants | Truly pixel-only features and unrelated pairing; rebuild current native camera records |
+| Capture timestamps, time base or source-group ordering | Selection/pairing/synchronization consumers | Unaffected pixels and descriptors |
 | UI preferences, project label or log verbosity | No numerical stage | All numerical artifacts |
 
 A validation report is both evidence and a gate. Changing its policy re-evaluates
-permission to continue; if it passes on the same reconstruction and prepared dataset,
-existing training need not be rerun. A failed gate blocks new downstream execution
-unless an explicit override is recorded. It never erases historical results.
+permission to continue and any metric-dependent component selection; if the selected
+data are unchanged and the prepared dataset passes its gate, existing training need
+not be rerun. A failed gate blocks new downstream execution unless an explicit override
+is recorded. It never erases historical results.
 
 Reproducibility records explain cache misses and numerical limits. Nondeterministic
 backends must declare that limitation; a cache hit reuses a specific prior result,

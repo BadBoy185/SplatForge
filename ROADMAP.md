@@ -6,9 +6,10 @@ names below are proposed interfaces, not currently available commands. Use the
 [task prompts](docs/CODEX_PROMPTS.md) one bounded task at a time.
 
 Cache/state foundations precede processing. Minimal PairSelection precedes matching
-because matching needs a verifiable PairSet. Retrieval, spatial and hybrid methods
-follow after the first complete pipeline rather than blocking it. GUI follows CLI
-and the first training integration. Do not implement all future method placeholders.
+because matching needs a verifiable PairSet. Practical cross-clip retrieval/hybrid
+pairing arrives in M7c before the complete multi-video CLI; GPS/spatial pairing and
+advanced retrieval optimization remain later. GUI follows CLI and the first training
+integration. Do not implement all future method placeholders.
 
 ## M0 — existing foundation and architecture review
 
@@ -16,30 +17,61 @@ Available: configuration models, catalog, preset and `version`, `methods`,
 `show-default-config`. Baseline: three passing tests; 18 pre-existing Ruff violations.
 Documentation defines the target; it does not certify the catalog as executable.
 
+## Optional research — legacy 3DGS
+
+At any milestone, inspect the supplied legacy project read-only and record evidence,
+unknowns and candidate lessons in [LEGACY_3DGS_RESEARCH.md](docs/LEGACY_3DGS_RESEARCH.md).
+The verifiable result is a source-referenced research note, not code or official presets.
+If the project is unavailable, record that status and continue early milestones.
+Preset translation/benchmarking stays in M11a; research is never an early dependency.
+
 ## M1 — safe persistence and execution foundation
 
-**M1a: next task, project persistence.** Implement application/storage boundaries,
-create/open/save/inspect, a versioned project document, revisioned stage settings,
-empty ownership directories and SQLite schema metadata. Preserve the prototype
-config through an explicit importer/default-resolution path; do not interpret its
-version as a project version. Fix independent role validation with a regression test
-before persisting configurations. Preserve opaque unknown method settings; block
-execution instead of dropping them. No processing adapters or generic scheduler.
+**M1a1: next task, basic project persistence.** Implement application/storage boundaries,
+a basic project document, separate project/config/state versions, directory ownership,
+SQLite metadata initialization and create/open/save/show. Persist current known settings
+and opaque unknown method/version envelopes; do not define settings for every future
+stage. Create owned subdirectories only when needed. Use validated temporary-file
+replacement for basic save; M1a2 adds concurrency and fault guarantees. Preserve
+unsupported settings rather than dropping data; target validation comes with execution.
+Resolve prototype defaults through explicit conversion, not a historical migration.
+Fix independent role validation with a regression test before persisting configurations.
 
-Acceptance: `project create/show` and API save/reopen work in a Unicode/space path;
-non-empty destination and stale save are refused; source files are untouched; unknown
-newer formats are not rewritten; migration/atomic-save failure tests retain the last
-valid project. Add a small legacy-format fixture when introducing a supported migration.
+Acceptance: CLI create/show and API save/reopen work in a Unicode/space path; test
+settings round-trips, role-validation failure, empty-destination ownership, non-empty
+refusal and unsupported-version refusal without rewrites. Originals remain untouched.
+This is a controlled single-process development slice, not a durability release.
 
-**M1b: state and minimal runner.** Add immutable run snapshots, attempts, artifact
-manifests, dependency keys, publication/recovery, events and cancellation. Use a tiny
-fake stage and a simple dependency plan, not a public workflow DSL.
+**M1a2: persistence safety.** Add revisions/stale-save protection, the local writer
+lock, atomic replacement details and migration dispatch/scaffolding. Establish
+consistent backup/recovery boundaries and Windows failure handling. No older production
+format exists: do not invent migrations, legacy versions or speculative transforms.
+Provide dispatch and backup/restore boundaries; defer a multi-store migration journal
+until a real format change needs one.
 
-Acceptance: fake stages demonstrate cache hit/miss, downstream-only invalidation,
-failed/cancelled/interrupted attempts, retry as new attempt, writer exclusion and
-crash recovery at every publication boundary. Editing a late fake stage reuses earlier
-outputs. No external tools are needed. Repair documented baseline lint separately or
-within an explicitly scoped foundation cleanup task, not incidentally.
+Acceptance: stale writes and concurrent writers are refused; sharing violations,
+interrupted replacement, disk-full and backup failures retain the last valid project.
+Test current/unsupported-version dispatch and recovery boundaries with fault hooks;
+add real migration fixtures when a supported format changes. M1a2 completes persistence
+safety before M1b and processing. No external tools or generic scheduler in either task.
+
+**M1b: state and minimal runner**, delivered as two reviewable tasks:
+
+- **M1b1 — execution and cache happy path:** a concrete two-node fake plan, frozen run
+  intent with node/output references, attempt records binding actual inputs, manifests,
+  dependency keys, validated publication and minimal events. Acceptance: run/show,
+  cache hit/miss and late-setting invalidation reuse earlier output. Use ordinary
+  Python composition and explicit key functions, not a plan compiler or key DSL.
+- **M1b2 — interruption and recovery:** fake-stage cancellation, durable acceptance,
+  retry as a new attempt, stale-owner detection and publication recovery. Acceptance:
+  a second CLI can request cancellation without becoming a writer; race/fault tests
+  cover manifest/rename/commit boundaries, pending cancellation, interrupted owners
+  and rejected orphan results. Unresolved teardown blocks retry. M2 proves real
+  external-process containment; fakes do not establish Windows process safety.
+
+Both tasks use the M1a2 writer boundary and no external tools. Complete M1b2 before
+processing. Repair documented baseline lint separately or within an explicitly scoped
+foundation cleanup task, not incidentally.
 
 ## M2 — media ingest and process boundary
 
@@ -47,19 +79,28 @@ Implement source inventory, streaming content identity, read-only registration a
 relinking for ordinary MP4/MOV/JPEG/PNG inputs. Add FFprobe metadata via the first
 process adapter, with bounded logs, timeout, Windows process-tree cancellation and
 structured results. Separate source groups from camera/calibration groups; preserve
-EXIF orientation, video time bases and missing metadata explicitly.
+EXIF orientation, video time bases and missing metadata explicitly. Fully hash initial
+ingest; implement recorded Balanced/local re-verification and opt-in Strict rehashing.
 
 Acceptance: `media add/list` registers photos and two clips without copying originals;
 duplicate names do not collide; changed/missing/moved sources are diagnosed; cancelled
 probe/hash leaves no completed ingest. Tests include fake processes and an opt-in real
-FFprobe check on generated tiny media. Unsupported inputs fail clearly.
+FFprobe check on generated tiny media. Verify Balanced avoids unchanged-source full
+reads and suspicious evidence triggers rehash. Strict hashes complete content and
+maintains byte continuity through consumption using a tested lease or an explicitly
+budgeted snapshot; unsupported guarantees fail clearly. Record policy/assurance and
+source-change diagnostics. Test worker-owner death and descendants retaining handles.
+The process adapter and inventory can be separate reviewable tasks within M2.
 
 ## M3 — candidate views and fixed-FPS extraction
 
 Implement FFmpeg ViewPreparation plus simple fixed-FPS selection from an explicit
 candidate pool. Photos enter the same view contract through orientation/preprocessing.
 Record actual timestamps, source/view mapping, camera transforms and deterministic
-names. Use M1b publication, progress, cancellation and stage-boundary restart now.
+names. Bound candidate count and peak disk demand before decoding; do not materialize
+all frames by default. Start with a bounded materialized pool; exact frame locators or
+analysis proxies are later measured optimizations. Use M1b publication, progress,
+cancellation and stage-boundary restart now.
 
 Acceptance: an extraction command emits validated image/manifests from a tiny VFR and
 rotated video fixture; cancellation/resume does not reuse partial output; rerunning
@@ -87,13 +128,15 @@ separate from implemented and runnable methods. Extend the shared process bounda
 Acceptance: fixture probes cover missing executable, unsupported ONNX/model route,
 missing Global Mapper, unhealthy CUDA/DLL loading and CPU-only capability. An opt-in
 installed-backend smoke test records evidence. No feature extraction or downloads are
-required merely to list methods or open a project.
+required merely to list methods or open a project. Risky probes use disposable workers;
+probe availability/resource evidence has a freshness limit, while resolved execution
+identity is pinned and checked again before launch.
 
 ## M6 — minimal pair selection
 
 Implement typed PairSet, Sequential within clips and budgeted Exhaustive across
 selected views. Allow an explicit cross-group pair list for controlled mixed-source
-tests. Define future retrieval/spatial requirements without shipping fake methods.
+tests. Keep practical retrieval for M7c and spatial pairing for M13a; no fake methods.
 
 Acceptance: stable pair output with no self/duplicate pairs, deterministic chronology,
 quadratic-budget refusal and coverage diagnostics for two clips plus unordered photos.
@@ -101,11 +144,16 @@ PairSet production needs no COLMAP/CUDA and can run independently of local featu
 
 ## M7 — features, matching and geometric verification
 
+Deliver feature extraction as M7a and matching/verification as M7b, followed by M7c.
 Implement ALIKED and compatible LightGlue using a verified backend route, plus SIFT
 and compatible brute-force matching. Separate stages and settings for features,
 matches and geometric verification; expose any unavoidable native coupling. Validate
 actual descriptor/weight/format compatibility and preserve the requested PairSet.
-Keep databases isolated and published upstream payloads immutable.
+Keep databases isolated and published upstream payloads immutable. Assemble current
+camera/calibration metadata in private downstream databases; do not reopen published
+payloads writable or use writable hardlinks. A fused native operation has one execution
+key/restart boundary and only promises intermediates it actually exposes. Reject a
+route that cannot honor requested external pairs rather than claiming PairSet support.
 
 Acceptance: a tiny real integration fixture produces features, matches and verified
 geometry; incompatible routes fail before work; changing pair settings reuses features;
@@ -113,46 +161,89 @@ changing extractor cannot reuse an incompatible database. Test fallback explicit
 If a local learned route is unavailable, report the missing capability and validate it
 on a designated test machine before claiming the milestone's integration complete.
 
+## M7c — practical cross-clip retrieval and hybrid pairing
+
+Implement one verified retrieval representation/index route, independent of the local
+ALIKED/SIFT descriptor choice unless an explicit compatible aggregation is implemented.
+Record embedding/model weights, preprocessing, normalization/dimension, indexed corpus,
+distance metric, index version/settings and query budgets. Combine Sequential within
+clips with bounded retrieval across clips, deduplicate pairs and explain coverage.
+
+Acceptance: known overlapping regions in several drone/phone clips yield useful
+cross-clip candidates and geometrically verified matches through M7b without manual
+pairs or all-pairs descriptor matching. Enforce neighbor/total-pair budgets and measure
+index/query time and memory. Test model/corpus/index invalidation and local-feature
+reuse when retrieval alone changes, plus no-overlap clips, repetitive texture and
+near-duplicate bursts. Publish corpus-bound immutable indexes; retrieval cannot depend
+on the reconstruction it enables. Missing representation/model/index capabilities
+produce actionable errors, not silent Exhaustive fallback. M10 depends on this route;
+GPS/spatial pairing and advanced index/scale optimization remain in M13a.
+
 ## M8 — mapping
 
 Implement Global Mapper as the preferred supported route and Incremental/Hierarchical
 Mapper as explicit capability-gated alternatives. Capture every reconstruction
-component, camera convention and native ID mapping. Do not silently choose a component.
+component, camera convention and native ID mapping. Add the minimal streaming
+ReconstructionReader so validation/preparation never parse COLMAP directly. Test a
+synthetic reader independent of COLMAP; optional unavailable tracks/points remain
+explicitly unknown. Do not silently choose a component.
 
 Acceptance: a tiny dataset yields a readable reconstruction on each supported route;
 mapper changes reuse earlier compatible artifacts; invalid/no-component results are
 not successes; cancellation and retries preserve original matching artifacts.
 
-## M9 — reconstruction validation
+## M9 — reconstruction validation and component selection
 
-Implement a structured report for registration coverage overall/per source group,
+**M9a:** implement a structured report for registration coverage overall/per source group,
 components, unregistered views, point/track statistics, reprojection distributions,
 triangulation/degeneracy checks where supported and camera plausibility. Use explicit
 threshold profiles; missing metrics are unknown, not zero or pass.
 
 Acceptance: controlled reconstruction fixtures trigger pass/warn/fail with reasons;
-policy changes do not rerun mapping. CLI displays actionable issues, and an explicit
-recorded override is required to continue past a failing quality gate.
+policy changes do not rerun mapping. Distinguish component-scoped and project-wide
+rules. CLI displays actionable issues; continuation past applicable failing gates
+requires an explicit override bound to the reconstruction, report and selected data.
+
+**M9b:** publish ReconstructionSelection as a small application decision artifact
+referencing the unchanged ReconstructionSet and validation evidence. Record chosen
+component IDs, manual/policy mode, policy settings/version and reasons. Fingerprint
+selection for downstream datasets; never silently select the largest component.
+
+Acceptance: manual and metric-informed choices are inspectable and reproducible;
+missing/obsolete choices block preparation; selection changes invalidate only affected
+datasets/training/exports. Several unaligned components remain separate datasets.
+Validation still reports all components. Evaluate selected-component gates plus
+project-wide rules; deselection cannot waive a global failure. Test changed geometry
+under identical component IDs, stale overrides and same-content dataset reuse.
 
 ## M10 — complete flat-camera CLI and training dataset
 
 Implement DatasetPreparation, required undistortion/resizing, camera/pose consistency
 checks and dataset export. Compose project/ingest/plan/run/status/cancel/retry/diagnose
 use cases. Provide a dry-run plan with capability, resource, coverage and cache reasons.
-Initial multi-clip/mixed-source support uses bounded exhaustive or explicit cross-group
-pairs; large collections may require later retrieval and must report that limit.
+Require M7c hybrid pairing for the practical multi-video route and M9b explicit
+component selection before preparation. Manual/budgeted Exhaustive remain optional
+small-fixture tools. Report measured scale limits and incomplete cross-clip coverage.
 
 Acceptance: documented commands take a short video, unordered photo set, multiple
-clips and a mixed ordinary-camera fixture to validated trainer-ready datasets. Test
-restart, late-setting changes, source relocation, corrupt cache, disk-full handling,
+clips and a mixed ordinary-camera fixture to validated trainer-ready datasets. The
+multi-video case must use cross-clip retrieval without manual pair lists or all-pairs
+descriptor matching. Verify recorded component selection and separate component outputs.
+Test restart, late-setting changes, source relocation, corrupt cache, disk-full handling,
 paths with spaces/Unicode and a disconnected scene. Validate exported cameras against
-images with a consumer or independent reader. A successful exit alone is insufficient.
+images with a consumer or independent reader. Include a previewable manual cleanup
+command for unpinned completed payloads, preserving lineage/manifests and marking
+cache entries evicted; never delete originals or active/pinned outputs. Check peak disk
+budgets including private database copies and exports. A successful exit alone is
+insufficient.
 
 ## M11 — legacy evaluation and Gaussian training integration
 
-**M11a:** inspect the earlier successful 3DGS project read-only when supplied. Recover
-recipes and assumptions into documented, versioned candidate presets; compare on
-small controlled scenes. Do not require that project's code as a runtime dependency.
+**M11a:** use available legacy research to translate recovered recipes/assumptions
+into candidate presets, then benchmark on controlled scenes before official adoption.
+Research may already have happened; inspect additional evidence read-only if needed.
+If unavailable, record the gap and evaluate independently sourced recipes without
+blocking product work. Do not require legacy code as a runtime dependency.
 
 **M11b:** deliver a tested external LichtFeld dataset handoff, then one managed trainer
 adapter selected from verified requirements (gsplat-based or another suitable backend).
@@ -178,17 +269,21 @@ real smoke run; architecture checks reject backend imports/process calls in widg
 
 Deliver independent submilestones, each with a fixture and measurable acceptance:
 
-- **M13a:** retrieval/hybrid pair selection and GPS pairing with uncertainty. Demonstrate
-  cross-clip coverage at a bounded pair budget and feature/index compatibility.
+- **M13a:** GPS/spatial pairing with uncertainty and advanced retrieval/index/hybrid
+  optimization beyond M7c. Measure coverage/resource improvements at bounded budgets;
+  keep representation/index compatibility explicit.
 - **M13b:** manual masks and automatic segmentation; validate alignment and separate
   SfM/training mask invalidation. Add adaptive selection only with quality evidence.
 - **M13c:** local batch/queue and bounded retry policies. Verify per-project writer
   exclusion, resource limits, cancellation and resumable job history.
-- **M13d:** large-scene strategies, selective per-view caching and explicit cleanup.
+- **M13d:** large-scene strategies, selective per-view caching and advanced retention/
+  automatic cleanup beyond M10's manual cleanup.
   Benchmark memory/disk/pair budgets and interrupt recovery without silent data loss.
 - **M13e:** a second SfM/trainer backend or LiDAR-assisted alignment when justified.
   Validate existing contracts, units/transforms and comparison metrics before expanding
-  interfaces. No plugin SDK solely to satisfy a placeholder.
+  interfaces. Add a concrete typed route for detector-free or direct SfM engines if
+  required, without fabricating sparse-feature intermediates. No plugin SDK solely
+  to satisfy a placeholder.
 
 ## M14 — 360/fisheye/equirectangular input layer
 

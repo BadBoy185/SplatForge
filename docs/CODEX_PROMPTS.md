@@ -1,229 +1,386 @@
 # Codex implementation tasks
 
-Use one bounded task at a time. Milestones and acceptance criteria are owned by
-[ROADMAP.md](../ROADMAP.md); the contracts below are linked, not redefined here.
-Review the diff after each task. Do not commit or push unless explicitly requested.
-All commands mentioned in future tasks are proposed until implemented.
+Use one bounded task at a time. [ROADMAP.md](../ROADMAP.md) owns milestone acceptance;
+read only the selected milestone, not the whole roadmap for every task. AGENTS.md is
+always required. Each task lists its additional contract reading below; follow other
+documents only when a concrete dependency requires them. Review the diff after each
+task. Do not commit or push unless explicitly requested. Future command names are
+proposed until implemented.
 
-## Common instructions for every implementation task
+## Common instructions for every task
 
 Prepend this to the selected task:
 
 ```text
-Read AGENTS.md, README.md, ARCHITECTURE.md, ROADMAP.md, docs/PIPELINE.md,
-docs/PROJECT_FORMAT.md and docs/DEVELOPMENT.md. Inspect relevant implementation and
-tests before editing. Check Git status and preserve unrelated user changes.
-
-Implement only the selected milestone/subtask. Give a concise implementation plan
-when it crosses boundaries. Keep core independent of UI and external engines; inject
-adapters through application services. Do not create future-method stubs as if they
-were runnable. Preserve existing user settings and originals.
-
-Add meaningful tests for changed behavior, including compatibility, persistence,
-cache invalidation or recovery where affected. Use fakes by default; real tools and
-GPU tests are opt-in and must report prerequisites/skips. Never download models or
-install toolchains implicitly. Do not hide unavailable capabilities with a fallback.
-
-Run relevant tests, full pytest and ruff check . in the project environment. Identify
-pre-existing failures separately; fix unrelated baseline lint only in an explicitly
-scoped cleanup task. Review the diff and update affected documentation. Report what
-works, evidence, limitations and the next task. Do not commit automatically.
+Read AGENTS.md, the selected task's additional reading and its roadmap acceptance
+criteria. Inspect relevant implementation/tests and Git status; preserve user changes.
+Implement only the selected task. Give a concise plan when it crosses boundaries.
+Inject adapters through application services; keep core independent of UI/backends.
+Preserve settings and originals. Do not present planned methods as runnable, silently
+substitute fallbacks, or download models/install toolchains implicitly.
+Add meaningful tests for changed behavior. Run relevant tests, full pytest and
+ruff check . in the project environment; report existing failures and integration
+skips honestly. Documentation-only work needs documentation checks, not code tests.
+Update affected contracts, inspect the diff and report evidence, limits and next steps.
+Do not commit or push automatically.
 ```
 
-## M1a Project persistence
+## M1a1 Basic project persistence
 
-Recommended next implementation task:
+Recommended next implementation task. Additional reading:
+[PROJECT_FORMAT: ownership](PROJECT_FORMAT.md#storage-layout-and-ownership),
+[authoritative records](PROJECT_FORMAT.md#authoritative-records),
+[paths](PROJECT_FORMAT.md#paths-and-source-identity), the M1a1 boundary at the start of
+[safe writes](PROJECT_FORMAT.md#safe-writes-and-migrations), and
+[ARCHITECTURE: dependency direction](../ARCHITECTURE.md#dependency-direction).
 
 ```text
-Implement M1a: safe project persistence, not pipeline execution.
-
-- Add application use cases and an injected local storage adapter for create/open/
-  save/inspect. CLI handlers delegate; core models do not perform filesystem I/O.
-- Implement the project document, separate format/config/state versions, revisioned
-  saved stage settings and directory ownership from docs/PROJECT_FORMAT.md.
-- Initialize state.sqlite with schema metadata only; no COLMAP database or scheduler.
-- Resolve/preserve prototype PipelineConfig defaults through an explicit conversion.
-  Keep stable method IDs and user values. Known settings are strict; opaque unknown
-  method/version settings round-trip without execution. A preset label is not enough.
-- Fix the confirmed role-validation collision by checking each selected slot
-  independently. Add a regression test for training.none used as the mapper.
-- Refuse creation in non-empty destinations and saves based on stale revisions.
-  Implement validated atomic JSON saves, writer exclusion and explicit version errors.
-- Establish migration dispatch and backup/recovery boundaries. If supporting an older
-  format, add a fixture proving preservation and recovery; never rewrite newer formats.
-- Add proposed project create/show commands and API save/reopen coverage. Test Unicode
-  and spaces, moving a project, invalid/unknown settings, save interruption, non-empty
-  destination refusal, stale writers and preservation of the previous valid document.
-
-Do not implement media ingest, FFmpeg, COLMAP, GPU probes, training, GUI, an artifact
-scheduler or a plugin framework. Leave run/attempt tables and fake-stage execution
-for M1b. Do not opportunistically reformat unrelated source files.
+Implement M1a1 as the basic single-process persistence development slice.
+- Add application/storage boundaries and a basic project document with distinct
+  project/config/state versions, directory ownership and SQLite metadata initialization.
+  Persist current settings plus opaque envelopes, not schemas for all future stages;
+  create owned subdirectories on demand.
+- Implement create/open/save/show, with CLI delegation and no I/O in core models.
+  Use validated temporary-file replacement for basic save; M1a2 proves failure safety.
+- Preserve known settings and opaque unknown method/version envelopes. Resolve
+  prototype defaults explicitly; do not invent a historical project migration.
+- Fix independent role validation; test training.none incorrectly used as the mapper.
+- Test create/reopen/save/show, settings round-trips, Unicode/space paths, non-empty
+  destination refusal, unsupported versions without rewrites and directory ownership.
+Do not claim durability/concurrency readiness. Leave revision/stale-save checks,
+writer locks, atomic replacement details, migration scaffolding and fault recovery
+for M1a2. No processing, external tools, run tables, scheduler or unrelated cleanup.
 ```
 
-## M1b Execution state and fake stages
+## M1a2 Persistence safety
+
+Additional reading: [PROJECT_FORMAT: safe writes and migrations](PROJECT_FORMAT.md#safe-writes-and-migrations),
+[ARCHITECTURE: dependency direction](../ARCHITECTURE.md#dependency-direction) and
+[DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
 
 ```text
-Implement M1b using injected fake stages only. Add run snapshots, attempt transitions,
-artifact manifests, canonical stage fingerprints, a minimal dependency plan, progress/
-cancellation/events and safe publication. Keep one writer and one active stage.
+Complete M1a2 before M1b or processing uses persisted projects. Add revision/stale-save
+protection, one local writer lock, validated atomic replacement, migration dispatch
+and consistent backup/recovery boundaries. Test concurrent/stale writers, Windows
+sharing errors, interrupted replacement, disk-full and failed backups while retaining
+the last valid project. Test current/unsupported-version dispatch with fault hooks.
+There is no older production format: do not invent legacy versions or speculative
+migration transforms or a generic multi-store migration journal. Add a real migration
+fixture and any required journal only when a supported format changes.
+No run/attempt/artifact execution infrastructure yet; that remains M1b.
+```
 
-Prove unchanged reuse, training-like late-setting invalidation, missing/corrupt output
-rejection, cancellation races, retry history and crash recovery before/after rename
-and database commit. A directory or zero exit code is never sufficient for success.
-Preserve cancelled results as incomplete; do not promote them during recovery.
-No external tools, workflow DSL, distributed queue or cross-project cache.
+## M1b1 Execution and cache happy path
+
+Additional reading: [PROJECT_FORMAT: records](PROJECT_FORMAT.md#authoritative-records),
+[publication](PROJECT_FORMAT.md#attempts-publication-and-recovery),
+[PIPELINE: execution contract](PIPELINE.md#method-execution-contract) and
+[cache rules](PIPELINE.md#stage-fingerprints-and-cache-eligibility).
+
+```text
+Implement a concrete two-node fake plan with one writer/active stage. Add frozen run
+intent using node/output references, attempt records binding actual inputs, manifests,
+explicit key functions, validated publication and minimal events. Prove cache hit/miss,
+corrupt/missing-output refusal and downstream-only invalidation. Do not put future
+artifact IDs into immutable snapshots before they exist. Prepare durable publication
+ordering for M1b2; no plan compiler, workflow language or external tools.
+```
+
+## M1b2 Interruption and recovery
+
+Additional reading: [PROJECT_FORMAT: cancellation](PROJECT_FORMAT.md#writer-ownership-and-cancellation),
+[publication/recovery](PROJECT_FORMAT.md#attempts-publication-and-recovery) and
+[DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
+
+```text
+Extend M1b1 using fake stages: durable cancellation acceptance, retry as a new attempt,
+stale-owner detection and recovery. Test cancellation requests from another CLI without
+writer access, publication/cancellation races and crashes around manifest/rename/commit.
+Never promote cancelled, unvalidated or unexpected output. Block retry while teardown
+is unresolved. Complete this before processing. M2 separately proves real Windows
+process containment; do not claim it from fake tests. No network service or scheduler.
 ```
 
 ## M2 Media ingest
 
-```text
-Implement M2: read-only photo/video source registration, immutable inventory revisions,
-streaming digests and relinking. Separate source and camera groups. Preserve actual
-video time bases, orientation and calibration assumptions. Unsupported/missing inputs
-produce structured diagnostics and do not corrupt the inventory.
+Additional reading: [PROJECT_FORMAT: paths](PROJECT_FORMAT.md#paths-and-source-identity),
+[source verification](PROJECT_FORMAT.md#source-verification-policies),
+[PIPELINE: view and camera rules](PIPELINE.md#view-and-camera-rules) and
+[DEVELOPMENT: process contract](DEVELOPMENT.md#external-process-contract).
 
-Add the shared process adapter and an FFprobe adapter with argument arrays, scoped
-working directory/environment, bounded output, timeout and Windows process-tree
-cancellation. Test with fakes/helpers and one opt-in generated-media integration.
-Do not copy originals or implement frame extraction in this task.
+```text
+Implement read-only photo/video registration, inventory revisions and relinking.
+Fully hash initial ingest; implement recorded Balanced/local metadata/identity checks
+and Strict full hashing with stable byte continuity through backend consumption.
+Use tested read leases or explicitly approved/budgeted snapshots; unsupported guarantees
+fail clearly. Test attempted edits/replacements during consumption and unchanged-source
+read avoidance,
+suspicious/unreliable evidence, changed content, cancellation and assurance provenance.
+Separate source/camera groups; preserve time bases, orientation and missing metadata.
+Add the process/FFprobe adapters with argument arrays, scoped working directory and
+environment, bounded streams, timeout and Windows process-tree cancellation. Test
+fakes/helpers, owner death/descendant cleanup and an opt-in generated-media fixture.
+Do not copy originals implicitly or extract frames. A failed metadata/hash check must not silently become an unchanged result.
 ```
 
 ## M3 Candidate views and fixed-FPS selection
 
+Additional reading: [PIPELINE: views](PIPELINE.md#view-and-camera-rules),
+[execution](PIPELINE.md#method-execution-contract),
+[cache](PIPELINE.md#stage-fingerprints-and-cache-eligibility) and
+[DEVELOPMENT: process contract](DEVELOPMENT.md#external-process-contract).
+
 ```text
-Implement M3 with FFmpeg behind an adapter. Publish candidate images and provenance
-from video and photos, then a fixed-FPS selected-view manifest. Record actual frame
-identity/timestamps, dimensions and transforms; do not infer a constant frame rate.
-Use the existing attempt/cache/cancellation/publication mechanisms from the start.
-Test VFR/orientation, immutable originals, cancellation/restart and cache reuse.
-No blur scoring, learned features, mapping or GUI.
+Implement FFmpeg ViewPreparation behind an adapter and fixed-FPS selection from an
+explicit candidate pool. Photos use the same view contract. Record actual frame
+identity/timestamps, dimensions and transforms; do not assume constant frame rate.
+Budget candidate count/peak disk before decode; start with bounded materialized views.
+Use existing attempts/cache/cancellation/publication. Test VFR/orientation, unchanged
+originals, cancellation/restart and reuse. No quality scoring, SfM or GUI.
 ```
 
 ## M4 Quality and frame selection
 
+Additional reading: [PIPELINE: views](PIPELINE.md#view-and-camera-rules),
+[stage inputs](PIPELINE.md#stage-inputs-and-outputs) and
+[invalidation](PIPELINE.md#invalidation-examples).
+
 ```text
-Implement M4 as separate quality measurement and selection operations. Add blur and
-duplicate metrics, sharpest-per-interval selection, deterministic ties and rejection
-reasons. Check candidate-pool sufficiency. Threshold changes reuse existing scores
-and images; score-method changes invalidate their consumers. Keep rejected images
-available as metadata-backed artifacts. Do not implement adaptive motion selection.
+Separate blur/duplicate measurements from selection. Add sharpest-per-interval,
+deterministic ties, rejection reasons and candidate-pool sufficiency checks. Threshold
+changes reuse measurements/pixels; scoring changes invalidate consumers. Preserve
+rejected images as metadata-backed artifacts. Defer adaptive motion selection.
 ```
 
 ## M5 COLMAP and GPU capabilities
 
+Additional reading: [ARCHITECTURE: capability checks](../ARCHITECTURE.md#replaceable-methods-and-capability-checks),
+[PIPELINE: method execution contract](PIPELINE.md#method-execution-contract) and
+[DEVELOPMENT.md](DEVELOPMENT.md).
+
 ```text
-Implement M5 capability discovery and doctor output, not feature execution. Probe the
-selected binary, supported operations/formats, learned model/runtime availability and
-backend-specific GPU health with timeouts. Record evidence and distinguish available,
-unavailable and unknown. Core/GUI must not import PyTorch or pycolmap to list methods.
-Test missing ONNX/model/Global Mapper support, CPU-only paths and failed CUDA/DLL probes.
-Do not promise compatibility from a version string or download missing components.
+Implement discovery and doctor output, not feature execution. Probe binary/operation/
+format/model/runtime identity and backend-specific GPU health with timeouts. Distinguish
+available/unavailable/unknown with evidence and freshness limits. Use owned disposable
+workers for risky probes. Test missing ONNX/models/Global Mapper,
+CPU-only support and CUDA/DLL failures. No heavy imports in core/UI for method listing,
+version-string-only compatibility claims or implicit component downloads.
 ```
 
 ## M6 Minimal pair selection
 
+Additional reading: [PIPELINE: pair selection](PIPELINE.md#pair-selection-and-native-execution)
+and [PIPELINE: invalidation](PIPELINE.md#invalidation-examples).
+
 ```text
-Implement M6 before descriptor matching. Add PairSet and independent Sequential and
-budgeted Exhaustive selectors, plus an explicit cross-group pair list. Test chronology,
-canonical pair ordering, duplicates, self-pairs, pair budgets and multi-source coverage.
-Use source groups, not assumed filename chronology. Declare future retrieval/spatial
-requirements in documentation; do not register placeholder implementations as runnable.
+Implement typed PairSet, Sequential and budgeted Exhaustive selectors, plus explicit
+cross-group pairs for fixtures. Test chronology, ordering, duplicates/self-pairs,
+quadratic-budget refusal and per-group coverage. Use source groups, not filenames.
+Practical retrieval follows in M7c; spatial pairing in M13a. No fake implementations.
 ```
 
-## M7 Features, matching and geometric verification
+## M7a Features
 
-Split M7 into reviewable tasks, keeping the full milestone acceptance gate:
+Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-outputs),
+[view conventions](PIPELINE.md#view-and-camera-rules),
+[execution](PIPELINE.md#method-execution-contract),
+[cache](PIPELINE.md#stage-fingerprints-and-cache-eligibility),
+[ARCHITECTURE: backend ownership](../ARCHITECTURE.md#backend-artifact-ownership) and
+[DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
 
 ```text
-M7a: implement feature artifacts and the verified ALIKED and SIFT extraction routes.
-Validate descriptor signatures, model digests and pixel/keypoint conventions. Isolate
-native databases by feature identity. Publish immutable results and availability.
+Implement verified ALIKED and SIFT extraction routes and feature artifacts. Validate
+signatures, model digests and pixel/keypoint conventions. Isolate native databases
+by feature identity and publish immutable results. Test incompatible routes and real
+opt-in extraction. Missing learned support is a capability gap, not a completed
+integration milestone based solely on mocks/SIFT. No matching or mapping.
+```
 
-M7b: implement compatible LightGlue and SIFT/brute-force matching of an explicit
-PairSet, followed by geometric verification with independent settings. Test actual
-pair preservation and raw-match versus verified-geometry semantics. If a backend
-fuses operations, expose the real execution/cache granularity instead of implying
-independent reuse. Test mismatch rejection and native database integrity.
+## M7b Matching and geometric verification
 
-Run tiny opt-in integration fixtures on supported builds. Report missing learned/GPU
-support rather than passing the whole milestone using only mocks or SIFT. No mapping.
+Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-outputs),
+[pairing and native execution](PIPELINE.md#pair-selection-and-native-execution),
+[cache](PIPELINE.md#stage-fingerprints-and-cache-eligibility),
+[ARCHITECTURE: backend ownership](../ARCHITECTURE.md#backend-artifact-ownership) and
+[DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
+
+```text
+Implement compatible LightGlue and SIFT/brute-force matching of an explicit PairSet,
+then geometric verification with separate settings. Test pair preservation, signatures,
+raw matches versus verified geometry, database integrity and feature reuse. Expose any
+native fusion as one execution key/restart boundary; reject routes ignoring requested
+pairs. Assemble current cameras in private databases without writable hardlinks; test
+upstream bytes remain unchanged. Validate tiny real supported routes;
+report missing prerequisites honestly. No mapping.
+```
+
+## M7c Practical cross-clip retrieval and hybrid pairing
+
+Additional reading: [PIPELINE: pair selection](PIPELINE.md#pair-selection-and-native-execution),
+[PIPELINE: cache rules](PIPELINE.md#stage-fingerprints-and-cache-eligibility) and
+[DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
+
+```text
+Implement one practical retrieval representation/index plus Sequential-within-clip
+and retrieval-across-clips hybrid pairing. Keep embedding/aggregation, weights,
+preprocessing, normalization/dimension, corpus, metric and index/query settings explicit.
+ALIKED local descriptors are not automatically a retrieval representation.
+Bound neighbors/total pairs, deduplicate and record reasons/coverage. On known
+multi-drone/phone clip overlap, demonstrate verified cross-clip matches through M7b
+without manual lists or all-pairs descriptor matching; measure query/index time and
+memory too. Test corpus/model/index invalidation, independent local-feature reuse,
+no-overlap clips and duplicate bursts. Indexes are immutable and corpus-bound; initial
+retrieval cannot depend on the reconstruction it enables.
+Do not silently fall back to Exhaustive. GPS and advanced optimization stay in M13a.
 ```
 
 ## M8 Mapping
 
+Additional reading: [PIPELINE: stage contracts](PIPELINE.md#stage-inputs-and-outputs),
+[reconstruction interchange](PIPELINE.md#reconstruction-interchange),
+[ARCHITECTURE: backend ownership](../ARCHITECTURE.md#backend-artifact-ownership) and
+[DEVELOPMENT.md](DEVELOPMENT.md).
+
 ```text
-Implement M8 behind mapping adapters: preferred supported Global Mapper and explicit
-Incremental/Hierarchical alternatives. Publish all components, transforms and native
-ID mappings; never silently discard disconnected models. Preserve upstream databases.
-Test mapper-only invalidation, cancellation, invalid output and supported real routes.
-Do not merge reconstruction quality policy into command execution.
+Implement preferred supported Global Mapper and explicit Incremental/Hierarchical
+alternatives. Publish every component, coordinate convention and native ID mapping.
+Add a minimal streaming ReconstructionReader and independent synthetic reader tests;
+downstream logic must not parse COLMAP. Never choose/discard components here. Test mapper-only invalidation, cancellation,
+invalid output and real supported routes. Preserve upstream databases and keep quality
+policy out of command execution. Component selection follows M9a validation in M9b.
 ```
 
-## M9 Reconstruction validation
+## M9a Reconstruction validation
+
+Additional reading: [PIPELINE: reconstruction interchange](PIPELINE.md#reconstruction-interchange),
+[selection and gates](PIPELINE.md#reconstruction-component-selection) and [DEVELOPMENT: diagnostics](DEVELOPMENT.md#structured-events-and-diagnostics).
 
 ```text
-Implement M9 structured metrics and quality gates independently from mapping. Include
-per-source registration/coverage, components, tracks, reprojection and camera/geometry
-checks with units, denominators and unknown measurements. Use configurable threshold
-profiles. Controlled fixtures must trigger pass/warn/fail; changing thresholds must
-not rerun mapping. Record explicit overrides of failed gates. Do not rewrite models.
+Implement non-mutating validation of all components: per-source registration/coverage,
+tracks, reprojection and camera/geometry metrics with units/unknowns. Add configurable
+pass/warn/fail policies with component versus project-wide scope and overrides bound
+to exact evidence/selected data. Test controlled fixtures and
+threshold changes without remapping. Do not select components or rewrite models.
+```
+
+## M9b Reconstruction component selection
+
+Additional reading: [PIPELINE: component selection](PIPELINE.md#reconstruction-component-selection)
+and [PROJECT_FORMAT: authoritative records](PROJECT_FORMAT.md#authoritative-records).
+
+```text
+Publish ReconstructionSelection as a small application decision artifact. Record the
+unchanged ReconstructionSet reference, selected component IDs, manual/policy mode,
+policy version/settings, metric evidence and reasons. Never silently choose largest.
+Test manual/policy choices, stale/absent IDs, decision fingerprinting and downstream-only
+invalidation, including changed geometry under the same IDs. Multiple unaligned
+components yield separate datasets; no implicit merge. Apply selected-component gates
+and all project-wide rules; deselection must not waive global coverage failures.
+Same selected data can reuse a dataset after its gate passes. Selection is not a gate
+override, and Validation continues to report every component. No new workflow framework.
 ```
 
 ## M10 Complete flat-camera CLI
 
+Additional reading: [PIPELINE.md](PIPELINE.md),
+[ARCHITECTURE: application boundary](../ARCHITECTURE.md#dependency-direction) and
+[DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
+
 ```text
-Implement M10 DatasetPreparation and dataset export with explicit undistortion/resize,
-consistent cameras/poses/image references and a validation gate. Compose the complete
-application/CLI workflow, dry-run resource/capability/cache reasons and status/retry.
-Demonstrate video, photos, multiple clips and mixed sources using bounded pair policies;
-state limits for large collections. Verify exported data with a consumer/independent
-reader. Exercise interruption, relocation, corruption, disk-full and Windows paths.
-No GUI or managed Gaussian training yet.
+Implement dataset preparation/export with explicit component selection, undistortion/
+resize and consistent cameras/poses/images. Compose plan/run/status/cancel/retry and
+cache/resource/capability diagnostics. Require M7c for the multi-video route: demonstrate
+multiple clips without manual pairs or all-pairs descriptor matching. Exercise single
+video, photos and mixed sources too; record selected components and separate outputs.
+Verify datasets with a consumer/independent reader and test interruption, relocation,
+corrupt cache, disk-full and Windows paths. Add previewable manual cleanup of unpinned
+completed payloads, preserving manifests/lineage and eviction records; protect originals,
+active outputs, exports and checkpoints. Budget database copies/workspaces and exports.
+No GUI or managed training yet.
 ```
 
-## M11 Legacy evaluation and training
+## Optional early legacy research
+
+Additional reading: [LEGACY_3DGS_RESEARCH.md](LEGACY_3DGS_RESEARCH.md) and
+[ARCHITECTURE: legacy boundary](../ARCHITECTURE.md#training-legacy-work-and-future-inputs).
 
 ```text
-M11a: inspect the provided legacy 3DGS project read-only. Record useful versions,
-parameters, preprocessing, camera/scale assumptions, hardware and results. Translate
-candidate recipes into versioned presets with provenance and explicit overrides.
-Evaluate on controlled scenes; do not import the old implementation into core.
-If the project is not provided, report the missing evidence without dismissing it.
+If supplied, inspect the successful legacy project read-only and record traceable
+versions, settings, preprocessing, camera/scale assumptions, hardware and result
+evidence in docs/LEGACY_3DGS_RESEARCH.md. Separate observations, hypotheses and unknowns.
+Do not run legacy scripts, install dependencies, implement adapters or adopt official
+presets in this research task. If unavailable, record the gap; early milestones proceed.
+Preset translation and benchmarking remain M11a.
+```
 
-M11b: implement a tested external LichtFeld dataset handoff, then one deliberately
-selected managed trainer adapter. Separate manual handoff from managed execution.
-Verify a loadable scene, progress/cancellation, checkpoint compatibility where supported,
-training metrics and scene export. Trainer-setting changes must reuse earlier SfM.
-A gsplat-based option needs an explicit training recipe, not just a library wrapper.
+## M11a Preset translation and benchmarking
+
+Additional reading: [LEGACY_3DGS_RESEARCH.md](LEGACY_3DGS_RESEARCH.md),
+[ARCHITECTURE: training boundary](../ARCHITECTURE.md#training-legacy-work-and-future-inputs)
+and [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
+
+```text
+Use available legacy evidence to translate candidate recipes with provenance and
+explicit overrides. Compare controlled scenes before adopting official versioned
+presets. Fill evidence gaps read-only when possible; if legacy material is unavailable,
+record this and validate independently sourced recipes without blocking product work.
+Do not import legacy internals as core or label untested recipes equivalent/superior.
+```
+
+## M11b Training integration
+
+Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-outputs),
+[execution](PIPELINE.md#method-execution-contract),
+[cache](PIPELINE.md#stage-fingerprints-and-cache-eligibility),
+[ARCHITECTURE: training boundary](../ARCHITECTURE.md#training-legacy-work-and-future-inputs),
+[DEVELOPMENT: process contract](DEVELOPMENT.md#external-process-contract) and
+[testing](DEVELOPMENT.md#testing-layers).
+
+```text
+Implement a tested external LichtFeld dataset handoff, then one selected managed
+trainer. Keep manual handoff distinct from execution. Verify loadable scenes, progress/
+cancellation, compatible checkpoint resume where supported, metrics and export.
+Trainer changes must reuse SfM. A gsplat-based option needs an explicit training recipe.
 ```
 
 ## M12 GUI
 
+Additional reading: [ARCHITECTURE: application/dependency contracts](../ARCHITECTURE.md#dependency-direction)
+and [ARCHITECTURE: execution contracts](../ARCHITECTURE.md#state-reproducibility-and-execution).
+Inspect the implemented application use-case/event interfaces for screen-specific details.
+
 ```text
-Implement M12 PySide6 screens as clients of existing application services. Cover
-project/source management, guided profiles, advanced stage settings, plan/progress,
-cancel/retry, diagnostics and inspection. Keep processing off the UI thread. Test
-CLI/GUI project interchange and architecture rules preventing direct backend calls.
-Do not duplicate pipeline, cache or persistence logic in widgets.
+Implement PySide6 as a client of existing application services: projects/sources,
+profiles/settings, plan/progress, cancel/retry, diagnostics, component choice and
+inspection. Keep processing off the UI thread. Test CLI/GUI interchange and prevent
+backend/process calls from widgets. Do not duplicate pipeline/cache/persistence logic.
 ```
 
 ## M13 Advanced methods and automation
 
-Select exactly one M13 submilestone from ROADMAP.md, then narrow it to one executable
-slice with its fixture, resource budget and comparison criteria. Implement retrieval/
-hybrid/GPS (M13a), masks/segmentation (M13b), local queue/retry (M13c), measured scale/
-cleanup work (M13d), or a concrete alternative backend/LiDAR adapter (M13e). Preserve
-existing flat-camera contracts and add tests for new dependency edges. Do not implement
-all advanced features in one task or introduce a speculative plugin SDK.
+Choose exactly one submilestone and a bounded executable slice. Additional reading:
+
+| Subtask | Relevant contracts |
+| --- | --- |
+| M13a GPS/spatial and advanced retrieval beyond M7c | [PIPELINE pairing/cache](PIPELINE.md#pair-selection-and-native-execution), [DEVELOPMENT testing](DEVELOPMENT.md#testing-layers) |
+| M13b Masks/segmentation | [PIPELINE stage inputs and invalidation](PIPELINE.md), [DEVELOPMENT testing](DEVELOPMENT.md#testing-layers) |
+| M13c Local queue/retry | [PROJECT_FORMAT attempts](PROJECT_FORMAT.md#attempts-publication-and-recovery), [ARCHITECTURE execution](../ARCHITECTURE.md#state-reproducibility-and-execution) |
+| M13d Measured scale/cleanup | [PIPELINE cache](PIPELINE.md#stage-fingerprints-and-cache-eligibility), [PROJECT_FORMAT retention](PROJECT_FORMAT.md#retention-and-diagnosis), [DEVELOPMENT risks](DEVELOPMENT.md#windows-cuda-colmap-and-scale-risk-register) |
+| M13e Concrete alternative backend/LiDAR | [ARCHITECTURE.md](../ARCHITECTURE.md), relevant [PIPELINE contracts](PIPELINE.md), [DEVELOPMENT integration](DEVELOPMENT.md#testing-layers) |
+
+Preserve flat-camera contracts and add tests for new dependencies and resource/quality
+limits. No generic plugin SDK, workflow language or distributed scheduler.
 
 ## M14 360 input preprocessing
 
+Additional reading: [PIPELINE: view/camera contracts](PIPELINE.md#view-and-camera-rules),
+[ARCHITECTURE: future inputs](../ARCHITECTURE.md#training-legacy-work-and-future-inputs)
+and [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
+
 ```text
-Implement M14 as an input/preprocessing adapter producing existing perspective-view
-contracts. Preserve parent capture, projection, virtual calibration, timestamps, masks
-and rig metadata. Verify geometry requirements for mixed drone + 360 workflows; do not
-pretend multiple projections provide translational baseline. Demonstrate calibrated
-fixtures and a mixed-source integration scene through the existing SfM/training path.
-Run the full flat-camera regressions. No rewrite of the flat pipeline or unverified
-native spherical mapper support.
+Implement preprocessing into existing perspective views with parent capture,
+projection, virtual calibration, timestamps, masks and rig metadata. Validate mixed
+drone + 360 geometry without inventing translational baseline from projections.
+Demonstrate calibrated fixtures and a mixed scene through existing SfM/training.
+Run flat-camera regressions; no rewrite or unverified native spherical mapper support.
 ```
