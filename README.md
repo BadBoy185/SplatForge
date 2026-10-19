@@ -14,12 +14,17 @@ inputs come later through preprocessing into perspective views.
 
 ## Current status
 
-The repository contains Pydantic configuration models, a method catalog, a basic
-compatibility validator, a default profile, three tests and a development CLI.
-It does **not** yet create projects, ingest media, execute FFmpeg/COLMAP, train splats
-or provide a GUI. Catalog entries describe intended methods, not installed or
-implemented capabilities. The current configuration is a prototype, not a project
-file format. See the [architecture review](docs/ARCHITECTURE_REVIEW.md) for its gaps.
+The repository contains configuration models, a method catalog, compatibility
+validation, a default profile and basic project persistence (M1a1). The CLI can
+create/show projects; the application API can open/save them. Saved intent lives
+in `project.json`; `state.sqlite` contains only metadata.
+
+This is a controlled single-process development slice, without writer locking,
+stale-save protection, migrations or crash-recovery guarantees. M1a2 must precede
+processing. Media ingest, FFmpeg/COLMAP execution, training and GUI remain planned.
+Catalog entries describe intended methods, not installed or implemented capabilities.
+The existing `PipelineConfig` remains a prototype and is explicitly converted when
+creating a project; it is not itself the project file format.
 
 These commands work in the foundation:
 
@@ -29,8 +34,28 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\splatforge.exe version
 .\.venv\Scripts\splatforge.exe methods
 .\.venv\Scripts\splatforge.exe show-default-config
+.\.venv\Scripts\splatforge.exe project create "C:\SplatForge Projects\First scene" --label "First scene"
+.\.venv\Scripts\splatforge.exe project show "C:\SplatForge Projects\First scene"
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
+```
+
+Creation requires a missing or empty directory. Only `project.json` and
+`state.sqlite` are created. Projects open from their saved settings, never by
+reapplying a preset. Unknown method/settings versions and extra envelope fields
+survive save/reopen as equivalent JSON values.
+
+For programmatic editing:
+
+```python
+from pathlib import Path
+from splatforge.bootstrap import build_project_service
+
+projects = build_project_service()
+root = Path("C:/SplatForge Projects/First scene")
+document = projects.open(root)
+document.label = "Renamed scene"
+document = projects.save(root, document)
 ```
 
 Python 3.12 is the tested baseline. Windows 10/11 and Windows Server 2022 are target
@@ -81,5 +106,5 @@ translation/benchmarking stays with training integration.
 | [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
 
 Keep source media, generated projects, model weights and training output outside
-the repository. Start with **M1a1: basic project persistence**, then M1a2 persistence
-safety before M1b execution infrastructure. Review each diff; commit only on request.
+the repository. Next is **M1a2: persistence safety**, before M1b execution
+infrastructure. Review each diff; commit only on request.

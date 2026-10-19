@@ -27,7 +27,7 @@ Do not commit or push automatically.
 
 ## M1a1 Basic project persistence
 
-Recommended next implementation task. Additional reading:
+Implemented development slice; retained as its scope reference. Additional reading:
 [PROJECT_FORMAT: ownership](PROJECT_FORMAT.md#storage-layout-and-ownership),
 [authoritative records](PROJECT_FORMAT.md#authoritative-records),
 [paths](PROJECT_FORMAT.md#paths-and-source-identity), the M1a1 boundary at the start of
@@ -37,12 +37,15 @@ Recommended next implementation task. Additional reading:
 ```text
 Implement M1a1 as the basic single-process persistence development slice.
 - Add application/storage boundaries and a basic project document with distinct
-  project/config/state versions, directory ownership and SQLite metadata initialization.
+  project/config/state versions, revision initialized to 0, directory ownership and
+  SQLite metadata initialization.
   Persist current settings plus opaque envelopes, not schemas for all future stages;
   create owned subdirectories on demand.
 - Implement create/open/save/show, with CLI delegation and no I/O in core models.
   Use validated temporary-file replacement for basic save; M1a2 proves failure safety.
-- Preserve known settings and opaque unknown method/version envelopes. Resolve
+- Preserve known settings and opaque unknown method/version envelopes, including
+  unknown envelope fields as equivalent JSON values. Keep preset provenance separate
+  from resolved settings; never reapply presets on open. Resolve
   prototype defaults explicitly; do not invent a historical project migration.
 - Fix independent role validation; test training.none incorrectly used as the mapper.
 - Test create/reopen/save/show, settings round-trips, Unicode/space paths, non-empty

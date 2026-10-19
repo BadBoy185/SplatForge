@@ -1,8 +1,8 @@
 # Roadmap
 
 Every milestone ends in an executable command, inspectable artifact or automated
-acceptance check. These are planned deliverables; only M0 exists today. CLI command
-names below are proposed interfaces, not currently available commands. Use the
+acceptance check. M0 and the M1a1 development slice are implemented. Later deliverables
+and CLI command names remain planned unless explicitly marked available. Use the
 [task prompts](docs/CODEX_PROMPTS.md) one bounded task at a time.
 
 Cache/state foundations precede processing. Minimal PairSelection precedes matching
@@ -27,23 +27,23 @@ Preset translation/benchmarking stays in M11a; research is never an early depend
 
 ## M1 — safe persistence and execution foundation
 
-**M1a1: next task, basic project persistence.** Implement application/storage boundaries,
-a basic project document, separate project/config/state versions, directory ownership,
-SQLite metadata initialization and create/open/save/show. Persist current known settings
-and opaque unknown method/version envelopes; do not define settings for every future
-stage. Create owned subdirectories only when needed. Use validated temporary-file
-replacement for basic save; M1a2 adds concurrency and fault guarantees. Preserve
-unsupported settings rather than dropping data; target validation comes with execution.
-Resolve prototype defaults through explicit conversion, not a historical migration.
-Fix independent role validation with a regression test before persisting configurations.
+**M1a1: implemented, basic project persistence.** Application/storage boundaries,
+separate project/config/state versions, SQLite metadata and create/open/save/show
+are available. Creation writes only the project document and metadata database.
+Saves use validated temporary-file replacement. Current settings and opaque unknown
+method/settings envelopes (including extra envelope fields) round-trip without
+reapplying presets. Prototype conversion is explicit, not a historical migration.
+Independent role validation is fixed and covered by regression tests.
+The document starts at revision 0; M1a1 saves preserve it without stale-save semantics.
 
-Acceptance: CLI create/show and API save/reopen work in a Unicode/space path; test
+Acceptance covered: CLI create/show and API save/reopen in Unicode/space paths;
 settings round-trips, role-validation failure, empty-destination ownership, non-empty
 refusal and unsupported-version refusal without rewrites. Originals remain untouched.
 This is a controlled single-process development slice, not a durability release.
+Target validation, processing and future directory creation remain deferred.
 
-**M1a2: persistence safety.** Add revisions/stale-save protection, the local writer
-lock, atomic replacement details and migration dispatch/scaffolding. Establish
+**M1a2: next task, persistence safety.** Add revision advancement/stale-save
+protection, the local writer lock, atomic replacement details and migration dispatch/scaffolding. Establish
 consistent backup/recovery boundaries and Windows failure handling. No older production
 format exists: do not invent migrations, legacy versions or speculative transforms.
 Provide dispatch and backup/restore boundaries; defer a multi-store migration journal

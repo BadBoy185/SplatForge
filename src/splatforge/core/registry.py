@@ -35,15 +35,15 @@ class MethodRegistry:
         trainer = self.get(config.training.trainer_id)
         frame_selector = self.get(config.frame_selection.method_id)
 
-        expected = {
-            extractor.id: StageKind.FEATURE_EXTRACTION,
-            pair_selector.id: StageKind.PAIR_SELECTION,
-            matcher.id: StageKind.FEATURE_MATCHING,
-            mapper.id: StageKind.MAPPING,
-            trainer.id: StageKind.TRAINING,
-            frame_selector.id: StageKind.FRAME_SELECTION,
-        }
-        for method_id, stage in expected.items():
+        expected = (
+            (extractor.id, StageKind.FEATURE_EXTRACTION),
+            (pair_selector.id, StageKind.PAIR_SELECTION),
+            (matcher.id, StageKind.FEATURE_MATCHING),
+            (mapper.id, StageKind.MAPPING),
+            (trainer.id, StageKind.TRAINING),
+            (frame_selector.id, StageKind.FRAME_SELECTION),
+        )
+        for method_id, stage in expected:
             method = self.get(method_id)
             if method.stage is not stage:
                 raise ValueError(f"{method_id} belongs to {method.stage}, expected {stage}")

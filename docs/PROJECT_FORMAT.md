@@ -1,7 +1,8 @@
 # Project format and execution state
 
-Status: target contract for M1 and later milestones. No project persistence currently
-exists. Version numbers for project, pipeline settings, state database, manifests and
+Status: M1a1 basic project persistence is implemented. Durability/concurrency and
+execution sections remain target contracts for M1a2 and later milestones. Version
+numbers for project, pipeline settings, state database, manifests and
 individual methods are separate; the prototype `PipelineConfig.schema_version = 1`
 is not a project format declaration.
 
@@ -76,6 +77,61 @@ The SQLite schema starts with metadata at M1a1 and adds runs, attempts, artifact
 indexes and their relationships at M1b. Do not put descriptor arrays, media or raw
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
+
+### Implemented M1a1 document and metadata
+
+`project.json` uses `project_format_version: 1`, a UUID `project_id`, `revision`,
+`label`, UTC `created_at`/`updated_at`, nullable `inventory_reference`, nullable
+`preset_provenance` and `settings`. Revision starts at **0** and is preserved on
+save; compare/stale-save semantics and advancement belong to M1a2. Save refreshes
+`updated_at` while retaining project identity and creation time.
+
+`settings.config_schema_version` is **1**, independent of the project format.
+Its six required slots are `frame_selection`, `feature_extraction`,
+`pair_selection`, `feature_matching`, `mapping` and `training`.
+Each contains an envelope:
+
+```json
+{
+  "method_id": "frame_selection.sharpest_interval",
+  "settings_schema_version": 1,
+  "settings": {
+    "target_fps": 2.0,
+    "max_frames": 1800,
+    "reject_blur": true,
+    "reject_duplicates": true
+  }
+}
+```
+
+The four SfM slots currently have empty settings objects and their saved method IDs.
+Training retains the prototype's `preset` value as a setting; M1a1 does not invent
+trainer parameters or perform future training-preset translation. All existing
+prototype values are copied explicitly at creation. `PipelineConfig` stays unchanged.
+
+Default creation records `preset_provenance` as
+`{"name": "recommended_flat_video_profile", "version": 1}`; custom prototype
+configuration has null provenance. Provenance is descriptive only. Opening a
+project reads its saved resolved values without consulting defaults or presets.
+
+Envelope settings and extra envelope fields preserve nested JSON values, including
+unknown method IDs and settings-schema versions, through open/save/reopen. This
+guarantees equivalent JSON data, not original formatting. The outer project/settings
+structures reject unrecognized fields instead of silently discarding them. Unsupported
+project/config/state versions are refused without rewriting either store. Envelope
+recognition or execution compatibility is not required for open/show/save.
+
+SQLite contains only a `metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL)` table:
+`state_schema_version = "1"` and `project_id` matching the document. Opening reads
+state without initializing or repairing it. No run/attempt/artifact tables exist yet.
+
+Creation accepts a missing or empty destination and creates only the two files.
+Saving validates a temporary JSON file in the project directory before replacement.
+There are no locking, stale-save, partial-create recovery or crash-durability guarantees.
+The only persisted owned-path field is `inventory_reference`: null initially, or a
+relative path using `/`. Absolute/drive-qualified/traversal paths are refused, and
+references are resolved under the project root. Inventory contents are not loaded or
+created by M1a1. Full reparse-point/lifetime safety remains outside this slice.
 
 ## Paths and source identity
 

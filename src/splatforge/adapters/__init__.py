@@ -1,0 +1,1 @@
+"""Adapters implementing application interfaces."""
