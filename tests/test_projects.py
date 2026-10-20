@@ -30,11 +30,14 @@ def test_create_save_reopen_and_metadata(tmp_path: Path, monkeypatch: pytest.Mon
     assert created.inventory_reference is None
     assert service.open(root) == created
     with closing(sqlite3.connect(root / "state.sqlite")) as connection:
-        assert connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall() == [("metadata",)]
+        assert {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        } == {"metadata", "runs", "attempts", "artifacts", "run_outputs"}
         assert dict(connection.execute("SELECT key, value FROM metadata")) == {
-            "state_schema_version": "1",
+            "state_schema_version": "2",
             "project_id": str(created.project_id),
         }
     state_before = (root / "state.sqlite").read_bytes()
@@ -192,9 +195,16 @@ def test_file_destination_refused(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "version_field", ["project_format_version", "config_schema_version", "state_schema_version"]
+    ("version_field", "version"),
+    [
+        ("project_format_version", 0),
+        ("project_format_version", 2),
+        ("config_schema_version", 0),
+        ("config_schema_version", 2),
+        ("state_schema_version", 0),
+        ("state_schema_version", 3),
+    ],
 )
-@pytest.mark.parametrize("version", [0, 2])
 def test_unsupported_versions_do_not_rewrite(
     tmp_path: Path, version_field: str, version: int
 ) -> None:

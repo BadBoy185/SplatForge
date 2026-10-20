@@ -44,7 +44,10 @@ prevent core/UI dependencies on backend libraries and direct process execution.
 Persistence tests follow the delivery split: M1a1 covers create/open/save/show,
 version separation, role validation and known/opaque settings round-trips. M1a2 adds
 stale saves, writer exclusion, atomic replacement, backup/dispatch boundaries and
-Windows failure injection. Do not invent historical format migrations for test coverage.
+Windows failure injection. M1b1 covers the explicit v1-to-v2 state migration, frozen
+fake plans, cache integrity and dependency invalidation, publication ordering, writer
+serialization and read-only inspection. Interruption recovery and cancellation races
+remain M1b2. Do not invent historical format migrations for test coverage.
 
 Source-verification tests distinguish Balanced/local and Strict: unchanged metadata
 must not read the entire source under Balanced; changed/unreliable indicators trigger

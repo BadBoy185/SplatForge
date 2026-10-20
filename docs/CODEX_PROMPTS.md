@@ -76,6 +76,9 @@ No run/attempt/artifact execution infrastructure yet; that remains M1b.
 
 ## M1b1 Execution and cache happy path
 
+Status: implemented on the M1b1 feature branch with state schema v2, an explicit
+v1-to-v2 upgrade and the deterministic two-node fake route described below.
+
 Additional reading: [PROJECT_FORMAT: records](PROJECT_FORMAT.md#authoritative-records),
 [publication](PROJECT_FORMAT.md#attempts-publication-and-recovery),
 [PIPELINE: execution contract](PIPELINE.md#method-execution-contract) and

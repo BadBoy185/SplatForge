@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from pydantic import BaseModel, ConfigDict
+
 from splatforge.core.models import PipelineConfig
 from splatforge.core.presets import recommended_flat_video_profile
 from splatforge.core.project import PresetProvenance, ProjectDocument, settings_from_pipeline
@@ -37,10 +39,29 @@ class ProjectStore(Protocol):
     ) -> None: ...
 
 
+class StateUpgradeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    previous_version: int
+    current_version: int
+    upgraded: bool
+    backup_path: str | None = None
+
+
+class ProjectStateUpgrader(Protocol):
+    def upgrade(self, root: Path) -> StateUpgradeResult: ...
+
+
 class ProjectService:
-    def __init__(self, store: ProjectStore, registry: MethodRegistry) -> None:
+    def __init__(
+        self,
+        store: ProjectStore,
+        registry: MethodRegistry,
+        state_upgrader: ProjectStateUpgrader | None = None,
+    ) -> None:
         self._store = store
         self._registry = registry
+        self._state_upgrader = state_upgrader
 
     def create(
         self, root: Path, label: str, config: PipelineConfig | None = None
@@ -84,3 +105,8 @@ class ProjectService:
 
     def show(self, root: Path) -> str:
         return self.open(root).model_dump_json(indent=2)
+
+    def upgrade_state(self, root: Path) -> StateUpgradeResult:
+        if self._state_upgrader is None:
+            raise ProjectError("State upgrade is unavailable for this project store")
+        return self._state_upgrader.upgrade(root)

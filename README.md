@@ -15,16 +15,19 @@ inputs come later through preprocessing into perspective views.
 ## Current status
 
 The repository contains configuration models, a method catalog, compatibility
-validation, a default profile and safe local project persistence (M1a2). The CLI can
-create/show projects; the application API can open/save them. Saved intent lives
-in `project.json`; `state.sqlite` contains only metadata.
+validation, a default profile, safe local project persistence and the M1b1 execution/cache
+happy path. The CLI can create/show projects, explicitly upgrade state schema v1 to v2,
+execute one deterministic two-node fake route and inspect its runs. Saved intent lives
+in `project.json`; state v2 stores runs, attempts and indexed publications in
+`state.sqlite`.
 
-Project saves use revision checks, one OS-held Windows writer lock and validated
-same-volume replacement. Media ingest, runs/attempts/artifacts, FFmpeg/COLMAP
-execution, training and GUI remain planned.
-Catalog entries describe intended methods, not installed or implemented capabilities.
-The existing `PipelineConfig` remains a prototype and is explicitly converted when
-creating a project; it is not itself the project file format.
+Project saves and fake runs share one OS-held Windows writer lock. Fake outputs are
+validated before immutable publication and cache reuse rechecks manifests and payload
+digests. Media ingest, interruption recovery, external tools, FFmpeg/COLMAP execution,
+training and GUI remain planned. Catalog entries describe intended methods, not
+installed or implemented capabilities. The existing `PipelineConfig` remains a
+prototype and is explicitly converted when creating a project; it is not itself the
+project file format.
 
 These commands work in the foundation:
 
@@ -36,14 +39,18 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\splatforge.exe show-default-config
 .\.venv\Scripts\splatforge.exe project create "C:\SplatForge Projects\First scene" --label "First scene"
 .\.venv\Scripts\splatforge.exe project show "C:\SplatForge Projects\First scene"
+.\.venv\Scripts\splatforge.exe project upgrade-state "C:\SplatForge Projects\First scene"
+.\.venv\Scripts\splatforge.exe run fake "C:\SplatForge Projects\First scene" --start 0 --count 3 --factor 2
+.\.venv\Scripts\splatforge.exe run show "C:\SplatForge Projects\First scene" <run-id>
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-Creation requires a missing or empty directory. Only `project.json`, `project.lock`
-and `state.sqlite` are created. Projects open from their saved settings, never by
-reapplying a preset. Unknown method/settings versions and extra envelope fields
-survive save/reopen as equivalent JSON values.
+Creation requires a missing or empty directory. It creates `project.json`,
+`project.lock` and state schema v2 in `state.sqlite`; execution directories are
+created only by a run. Existing state v1 projects remain open/save compatible and
+require `project upgrade-state` before fake execution. Projects open from their saved
+settings without reapplying a preset, and opaque method/settings envelopes round-trip.
 
 For programmatic editing:
 
@@ -106,5 +113,5 @@ translation/benchmarking stays with training integration.
 | [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
 
 Keep source media, generated projects, model weights and training output outside
-the repository. Next is **M1b1: execution and cache happy path**. Review each diff;
-commit only on request.
+the repository. Next is **M1b2: interruption and recovery**. Review each diff; commit
+only on request.

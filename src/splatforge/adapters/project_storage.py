@@ -1,4 +1,4 @@
-"""Durable local project document and SQLite metadata storage."""
+"""Durable local project document and versioned SQLite state storage."""
 
 from __future__ import annotations
 
@@ -19,6 +19,11 @@ from splatforge.adapters.project_lock import (
     ProjectWriterLockFactory,
     WindowsProjectWriterLock,
 )
+from splatforge.adapters.state_schema import (
+    CURRENT_STATE_SCHEMA_VERSION,
+    SUPPORTED_STATE_SCHEMA_VERSIONS,
+    initialize_state_v2,
+)
 from splatforge.application.projects import (
     ProjectError,
     ProjectSharingViolationError,
@@ -28,7 +33,6 @@ from splatforge.core.project import ProjectDocument
 
 CURRENT_PROJECT_FORMAT_VERSION = 1
 CURRENT_CONFIG_SCHEMA_VERSION = 1
-CURRENT_STATE_SCHEMA_VERSION = 1
 _WINDOWS_REPLACE_CONFLICT_ERRORS = {5, 32, 33}
 
 
@@ -91,21 +95,15 @@ class LocalProjectStore:
                 with closing(sqlite3.connect(root / "state.sqlite")) as connection:
                     connection.execute("PRAGMA foreign_keys = ON")
                     with connection:
-                        connection.execute(
-                            "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-                        )
-                        connection.executemany(
-                            "INSERT INTO metadata (key, value) VALUES (?, ?)",
-                            [
-                                ("state_schema_version", str(CURRENT_STATE_SCHEMA_VERSION)),
-                                ("project_id", str(document.project_id)),
-                            ],
-                        )
+                        initialize_state_v2(connection, document.project_id)
                 self._write_document(root, document)
 
     def load(self, root: Path) -> ProjectDocument:
+        return self.inspect(root).document
+
+    def inspect(self, root: Path) -> CommittedProject:
         with storage_errors():
-            return self._load_committed(root.resolve()).document
+            return self._load_committed(root.resolve())
 
     def save(
         self, root: Path, document: ProjectDocument, *, expected_revision: int
@@ -191,17 +189,16 @@ class LocalProjectStore:
 
     @staticmethod
     def _dispatch_versions(versions: StorageVersions) -> None:
-        current = StorageVersions(
-            project=CURRENT_PROJECT_FORMAT_VERSION,
-            config=CURRENT_CONFIG_SCHEMA_VERSION,
-            state=CURRENT_STATE_SCHEMA_VERSION,
-        )
-        if versions == current:
+        if (
+            versions.project == CURRENT_PROJECT_FORMAT_VERSION
+            and versions.config == CURRENT_CONFIG_SCHEMA_VERSION
+            and versions.state in SUPPORTED_STATE_SCHEMA_VERSIONS
+        ):
             return
         if (
-            versions.project > current.project
-            or versions.config > current.config
-            or versions.state > current.state
+            versions.project > CURRENT_PROJECT_FORMAT_VERSION
+            or versions.config > CURRENT_CONFIG_SCHEMA_VERSION
+            or versions.state > CURRENT_STATE_SCHEMA_VERSION
         ):
             raise ProjectError(
                 "Unsupported newer project versions: "

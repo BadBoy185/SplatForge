@@ -1,10 +1,10 @@
 # Project format and execution state
 
-Status: M1a2 local persistence durability/concurrency is implemented. Execution
-sections remain target contracts for M1b and later milestones. Version numbers for
-project, pipeline settings, state database, manifests and
-individual methods are separate; the prototype `PipelineConfig.schema_version = 1`
-is not a project format declaration.
+Status: M1b1 local persistence and the execution/cache happy path are implemented.
+Cancellation, retry, stale-owner detection and publication recovery remain target
+contracts for M1b2. Version numbers for project, pipeline settings, state database,
+manifests and individual methods are separate; the prototype
+`PipelineConfig.schema_version = 1` is not a project format declaration.
 
 ## Storage layout and ownership
 
@@ -36,11 +36,11 @@ project/
     <migration-id>/...                  # Consistent pre-migration copies
 ```
 
-The layout reserves ownership names, not an eager directory skeleton. M1a1 creates
-only its project document and SQLite metadata; later tasks create their directories
-when needed. Do not create checkpoint/export/run files before those features exist. Payload details are adapter-owned. Reconstruction and training
-results use the same manifest convention rather than separate mutable "latest"
-directories. Stable IDs provide deterministic naming, not identical run IDs on rerun.
+The layout reserves ownership names, not an eager directory skeleton. Project
+creation writes the project document and state database; M1b1 creates run, work and
+artifact directories only during execution. Checkpoint, export, cancellation and log
+paths remain lazy until their features exist. Payload details are adapter-owned.
+Stable IDs provide deterministic naming, not identical run IDs on rerun.
 
 The application owns `project.json`, inventory revisions, `state.sqlite`, manifests
 and publication. An adapter owns only its assigned workspace and native payload
@@ -78,7 +78,7 @@ indexes and their relationships at M1b. Do not put descriptor arrays, media or r
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
 
-### Implemented project document and M1a2 safety
+### Implemented project and state formats through M1b1
 
 `project.json` uses `project_format_version: 1`, a UUID `project_id`, `revision`,
 `label`, UTC `created_at`/`updated_at`, nullable `inventory_reference`, nullable
@@ -122,9 +122,16 @@ structures reject unrecognized fields instead of silently discarding them. Unsup
 project/config/state versions are refused without rewriting either store. Envelope
 recognition or execution compatibility is not required for open/show/save.
 
-SQLite contains only a `metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL)` table:
-`state_schema_version = "1"` and `project_id` matching the document. Opening reads
-state without initializing or repairing it. No run/attempt/artifact tables exist yet.
+New projects use `state_schema_version = "2"`. Alongside `metadata`, SQLite
+contains `runs`, `attempts`, `artifacts` and `run_outputs`; recipe keys are indexed
+but are not unique artifact identities. Status values are validated by application
+models rather than a narrow database CHECK constraint.
+
+Existing state v1 projects remain supported by open/show/save without implicit writes.
+Fake execution refuses v1 with a state-upgrade-required error. The explicit v1-to-v2
+migration rechecks versions under the writer lock, publishes a validated backup before
+the SQLite transaction, and neither rewrites `project.json` nor advances its revision.
+Calling the upgrade on v2 is a read-only no-op. No state v0 migration exists.
 
 Creation accepts a missing or empty destination and creates `project.json`,
 `project.lock` and `state.sqlite`. The destination is checked again after acquiring
@@ -284,6 +291,12 @@ its terminal outcome is durable. A UI thread can use the same application cancel
 use case; widgets do not mutate the state database themselves.
 
 ## Attempts, publication and recovery
+
+M1b1 implements only `pending -> running -> succeeded | failed` for its synchronous
+fake stages. Cache reuse creates a run-output binding and no attempt. The storage
+vocabulary reserves documented later statuses without implementing their semantics.
+Cancellation, retry, interruption classification, stale-owner handling and orphan
+publication adoption remain M1b2 work. An unfinished run safely blocks new execution.
 
 Persist attempt states with explicit transitions:
 

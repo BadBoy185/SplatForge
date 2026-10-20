@@ -1,8 +1,8 @@
 # Roadmap
 
 Every milestone ends in an executable command, inspectable artifact or automated
-acceptance check. M0, M1a1 and M1a2 are implemented. Later deliverables
-and CLI command names remain planned unless explicitly marked available. Use the
+acceptance check. M0, M1a1, M1a2 and M1b1 are implemented. Later deliverables and
+CLI command names remain planned unless explicitly marked available. Use the
 [task prompts](docs/CODEX_PROMPTS.md) one bounded task at a time.
 
 Cache/state foundations precede processing. Minimal PairSelection precedes matching
@@ -54,11 +54,13 @@ was invented. M1a2 completes persistence safety before M1b and processing.
 
 **M1b: state and minimal runner**, delivered as two reviewable tasks:
 
-- **M1b1 — execution and cache happy path:** a concrete two-node fake plan, frozen run
-  intent with node/output references, attempt records binding actual inputs, manifests,
-  dependency keys, validated publication and minimal events. Acceptance: run/show,
-  cache hit/miss and late-setting invalidation reuse earlier output. Use ordinary
-  Python composition and explicit key functions, not a plan compiler or key DSL.
+- **M1b1: implemented, execution and cache happy path.** New projects use state schema
+  v2; state v1 remains open/save compatible and has an explicit backed-up v1-to-v2
+  upgrade. A concrete two-node fake route records frozen node/output references,
+  actual attempt inputs, immutable manifests, explicit dependency keys and diagnostic
+  events. Run/show, cache integrity checks, multiple publications per recipe key and
+  downstream-only invalidation are covered without external tools, a scheduler or a
+  workflow language.
 - **M1b2 — interruption and recovery:** fake-stage cancellation, durable acceptance,
   retry as a new attempt, stale-owner detection and publication recovery. Acceptance:
   a second CLI can request cancellation without becoming a writer; race/fault tests

@@ -78,47 +78,68 @@ class LocalMigrationBackupPreparer:
             destination = self._backup_destination(backups_root, backup_id)
             self._require_available_destination(destination)
             lease.write_diagnostics(operation="migration-backup", owner_token=uuid4())
-
-            backups_root.mkdir(exist_ok=True)
-            staging = backups_root / f".{backup_id}.{uuid4().hex}.pending"
-            staging.mkdir()
-
-            project_bytes = (project_root / "project.json").read_bytes()
-            copied_document = ProjectDocument.model_validate_json(project_bytes)
-            if copied_document != document:
-                raise ProjectError("Project changed while migration backup was being prepared")
-            self._write_bytes(staging / "project.json", project_bytes)
-            self._fault_hooks.after_project_copy(staging)
-
-            if document.inventory_reference is not None:
-                source_inventory = project_root / document.inventory_reference
-                if not source_inventory.is_file():
-                    raise ProjectError("Referenced inventory is unavailable for migration backup")
-                self._copy_file(
-                    source_inventory,
-                    staging / document.inventory_reference,
-                )
-
-            self._fault_hooks.before_sqlite_backup(staging)
-            self._backup_sqlite(project_root / "state.sqlite", staging / "state.sqlite")
-
-            # Validate the complete backup using the normal current-version read path.
-            backed_up = self._store.load(staging)
-            if backed_up != document or self._store.load(project_root) != document:
-                raise ProjectError("Project changed while migration backup was being prepared")
-
-            self._fault_hooks.before_publish(staging)
-            publish_root = self._validated_backups_root(project_root)
-            if publish_root != backups_root:
-                raise ProjectError("Project backups path changed during backup preparation")
-            destination = self._backup_destination(publish_root, backup_id)
-            self._require_available_destination(destination)
-            os.replace(staging, destination)
-            return PreparedMigrationBackup(
-                root=destination,
-                project_id=document.project_id,
-                revision=document.revision,
+            return self.prepare_under_lease(
+                project_root,
+                backup_id,
+                document,
             )
+
+    def prepare_under_lease(
+        self,
+        project_root: Path,
+        backup_id: str,
+        expected_document: ProjectDocument,
+    ) -> PreparedMigrationBackup:
+        """Prepare a backup while the caller continuously owns project.lock."""
+
+        project_root = project_root.resolve()
+        self._validate_backup_id(backup_id)
+        document = self._store.load(project_root)
+        if document != expected_document:
+            raise ProjectError("Project changed before migration backup preparation")
+
+        backups_root = self._validated_backups_root(project_root)
+        destination = self._backup_destination(backups_root, backup_id)
+        self._require_available_destination(destination)
+        backups_root.mkdir(exist_ok=True)
+        staging = backups_root / f".{backup_id}.{uuid4().hex}.pending"
+        staging.mkdir()
+
+        project_bytes = (project_root / "project.json").read_bytes()
+        copied_document = ProjectDocument.model_validate_json(project_bytes)
+        if copied_document != document:
+            raise ProjectError("Project changed while migration backup was being prepared")
+        self._write_bytes(staging / "project.json", project_bytes)
+        self._fault_hooks.after_project_copy(staging)
+
+        if document.inventory_reference is not None:
+            source_inventory = project_root / document.inventory_reference
+            if not source_inventory.is_file():
+                raise ProjectError("Referenced inventory is unavailable for migration backup")
+            self._copy_file(
+                source_inventory,
+                staging / document.inventory_reference,
+            )
+
+        self._fault_hooks.before_sqlite_backup(staging)
+        self._backup_sqlite(project_root / "state.sqlite", staging / "state.sqlite")
+
+        backed_up = self._store.load(staging)
+        if backed_up != document or self._store.load(project_root) != document:
+            raise ProjectError("Project changed while migration backup was being prepared")
+
+        self._fault_hooks.before_publish(staging)
+        publish_root = self._validated_backups_root(project_root)
+        if publish_root != backups_root:
+            raise ProjectError("Project backups path changed during backup preparation")
+        destination = self._backup_destination(publish_root, backup_id)
+        self._require_available_destination(destination)
+        os.replace(staging, destination)
+        return PreparedMigrationBackup(
+            root=destination,
+            project_id=document.project_id,
+            revision=document.revision,
+        )
 
     @staticmethod
     def _validate_backup_id(backup_id: str) -> None:

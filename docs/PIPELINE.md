@@ -96,6 +96,14 @@ structured events and resource limits. Input handles refer only to validated art
 methods return candidate output manifests and diagnostics. The application validates
 and publishes them through storage. Adapters do not mark their own attempts successful.
 
+M1b1 implements one concrete deterministic route for contract testing:
+`fake.sequence` consumes literal `start` plus resolved `count` and publishes
+`fake.numbers`; `fake.scale` consumes that typed output plus resolved `factor` and
+publishes `fake.scaled_numbers`. The first recipe key depends only on start/count and
+declared method/adapter contracts. The second depends on factor and the consumed
+numbers' semantic identity. Project label, path, revision and unrelated settings are
+excluded. This route is ordinary Python composition, not a general plan language.
+
 Each method declaration supplies:
 
 - Stable method ID, method version, settings schema version and explicit defaults.
