@@ -95,6 +95,9 @@ ordering for M1b2; no plan compiler, workflow language or external tools.
 
 ## M1b2 Interruption and recovery
 
+Status: implemented with state schema v3, durable fake-stage cancellation, validated
+orphan recovery and explicit bounded retry against the immutable M1b1 run snapshot.
+
 Additional reading: [PROJECT_FORMAT: cancellation](PROJECT_FORMAT.md#writer-ownership-and-cancellation),
 [publication/recovery](PROJECT_FORMAT.md#attempts-publication-and-recovery) and
 [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).

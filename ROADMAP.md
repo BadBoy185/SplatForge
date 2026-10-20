@@ -1,8 +1,8 @@
 # Roadmap
 
 Every milestone ends in an executable command, inspectable artifact or automated
-acceptance check. M0, M1a1, M1a2 and M1b1 are implemented. Later deliverables and
-CLI command names remain planned unless explicitly marked available. Use the
+acceptance check. M0, M1a1, M1a2, M1b1 and M1b2 are implemented. Later deliverables
+and CLI command names remain planned unless explicitly marked available. Use the
 [task prompts](docs/CODEX_PROMPTS.md) one bounded task at a time.
 
 Cache/state foundations precede processing. Minimal PairSelection precedes matching
@@ -61,14 +61,16 @@ was invented. M1a2 completes persistence safety before M1b and processing.
   events. Run/show, cache integrity checks, multiple publications per recipe key and
   downstream-only invalidation are covered without external tools, a scheduler or a
   workflow language.
-- **M1b2 — interruption and recovery:** fake-stage cancellation, durable acceptance,
-  retry as a new attempt, stale-owner detection and publication recovery. Acceptance:
-  a second CLI can request cancellation without becoming a writer; race/fault tests
-  cover manifest/rename/commit boundaries, pending cancellation, interrupted owners
-  and rejected orphan results. Unresolved teardown blocks retry. M2 proves real
-  external-process containment; fakes do not establish Windows process safety.
+- **M1b2: implemented, interruption and recovery.** State schema v3 adds durable
+  cancellation acceptance, retry linkage, failure categories and teardown state while
+  v1/v2 remain read-compatible and explicitly upgrade with a backup. A second CLI can
+  request cancellation without becoming a writer. Fake-stage race/fault tests cover
+  manifest/move/commit boundaries, pending cancellation, interrupted owners, exact
+  orphan adoption, rejected publications, upstream reuse and the three-attempt bound.
+  Unresolved teardown blocks retry. M2 still owns real external-process containment;
+  these in-process fakes do not establish Windows process-tree safety.
 
-Both tasks use the M1a2 writer boundary and no external tools. Complete M1b2 before
+Both tasks use the M1a2 writer boundary and no external tools. M1b is complete before
 processing. Repair documented baseline lint separately or within an explicitly scoped
 foundation cleanup task, not incidentally.
 

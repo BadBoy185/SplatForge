@@ -1,10 +1,11 @@
-"""Deterministic filesystem fakes for the M1b1 two-node route."""
+"""Deterministic cooperative filesystem fakes for the two-node route."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
+from splatforge.application.execution import ExecutionControl
 from splatforge.core.execution import ScaleSettings, SequenceSettings
 from splatforge.core.fake_pipeline import (
     NumbersPayload,
@@ -15,10 +16,17 @@ from splatforge.core.fake_pipeline import (
 
 class LocalFakeStages:
     def execute_sequence(
-        self, workspace: Path, *, start: int, settings: SequenceSettings
+        self,
+        workspace: Path,
+        *,
+        start: int,
+        settings: SequenceSettings,
+        control: ExecutionControl,
     ) -> None:
+        control.checkpoint()
         payload = NumbersPayload(numbers=tuple(range(start, start + settings.count)))
         self._write_payload(workspace, "numbers.json", payload.model_dump(mode="json"))
+        control.checkpoint()
 
     def execute_scale(
         self,
@@ -26,11 +34,14 @@ class LocalFakeStages:
         *,
         input_payload: NumbersPayload,
         settings: ScaleSettings,
+        control: ExecutionControl,
     ) -> None:
+        control.checkpoint()
         payload = ScaledNumbersPayload(
             numbers=tuple(number * settings.factor for number in input_payload.numbers)
         )
         self._write_payload(workspace, "scaled.json", payload.model_dump(mode="json"))
+        control.checkpoint()
 
     @staticmethod
     def _write_payload(workspace: Path, name: str, value: object) -> None:

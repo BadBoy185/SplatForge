@@ -13,7 +13,7 @@ from splatforge.core import build_builtin_registry, recommended_flat_video_profi
 app = typer.Typer(no_args_is_help=True, help="SplatForge development CLI")
 project_app = typer.Typer(no_args_is_help=True, help="Basic project persistence")
 app.add_typer(project_app, name="project")
-run_app = typer.Typer(no_args_is_help=True, help="M1b1 deterministic fake execution")
+run_app = typer.Typer(no_args_is_help=True, help="Deterministic fake execution")
 app.add_typer(run_app, name="run")
 
 
@@ -70,6 +70,36 @@ def show_run(path: Path, run_id: UUID) -> None:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(rendered)
+
+
+@run_app.command("cancel")
+def cancel_run(path: Path, run_id: UUID) -> None:
+    try:
+        result = build_execution_service().cancel(path, run_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@run_app.command("recover")
+def recover_run(path: Path, run_id: UUID) -> None:
+    try:
+        result = build_execution_service().recover(path, run_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@run_app.command("retry")
+def retry_run(path: Path, run_id: UUID) -> None:
+    try:
+        result = build_execution_service().retry(path, run_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.model_dump_json(indent=2))
 
 
 @app.command()

@@ -63,9 +63,7 @@ def test_successful_two_node_run_snapshot_lineage_events_and_unicode_path(
     assert snapshot["route"]["adapter_id"] == "splatforge.fake_python"
     assert snapshot["route"]["adapter_version"] == 1
     assert snapshot["route"]["seed_policy"] == "no_randomness"
-    assert snapshot["route"]["scale"]["input"] == snapshot["route"]["sequence"][
-        "output"
-    ]
+    assert snapshot["route"]["scale"]["input"] == snapshot["route"]["sequence"]["output"]
     assert '"artifact_id"' not in snapshot_bytes.decode("utf-8")
 
     attempts = query(
@@ -84,16 +82,11 @@ def test_successful_two_node_run_snapshot_lineage_events_and_unicode_path(
     assert json.loads(attempts[0][4])["python_version"]
     assert json.loads(attempts[0][5]) == {"evidence": [], "policy": "not_applicable"}
 
-
     numbers_payload = json.loads(
-        artifact_payload(root, result.outputs["numbers"].manifest_path).read_text(
-            encoding="utf-8"
-        )
+        artifact_payload(root, result.outputs["numbers"].manifest_path).read_text(encoding="utf-8")
     )
     scaled_payload = json.loads(
-        artifact_payload(root, result.outputs["scaled"].manifest_path).read_text(
-            encoding="utf-8"
-        )
+        artifact_payload(root, result.outputs["scaled"].manifest_path).read_text(encoding="utf-8")
     )
     assert numbers_payload["numbers"] == [2, 3, 4]
     assert scaled_payload["numbers"] == [8, 12, 16]
@@ -189,9 +182,7 @@ def test_invalid_cached_payload_is_not_reused(tmp_path: Path, damage: str) -> No
 
     assert "numbers" not in second.cache_hits
     assert second.outputs["numbers"].artifact_id != first.outputs["numbers"].artifact_id
-    assert query(
-        tmp_path, "SELECT count(*) FROM attempts WHERE node_id='numbers'"
-    ) == [(2,)]
+    assert query(tmp_path, "SELECT count(*) FROM attempts WHERE node_id='numbers'") == [(2,)]
 
 
 def test_cache_checks_all_same_recipe_candidates_in_deterministic_order(
@@ -219,9 +210,7 @@ def test_cache_checks_all_same_recipe_candidates_in_deterministic_order(
         .splitlines()
     ]
     hit = next(
-        event
-        for event in events
-        if event["code"] == "cache.hit" and event["node_id"] == "numbers"
+        event for event in events if event["code"] == "cache.hit" and event["node_id"] == "numbers"
     )
     assert hit["details"]["ineligible"][0]["artifact_id"] == str(
         second.outputs["numbers"].artifact_id
@@ -287,18 +276,20 @@ def test_only_one_stage_is_active_and_read_only_inspection_works_under_writer(
             assert len(rows) == 1
             rendered = json.loads(repository.show_run(tmp_path, UUID(rows[0][0])))
             assert rendered["state"]["status"] == "running"
+            with pytest.raises(ProjectWriterBusyError):
+                build_execution_service().recover(tmp_path, UUID(rows[0][0]))
             observations.append(rows[0][1])
 
-        def execute_sequence(self, workspace, *, start, settings):  # type: ignore[no-untyped-def]
+        def execute_sequence(self, workspace, *, start, settings, control):  # type: ignore[no-untyped-def]
             self._inspect()
-            super().execute_sequence(workspace, start=start, settings=settings)
+            super().execute_sequence(workspace, start=start, settings=settings, control=control)
 
         def execute_scale(  # type: ignore[no-untyped-def]
-            self, workspace, *, input_payload, settings
+            self, workspace, *, input_payload, settings, control
         ):
             self._inspect()
             super().execute_scale(
-                workspace, input_payload=input_payload, settings=settings
+                workspace, input_payload=input_payload, settings=settings, control=control
             )
 
     FakeExecutionService(repository, InspectingStages()).run(tmp_path)
@@ -316,9 +307,9 @@ def test_event_append_failure_does_not_undo_authoritative_success(tmp_path: Path
 
     assert result.status == "succeeded"
     assert result.warnings
-    assert query(
-        tmp_path, "SELECT status FROM runs WHERE run_id=?", (str(result.run_id),)
-    ) == [("succeeded",)]
+    assert query(tmp_path, "SELECT status FROM runs WHERE run_id=?", (str(result.run_id),)) == [
+        ("succeeded",)
+    ]
     assert query(tmp_path, "SELECT status FROM attempts ORDER BY created_at") == [
         ("succeeded",),
         ("succeeded",),
@@ -389,7 +380,7 @@ def test_writer_revalidates_raced_state_before_changing_diagnostics(
 
     def make_state_unsupported() -> None:
         with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection, connection:
-            connection.execute("UPDATE metadata SET value='3' WHERE key='state_schema_version'")
+            connection.execute("UPDATE metadata SET value='4' WHERE key='state_schema_version'")
 
     class RacingLease:
         def __enter__(self) -> "RacingLease":

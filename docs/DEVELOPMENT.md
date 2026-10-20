@@ -1,7 +1,8 @@
 # Development, testing and diagnostics
 
 [AGENTS.md](../AGENTS.md) is the engineering constitution. This guide defines the
-verification strategy for planned implementation; foundation and M1 persistence tests exist.
+verification strategy; foundation and M1b2 fake execution/interruption tests exist while
+external-process integration remains planned.
 Use the project virtual environment and the [README commands](../README.md#current-status).
 At the 2026-10-19 review baseline, `pytest` passes three tests and Ruff finds 18
 pre-existing violations (17 E501 and one UP037). Keep documentation-only diffs free
@@ -44,10 +45,14 @@ prevent core/UI dependencies on backend libraries and direct process execution.
 Persistence tests follow the delivery split: M1a1 covers create/open/save/show,
 version separation, role validation and known/opaque settings round-trips. M1a2 adds
 stale saves, writer exclusion, atomic replacement, backup/dispatch boundaries and
-Windows failure injection. M1b1 covers the explicit v1-to-v2 state migration, frozen
+Windows failure injection. M1b1 covers the historical v1-to-v2 state migration, frozen
 fake plans, cache integrity and dependency invalidation, publication ordering, writer
-serialization and read-only inspection. Interruption recovery and cancellation races
-remain M1b2. Do not invent historical format migrations for test coverage.
+serialization and read-only inspection. M1b2 advances current state to v3 and covers
+backed-up v1/v2 upgrades, lock-free cancellation requests, durable acceptance,
+publication races, stale fake owners, exact orphan adoption, unresolved teardown and
+bounded linked retry. For this in-process fake backend only, acquiring the writer lock is
+sufficient stale-owner evidence because there are no child workers. These tests do not
+establish Windows process-tree containment; M2 must prove the external-process contract.
 
 Source-verification tests distinguish Balanced/local and Strict: unchanged metadata
 must not read the entire source under Balanced; changed/unreliable indicators trigger

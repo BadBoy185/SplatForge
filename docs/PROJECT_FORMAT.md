@@ -1,8 +1,8 @@
 # Project format and execution state
 
-Status: M1b1 local persistence and the execution/cache happy path are implemented.
-Cancellation, retry, stale-owner detection and publication recovery remain target
-contracts for M1b2. Version numbers for project, pipeline settings, state database,
+Status: M1b2 local persistence, fake-stage execution, cancellation and recovery are
+implemented. Real external-process containment remains M2 work. Version numbers for
+the project, pipeline settings, state database,
 manifests and individual methods are separate; the prototype
 `PipelineConfig.schema_version = 1` is not a project format declaration.
 
@@ -37,9 +37,9 @@ project/
 ```
 
 The layout reserves ownership names, not an eager directory skeleton. Project
-creation writes the project document and state database; M1b1 creates run, work and
-artifact directories only during execution. Checkpoint, export, cancellation and log
-paths remain lazy until their features exist. Payload details are adapter-owned.
+creation writes the project document and state database; M1b creates run, work and
+artifact directories only during execution. Checkpoint, export and log paths remain
+lazy until their features exist. Payload details are adapter-owned.
 Stable IDs provide deterministic naming, not identical run IDs on rerun.
 
 The application owns `project.json`, inventory revisions, `state.sqlite`, manifests
@@ -78,7 +78,7 @@ indexes and their relationships at M1b. Do not put descriptor arrays, media or r
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
 
-### Implemented project and state formats through M1b1
+### Implemented project and state formats through M1b2
 
 `project.json` uses `project_format_version: 1`, a UUID `project_id`, `revision`,
 `label`, UTC `created_at`/`updated_at`, nullable `inventory_reference`, nullable
@@ -122,16 +122,22 @@ structures reject unrecognized fields instead of silently discarding them. Unsup
 project/config/state versions are refused without rewriting either store. Envelope
 recognition or execution compatibility is not required for open/show/save.
 
-New projects use `state_schema_version = "2"`. Alongside `metadata`, SQLite
-contains `runs`, `attempts`, `artifacts` and `run_outputs`; recipe keys are indexed
-but are not unique artifact identities. Status values are validated by application
-models rather than a narrow database CHECK constraint.
+New projects use `state_schema_version = "3"`. Alongside `metadata`, SQLite contains
+`runs`, `attempts`, `artifacts` and `run_outputs`; recipe keys are indexed but are not
+unique artifact identities. State v3 adds run cancellation acceptance time/request
+digest and attempt retry linkage, failure category, cancellation acceptance time and
+teardown state. Status values are validated by application models rather than a narrow
+database CHECK constraint.
 
-Existing state v1 projects remain supported by open/show/save without implicit writes.
-Fake execution refuses v1 with a state-upgrade-required error. The explicit v1-to-v2
-migration rechecks versions under the writer lock, publishes a validated backup before
-the SQLite transaction, and neither rewrites `project.json` nor advances its revision.
-Calling the upgrade on v2 is a read-only no-op. No state v0 migration exists.
+Existing state v1 and v2 projects remain supported by open/show/save without implicit
+writes; valid historical v2 runs remain inspectable. Mutating M1b2 execution operations
+refuse both versions with a state-upgrade-required diagnostic. Explicit upgrade rechecks
+versions under the writer lock and publishes one validated backup of the original state.
+The v1-to-v3 path creates the final execution schema directly in one SQLite transaction;
+the v2-to-v3 path adds only the M1b2 columns in one transaction. Both set version 3
+without rewriting `project.json` or advancing its revision. Calling upgrade on v3 is a
+read-only no-op. Unsupported newer versions are refused without writes; no state v0
+migration exists.
 
 Creation accepts a missing or empty destination and creates `project.json`,
 `project.lock` and `state.sqlite`. The destination is checked again after acquiring
@@ -292,11 +298,9 @@ use case; widgets do not mutate the state database themselves.
 
 ## Attempts, publication and recovery
 
-M1b1 implements only `pending -> running -> succeeded | failed` for its synchronous
-fake stages. Cache reuse creates a run-output binding and no attempt. The storage
-vocabulary reserves documented later statuses without implementing their semantics.
-Cancellation, retry, interruption classification, stale-owner handling and orphan
-publication adoption remain M1b2 work. An unfinished run safely blocks new execution.
+M1b2 implements cancellation, interruption, recovery and retry for the synchronous,
+in-process fake stages. Cache reuse creates a run-output binding and no attempt. An
+unfinished run blocks new execution until explicit recovery establishes owner absence.
 
 Persist attempt states with explicit transitions:
 
@@ -306,12 +310,17 @@ pending -> running -> succeeded
                    -> cancelled
                    -> interrupted
 pending -> cancelled
+pending -> interrupted
 ```
 
-A retry is a new pending attempt linked to the previous one. A preflight failure is a
-plan diagnostic before execution. Cache reuse is a run-to-artifact reference, not a
-fake successful attempt. Disabled optional stages are represented in the plan, not
-as successful processing. "Stale" is a cache eligibility result, not an attempt state.
+A retry is a new pending attempt linked to the previous relevant attempt; a node that
+never started has no retry link. M1b2 permits transient fake I/O failures and interrupted
+attempts, rejects unclassified historical/non-retryable validation or configuration
+failures, and limits each node to three total attempts per run. Valid completed upstream
+bindings are reused. A preflight failure is a plan diagnostic before execution. Cache
+reuse is a run-to-artifact reference, not a fake successful attempt. Disabled optional
+stages are represented in the plan, not as successful processing. "Stale" is a cache
+eligibility result, not an attempt state.
 
 Publication protocol:
 
@@ -325,21 +334,25 @@ Publication protocol:
    and mark the attempt succeeded. Only indexed, validated publications are eligible
    for automatic reuse; event/log append failures cannot invent numerical success.
 
-On open, acquire the writer lock before recovery. Do not mark a live process's attempt
-interrupted. After confirming the owner/process tree is gone, interrupted attempts
-remain incomplete even if some files exist. A complete unindexed publication can be
-validated and adopted only when its producer, expected manifest digest and run agree,
-with no accepted cancellation, pending valid cancellation request or failed/cancelled
-terminal decision. Never promote cancelled or rejected outputs
-during recovery; quarantine/report them. A success record with missing/corrupt output loses cache
-eligibility and receives a diagnostic; preserve history instead of inventing success.
+Recovery acquires the writer lock and refuses if it is busy. For the M1b2 in-process fake
+backend only, successful acquisition proves no current project writer exists and there
+are no external child workers, so the previous fake owner may be treated as gone. A
+pending or running attempt without a completed moved publication becomes interrupted;
+its workspace is preserved. This narrow guarantee does not prove external-process-tree
+death and must not be reused as that proof in M2.
 
-An accepted cancellation becomes terminal cancelled only after owned workers/children
-are confirmed stopped and handles closed. If teardown cannot be confirmed within a
-bounded deadline, retain an unresolved attempt and block workspace reuse/recovery;
-do not fabricate cancellation success or start a competing retry. Stop only the owned
-process tree; never kill all processes named `colmap.exe`. On owner death, verify child
-termination before marking interrupted or adopting any publication.
+A complete unindexed publication is adopted only when its expected artifact/manifest,
+producer run/attempt, node/output, recipe, artifact contract, payload sizes/hashes,
+semantic digest and validator all match under owned-path checks. Accepted cancellation
+or a valid pending request forbids adoption; cancelled, corrupt or unexpected output is
+left unindexed and preserved for diagnosis. If all target bindings are valid, recovery
+may finalize the run; otherwise it leaves the run interrupted and never executes stages.
+
+An accepted cancellation becomes terminal cancelled only after fake-stage execution has
+unwound and its handles are closed. If injected teardown confirmation fails, M1b2 keeps
+the run interrupted with unresolved teardown and blocks retry, adoption and publication;
+it does not fabricate cancellation success. Real workers require owned process-tree
+termination and bounded waits; M2 implements and proves those process guarantees.
 
 Retry transient I/O/process failures with bounded policy. Invalid settings, unsupported
 capabilities and resource exhaustion require an actionable decision rather than an

@@ -22,7 +22,7 @@ from splatforge.adapters.project_lock import (
 from splatforge.adapters.state_schema import (
     CURRENT_STATE_SCHEMA_VERSION,
     SUPPORTED_STATE_SCHEMA_VERSIONS,
-    initialize_state_v2,
+    initialize_state_v3,
 )
 from splatforge.application.projects import (
     ProjectError,
@@ -95,7 +95,7 @@ class LocalProjectStore:
                 with closing(sqlite3.connect(root / "state.sqlite")) as connection:
                     connection.execute("PRAGMA foreign_keys = ON")
                     with connection:
-                        initialize_state_v2(connection, document.project_id)
+                        initialize_state_v3(connection, document.project_id)
                 self._write_document(root, document)
 
     def load(self, root: Path) -> ProjectDocument:

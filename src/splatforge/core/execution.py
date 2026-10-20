@@ -1,4 +1,4 @@
-"""Typed records for the concrete M1b1 execution route."""
+"""Typed records for the concrete fake execution route."""
 
 from __future__ import annotations
 
@@ -33,6 +33,18 @@ class RunStatus(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"
+
+
+class FailureCategory(StrEnum):
+    TRANSIENT = "transient"
+    INTERRUPTED = "interrupted"
+    NON_RETRYABLE = "non_retryable"
+
+
+class TeardownState(StrEnum):
+    NOT_REQUIRED = "not_required"
+    CONFIRMED = "confirmed"
+    UNRESOLVED = "unresolved"
 
 
 class OutputReference(FrozenModel):
@@ -103,6 +115,21 @@ class RunSnapshot(FrozenModel):
         return value
 
 
+class CancellationRequest(FrozenModel):
+    schema_version: Literal[1] = 1
+    request_id: UUID
+    run_id: UUID
+    run_owner_token: UUID
+    requested_at: AwareDatetime
+
+    @field_validator("requested_at")
+    @classmethod
+    def request_timestamp_must_be_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        if value.utcoffset() != timedelta(0):
+            raise ValueError("cancellation request timestamps must use UTC")
+        return value
+
+
 class ArtifactInputLineage(FrozenModel):
     input_name: str = Field(min_length=1)
     artifact_id: UUID
@@ -163,6 +190,12 @@ class AttemptExecution(FrozenModel):
     workspace: Annotated[str, Field(min_length=1)]
 
 
+class CancellationRequestResult(FrozenModel):
+    request: CancellationRequest
+    created: bool
+    too_late: bool = False
+
+
 class PublishedArtifact(FrozenModel):
     handle: ArtifactHandle
     manifest: ArtifactManifest
@@ -171,6 +204,14 @@ class PublishedArtifact(FrozenModel):
 class RunWarning(FrozenModel):
     code: str
     message: str
+
+
+class RecoveryResult(FrozenModel):
+    run_id: UUID
+    status: RunStatus
+    adopted_attempts: tuple[UUID, ...] = ()
+    interrupted_attempts: tuple[UUID, ...] = ()
+    warnings: tuple[RunWarning, ...] = ()
 
 
 class FakeRunResult(FrozenModel):

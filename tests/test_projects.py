@@ -37,7 +37,7 @@ def test_create_save_reopen_and_metadata(tmp_path: Path, monkeypatch: pytest.Mon
             )
         } == {"metadata", "runs", "attempts", "artifacts", "run_outputs"}
         assert dict(connection.execute("SELECT key, value FROM metadata")) == {
-            "state_schema_version": "2",
+            "state_schema_version": "3",
             "project_id": str(created.project_id),
         }
     state_before = (root / "state.sqlite").read_bytes()
@@ -202,7 +202,7 @@ def test_file_destination_refused(tmp_path: Path) -> None:
         ("config_schema_version", 0),
         ("config_schema_version", 2),
         ("state_schema_version", 0),
-        ("state_schema_version", 3),
+        ("state_schema_version", 4),
     ],
 )
 def test_unsupported_versions_do_not_rewrite(

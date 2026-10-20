@@ -1,4 +1,4 @@
-"""The concrete state schema v2 and its only historical migration."""
+"""The concrete state schema v3 and its explicit historical migrations."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from splatforge.adapters.project_lock import (
 from splatforge.application.projects import ProjectError, StateUpgradeResult
 from splatforge.core.project import ProjectDocument
 
-CURRENT_STATE_SCHEMA_VERSION = 2
-SUPPORTED_STATE_SCHEMA_VERSIONS = frozenset({1, 2})
+CURRENT_STATE_SCHEMA_VERSION = 3
+SUPPORTED_STATE_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 
 _EXECUTION_TABLES = (
     """
@@ -31,7 +31,9 @@ _EXECUTION_TABLES = (
         created_at TEXT NOT NULL,
         started_at TEXT NOT NULL,
         finished_at TEXT,
-        failure_json TEXT
+        failure_json TEXT,
+        cancellation_accepted_at TEXT,
+        cancellation_request_digest TEXT
     )
     """,
     """
@@ -51,6 +53,10 @@ _EXECUTION_TABLES = (
         finished_at TEXT,
         expected_artifact_id TEXT,
         expected_manifest_digest TEXT,
+        retry_of_attempt_id TEXT REFERENCES attempts(attempt_id),
+        failure_category TEXT,
+        cancellation_accepted_at TEXT,
+        teardown_state TEXT NOT NULL DEFAULT 'not_required',
         failure_json TEXT
     )
     """,
@@ -117,7 +123,7 @@ def create_execution_tables(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
-def initialize_state_v2(connection: sqlite3.Connection, project_id: UUID) -> None:
+def initialize_state_v3(connection: sqlite3.Connection, project_id: UUID) -> None:
     connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     create_execution_tables(connection)
     connection.executemany(
@@ -130,7 +136,7 @@ def initialize_state_v2(connection: sqlite3.Connection, project_id: UUID) -> Non
 
 
 class LocalStateSchemaUpgrader:
-    """Upgrade state v1 to v2 after publishing a complete migration backup."""
+    """Upgrade state v1/v2 directly to v3 after a validated backup."""
 
     def __init__(
         self,
@@ -152,7 +158,7 @@ class LocalStateSchemaUpgrader:
                 current_version=CURRENT_STATE_SCHEMA_VERSION,
                 upgraded=False,
             )
-        if preflight.versions.state != 1:
+        if preflight.versions.state not in {1, 2}:
             raise ProjectError(
                 f"No state migration from version {preflight.versions.state} is supported"
             )
@@ -165,14 +171,15 @@ class LocalStateSchemaUpgrader:
                     current_version=CURRENT_STATE_SCHEMA_VERSION,
                     upgraded=False,
                 )
-            if committed.versions.state != 1:
+            if committed.versions.state not in {1, 2}:
                 raise ProjectError(
                     f"No state migration from version {committed.versions.state} is supported"
                 )
+            previous_version = committed.versions.state
             lease.write_diagnostics(operation="state-upgrade", owner_token=uuid4())
             backup = self._backup_preparer.prepare_under_lease(
                 root,
-                f"state-v1-to-v2-{uuid4().hex}",
+                f"state-v{previous_version}-to-v3-{uuid4().hex}",
                 committed.document,
             )
             if not backup.root.is_dir():
@@ -182,13 +189,35 @@ class LocalStateSchemaUpgrader:
                 with closing(sqlite3.connect(root / "state.sqlite")) as connection:
                     connection.execute("PRAGMA foreign_keys = ON")
                     with connection:
-                        create_execution_tables(connection)
+                        if previous_version == 1:
+                            create_execution_tables(connection)
+                        else:
+                            connection.execute(
+                                "ALTER TABLE runs ADD COLUMN cancellation_accepted_at TEXT"
+                            )
+                            connection.execute(
+                                "ALTER TABLE runs ADD COLUMN cancellation_request_digest TEXT"
+                            )
+                            connection.execute(
+                                "ALTER TABLE attempts ADD COLUMN retry_of_attempt_id TEXT "
+                                "REFERENCES attempts(attempt_id)"
+                            )
+                            connection.execute(
+                                "ALTER TABLE attempts ADD COLUMN failure_category TEXT"
+                            )
+                            connection.execute(
+                                "ALTER TABLE attempts ADD COLUMN cancellation_accepted_at TEXT"
+                            )
+                            connection.execute(
+                                "ALTER TABLE attempts ADD COLUMN teardown_state TEXT NOT NULL "
+                                "DEFAULT 'not_required'"
+                            )
                         updated = connection.execute(
                             """
                             UPDATE metadata SET value=?
-                            WHERE key='state_schema_version' AND value='1'
+                            WHERE key='state_schema_version' AND value=?
                             """,
-                            (str(CURRENT_STATE_SCHEMA_VERSION),),
+                            (str(CURRENT_STATE_SCHEMA_VERSION), str(previous_version)),
                         )
                         if updated.rowcount != 1:
                             raise ProjectError("Committed state version changed during migration")
@@ -196,7 +225,7 @@ class LocalStateSchemaUpgrader:
                 raise ProjectError(f"State migration failed: {exc}") from exc
 
             return StateUpgradeResult(
-                previous_version=1,
+                previous_version=previous_version,
                 current_version=CURRENT_STATE_SCHEMA_VERSION,
                 upgraded=True,
                 backup_path=backup.root.relative_to(root).as_posix(),
