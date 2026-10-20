@@ -15,13 +15,13 @@ inputs come later through preprocessing into perspective views.
 ## Current status
 
 The repository contains configuration models, a method catalog, compatibility
-validation, a default profile and basic project persistence (M1a1). The CLI can
+validation, a default profile and safe local project persistence (M1a2). The CLI can
 create/show projects; the application API can open/save them. Saved intent lives
 in `project.json`; `state.sqlite` contains only metadata.
 
-This is a controlled single-process development slice, without writer locking,
-stale-save protection, migrations or crash-recovery guarantees. M1a2 must precede
-processing. Media ingest, FFmpeg/COLMAP execution, training and GUI remain planned.
+Project saves use revision checks, one OS-held Windows writer lock and validated
+same-volume replacement. Media ingest, runs/attempts/artifacts, FFmpeg/COLMAP
+execution, training and GUI remain planned.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 The existing `PipelineConfig` remains a prototype and is explicitly converted when
 creating a project; it is not itself the project file format.
@@ -40,8 +40,8 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-Creation requires a missing or empty directory. Only `project.json` and
-`state.sqlite` are created. Projects open from their saved settings, never by
+Creation requires a missing or empty directory. Only `project.json`, `project.lock`
+and `state.sqlite` are created. Projects open from their saved settings, never by
 reapplying a preset. Unknown method/settings versions and extra envelope fields
 survive save/reopen as equivalent JSON values.
 
@@ -106,5 +106,5 @@ translation/benchmarking stays with training integration.
 | [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
 
 Keep source media, generated projects, model weights and training output outside
-the repository. Next is **M1a2: persistence safety**, before M1b execution
-infrastructure. Review each diff; commit only on request.
+the repository. Next is **M1b1: execution and cache happy path**. Review each diff;
+commit only on request.

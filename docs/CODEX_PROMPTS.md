@@ -57,7 +57,8 @@ for M1a2. No processing, external tools, run tables, scheduler or unrelated clea
 
 ## M1a2 Persistence safety
 
-Additional reading: [PROJECT_FORMAT: safe writes and migrations](PROJECT_FORMAT.md#safe-writes-and-migrations),
+Implemented; retained as its scope reference. Additional reading:
+[PROJECT_FORMAT: safe writes and migrations](PROJECT_FORMAT.md#safe-writes-and-migrations),
 [ARCHITECTURE: dependency direction](../ARCHITECTURE.md#dependency-direction) and
 [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
 

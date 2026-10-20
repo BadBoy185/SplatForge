@@ -21,7 +21,11 @@ def test_create_save_reopen_and_metadata(tmp_path: Path, monkeypatch: pytest.Mon
     root = tmp_path / "P\u0159\u00edli\u0161 \u017elu\u0165ou\u010dk\u00fd project"
     service = build_project_service()
     created = service.create(root, "Prvn\u00ed projekt")
-    assert {p.name for p in root.iterdir()} == {"project.json", "state.sqlite"}
+    assert {p.name for p in root.iterdir()} == {
+        "project.json",
+        "project.lock",
+        "state.sqlite",
+    }
     assert created.revision == 0
     assert created.inventory_reference is None
     assert service.open(root) == created
@@ -39,11 +43,15 @@ def test_create_save_reopen_and_metadata(tmp_path: Path, monkeypatch: pytest.Mon
     saved = service.save(root, created)
     assert saved.updated_at >= created.updated_at
     assert saved.created_at == created.created_at
-    assert saved.revision == 0
+    assert saved.revision == 1
     assert service.open(root) == saved
     assert json.loads(service.show(root)) == saved.model_dump(mode="json")
     assert (root / "state.sqlite").read_bytes() == state_before
-    assert {p.name for p in root.iterdir()} == {"project.json", "state.sqlite"}
+    assert {p.name for p in root.iterdir()} == {
+        "project.json",
+        "project.lock",
+        "state.sqlite",
+    }
 
 
 def test_complete_prototype_conversion(tmp_path: Path) -> None:
@@ -153,7 +161,11 @@ def test_existing_empty_destination_is_accepted(tmp_path: Path) -> None:
     created = build_project_service().create(root, "Existing empty directory")
 
     assert created.label == "Existing empty directory"
-    assert {path.name for path in root.iterdir()} == {"project.json", "state.sqlite"}
+    assert {path.name for path in root.iterdir()} == {
+        "project.json",
+        "project.lock",
+        "state.sqlite",
+    }
 
 
 @pytest.mark.parametrize("existing", ["file", "directory", "hidden"])
@@ -296,7 +308,12 @@ def test_application_works_with_injected_store() -> None:
             assert self.document is not None
             return self.document.model_copy(deep=True)
 
-        def save(self, root: Path, document: ProjectDocument) -> None:
+        def save(
+            self, root: Path, document: ProjectDocument, *, expected_revision: int
+        ) -> None:
+            assert self.document is not None
+            assert self.document.revision == expected_revision
+            assert document.revision == expected_revision + 1
             self.document = document.model_copy(deep=True)
 
     service = ProjectService(MemoryStore(), build_builtin_registry())
@@ -358,7 +375,11 @@ def test_original_outside_project_is_untouched(tmp_path: Path) -> None:
     service.save(root, project)
     service.open(root)
     assert source.read_bytes() == before
-    assert {p.name for p in root.iterdir()} == {"project.json", "state.sqlite"}
+    assert {p.name for p in root.iterdir()} == {
+        "project.json",
+        "project.lock",
+        "state.sqlite",
+    }
 
 
 @pytest.mark.parametrize(

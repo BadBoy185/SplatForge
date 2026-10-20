@@ -1,4 +1,4 @@
-"""Single-process project use cases. Concurrency guarantees arrive in M1a2."""
+"""Project use cases and inward-owned persistence contracts."""
 
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,12 +15,26 @@ class ProjectError(ValueError):
     """A project cannot be created, read or saved as requested."""
 
 
+class ProjectWriterBusyError(ProjectError):
+    """Another local writer owns the project lock."""
+
+
+class ProjectSharingViolationError(ProjectError):
+    """Windows refused a project file replacement because a handle conflicts."""
+
+
+class StaleProjectRevisionError(ProjectError):
+    """The caller tried to save a document based on an obsolete revision."""
+
+
 class ProjectStore(Protocol):
     def create(self, root: Path, document: ProjectDocument) -> None: ...
 
     def load(self, root: Path) -> ProjectDocument: ...
 
-    def save(self, root: Path, document: ProjectDocument) -> None: ...
+    def save(
+        self, root: Path, document: ProjectDocument, *, expected_revision: int
+    ) -> None: ...
 
 
 class ProjectService:
@@ -57,11 +71,15 @@ class ProjectService:
         return self._store.load(root)
 
     def save(self, root: Path, document: ProjectDocument) -> ProjectDocument:
-        # M1a1 preserves revision without incrementing or comparing it.
+        expected_revision = document.revision
         saved = ProjectDocument.model_validate(
-            {**document.model_dump(mode="json"), "updated_at": datetime.now(UTC)}
+            {
+                **document.model_dump(mode="json"),
+                "revision": expected_revision + 1,
+                "updated_at": datetime.now(UTC),
+            }
         )
-        self._store.save(root, saved)
+        self._store.save(root, saved, expected_revision=expected_revision)
         return saved
 
     def show(self, root: Path) -> str:

@@ -1,7 +1,7 @@
 # Development, testing and diagnostics
 
 [AGENTS.md](../AGENTS.md) is the engineering constitution. This guide defines the
-verification strategy for planned implementation; only three foundation tests exist.
+verification strategy for planned implementation; foundation and M1 persistence tests exist.
 Use the project virtual environment and the [README commands](../README.md#current-status).
 At the 2026-10-19 review baseline, `pytest` passes three tests and Ruff finds 18
 pre-existing violations (17 E501 and one UP037). Keep documentation-only diffs free

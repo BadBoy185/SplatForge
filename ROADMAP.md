@@ -1,7 +1,7 @@
 # Roadmap
 
 Every milestone ends in an executable command, inspectable artifact or automated
-acceptance check. M0 and the M1a1 development slice are implemented. Later deliverables
+acceptance check. M0, M1a1 and M1a2 are implemented. Later deliverables
 and CLI command names remain planned unless explicitly marked available. Use the
 [task prompts](docs/CODEX_PROMPTS.md) one bounded task at a time.
 
@@ -42,18 +42,15 @@ refusal and unsupported-version refusal without rewrites. Originals remain untou
 This is a controlled single-process development slice, not a durability release.
 Target validation, processing and future directory creation remain deferred.
 
-**M1a2: next task, persistence safety.** Add revision advancement/stale-save
-protection, the local writer lock, atomic replacement details and migration dispatch/scaffolding. Establish
-consistent backup/recovery boundaries and Windows failure handling. No older production
-format exists: do not invent migrations, legacy versions or speculative transforms.
-Provide dispatch and backup/restore boundaries; defer a multi-store migration journal
-until a real format change needs one.
+**M1a2: implemented, persistence safety.** Saves advance revisions and reject stale
+documents under one OS-held local Windows writer lock. Validated, flushed temporary
+siblings use same-volume replacement as the project-document commit point. Current and
+unsupported project/config/state versions dispatch without speculative migrations.
+Fault and Windows integration tests cover writer exclusion, replacement failures,
+sharing conflicts and the internal migration-backup preparation boundary.
 
-Acceptance: stale writes and concurrent writers are refused; sharing violations,
-interrupted replacement, disk-full and backup failures retain the last valid project.
-Test current/unsupported-version dispatch and recovery boundaries with fault hooks;
-add real migration fixtures when a supported format changes. M1a2 completes persistence
-safety before M1b and processing. No external tools or generic scheduler in either task.
+No older production format, migration transform, restore engine or multi-store journal
+was invented. M1a2 completes persistence safety before M1b and processing.
 
 **M1b: state and minimal runner**, delivered as two reviewable tasks:
 

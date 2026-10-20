@@ -1,8 +1,8 @@
 # Project format and execution state
 
-Status: M1a1 basic project persistence is implemented. Durability/concurrency and
-execution sections remain target contracts for M1a2 and later milestones. Version
-numbers for project, pipeline settings, state database, manifests and
+Status: M1a2 local persistence durability/concurrency is implemented. Execution
+sections remain target contracts for M1b and later milestones. Version numbers for
+project, pipeline settings, state database, manifests and
 individual methods are separate; the prototype `PipelineConfig.schema_version = 1`
 is not a project format declaration.
 
@@ -78,12 +78,13 @@ indexes and their relationships at M1b. Do not put descriptor arrays, media or r
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
 
-### Implemented M1a1 document and metadata
+### Implemented project document and M1a2 safety
 
 `project.json` uses `project_format_version: 1`, a UUID `project_id`, `revision`,
 `label`, UTC `created_at`/`updated_at`, nullable `inventory_reference`, nullable
-`preset_provenance` and `settings`. Revision starts at **0** and is preserved on
-save; compare/stale-save semantics and advancement belong to M1a2. Save refreshes
+`preset_provenance` and `settings`. Revision starts at **0**. A successful save
+compares the committed revision under the writer lock, publishes exactly the next
+revision and returns it to the caller. Stale saves are refused. Save refreshes
 `updated_at` while retaining project identity and creation time.
 
 `settings.config_schema_version` is **1**, independent of the project format.
@@ -125,9 +126,14 @@ SQLite contains only a `metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL)` tab
 `state_schema_version = "1"` and `project_id` matching the document. Opening reads
 state without initializing or repairing it. No run/attempt/artifact tables exist yet.
 
-Creation accepts a missing or empty destination and creates only the two files.
-Saving validates a temporary JSON file in the project directory before replacement.
-There are no locking, stale-save, partial-create recovery or crash-durability guarantees.
+Creation accepts a missing or empty destination and creates `project.json`,
+`project.lock` and `state.sqlite`. The destination is checked again after acquiring
+the OS-held lock; lock-file existence or contents do not establish ownership.
+Saving flushes, closes and validates a temporary sibling before same-volume replacement.
+`os.replace` is the project-document commit point: a failed pre-commit step retains
+the previous document, while reopen after a completed replacement observes the new
+revision. This is not an atomic multi-file or blanket power-loss guarantee. There is
+no general partial-create recovery framework.
 The only persisted owned-path field is `inventory_reference`: null initially, or a
 relative path using `/`. Absolute/drive-qualified/traversal paths are refused, and
 references are resolved under the project root. Inventory contents are not loaded or
@@ -209,20 +215,18 @@ Moving the project must not invalidate artifact fingerprints. Relocating origina
 
 ## Safe writes and migrations
 
-Adopt this completed contract in two reviewable steps: M1a1 implements the basic
+This contract was adopted in two reviewable steps: M1a1 implemented the basic
 single-process development slice (document/settings, versions, directories, SQLite
 metadata, create/open/save/show and basic validated temporary-file replacement);
-M1a2 completes revision/stale-save checks,
+M1a2 completed revision/stale-save checks,
 writer locking, atomic replacement, migration boundaries and Windows fault recovery.
-M1a1 is not a durability/concurrency release. Complete M1a2 before run infrastructure
-or processing uses persisted projects. The rules below describe the completed contract.
+The rules below describe the completed persistence contract used by future work.
 
-No older production project format exists yet. M1a2 establishes migration dispatch,
-unsupported-version refusal and backup/recovery interfaces without inventing historical
-versions or shipping speculative transforms. Prototype configuration conversion is not
-a historical project migration. M1a2 needs a dispatcher and backup/restore boundaries,
-not a generalized migration journal engine. When a real multi-file format change
-arrives, add its concrete recovery marker/rollback sequence and failure fixtures.
+No older production project format exists yet. M1a2 establishes current/unsupported
+version dispatch and an internal validated migration-backup preparation boundary
+without inventing historical versions or speculative transforms. Prototype
+configuration conversion is not a historical project migration. A concrete restore
+sequence or migration journal arrives only with a real multi-file format change.
 
 - Create only at an absent or empty destination. Refuse a non-empty destination;
   there is no overwrite flag in the initial API. Do not remove a failed create target
@@ -230,7 +234,8 @@ arrives, add its concrete recovery marker/rollback sequence and failure fixtures
 - Use an OS-held lock on the stable project.lock file, shared by CLI and GUI; the
   existence of a lock file is not ownership. Do not unlink/recreate a locked file.
   Readers inspect committed state; SQLite transactions stay short, not run-long.
-  Record process start identity and a run token for diagnosis; never kill by PID alone.
+  Record process-instance identity and an owner token for diagnosis; M1b adds a run
+  token when runs exist. Never kill by PID alone.
 - Save JSON using a validated temporary sibling, flushed writes and same-volume
   atomic replacement. Record a revision and reject stale concurrent saves. Close
   handles before replacement; report Windows sharing violations without losing the
