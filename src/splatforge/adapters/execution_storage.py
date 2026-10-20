@@ -85,7 +85,8 @@ class LocalExecutionRepository:
         # Read-only preflight avoids creating a lock for an invalid or unsupported project.
         self._project_store.inspect(root)
         with self._lock_factory(root / "project.lock") as lease:
-            # The application repeats committed inspection under this lease.
+            # Refuse a raced unsupported format before changing lock diagnostics.
+            self._project_store.inspect(root)
             lease.write_diagnostics(operation="fake-run", owner_token=owner_token)
             yield
 
@@ -98,12 +99,23 @@ class LocalExecutionRepository:
 
     def ensure_no_unfinished_run(self, root: Path) -> None:
         with self._read_connection(root) as connection:
-            unfinished = connection.execute(
+            unfinished_run = connection.execute(
                 "SELECT run_id FROM runs WHERE status='running' ORDER BY created_at, run_id"
             ).fetchone()
-        if unfinished is not None:
+            active_attempt = connection.execute(
+                """
+                SELECT attempt_id FROM attempts
+                WHERE status IN ('pending', 'running')
+                ORDER BY created_at, attempt_id
+                """
+            ).fetchone()
+        if unfinished_run is not None:
             raise UnresolvedExecutionError(
-                "An unfinished run blocks execution until M1b2 recovery: " + unfinished[0]
+                "An unfinished run blocks execution until M1b2 recovery: " + unfinished_run[0]
+            )
+        if active_attempt is not None:
+            raise UnresolvedExecutionError(
+                "An unresolved attempt blocks execution until M1b2 recovery: " + active_attempt[0]
             )
 
     def create_run(self, root: Path, snapshot: RunSnapshot) -> None:
@@ -650,11 +662,14 @@ class LocalExecutionRepository:
             or any(part in ("", ".", "..") for part in parts)
         ):
             raise ValueError("Manifest payload path is not a safe relative path")
-        path = (artifact_directory / relative).resolve()
+        candidate = artifact_directory
+        for part in parts:
+            candidate /= part
+            if candidate.is_symlink() or candidate.is_junction():
+                raise ValueError("Manifest payload must not traverse a filesystem redirection")
+        path = candidate.resolve()
         if not path.is_relative_to(artifact_directory.resolve()):
             raise ValueError("Manifest payload escapes its artifact directory")
-        if path.is_symlink() or path.is_junction():
-            raise ValueError("Manifest payload must not be a filesystem redirection")
         return path
 
     @staticmethod
@@ -678,7 +693,12 @@ class LocalExecutionRepository:
             or any(part in ("", ".", "..") for part in parts)
         ):
             raise ProjectError("Execution path must be project-relative and use '/'")
-        path = (root / relative).resolve()
+        candidate = root
+        for part in parts:
+            candidate /= part
+            if candidate.is_symlink() or candidate.is_junction():
+                raise ProjectError("Execution path must not traverse a filesystem redirection")
+        path = candidate.resolve()
         if not path.is_relative_to(root):
             raise ProjectError("Execution path escapes the project directory")
         return path

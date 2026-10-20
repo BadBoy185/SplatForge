@@ -4,6 +4,7 @@ import ctypes
 import json
 import multiprocessing
 import os
+import sqlite3
 import subprocess
 from ctypes import wintypes
 from multiprocessing.connection import Connection
@@ -19,7 +20,7 @@ from splatforge.application.projects import (
     ProjectSharingViolationError,
     ProjectWriterBusyError,
 )
-from splatforge.bootstrap import build_project_service
+from splatforge.bootstrap import build_execution_service, build_project_service
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows local-file semantics")
 
@@ -177,3 +178,33 @@ def test_windows_migration_backup_rejects_junction_root(tmp_path: Path) -> None:
 
     assert ((root / "project.json").read_bytes(), (root / "state.sqlite").read_bytes()) == before
     assert list(outside.iterdir()) == []
+
+
+def test_windows_execution_refuses_owned_runs_junction(tmp_path: Path) -> None:
+    root = tmp_path / "Junction execution project"
+    redirected_target = root / "runs-target"
+    build_project_service().create(root, "Junction execution")
+    redirected_target.mkdir()
+    subprocess.run(
+        [
+            "cmd.exe",
+            "/d",
+            "/c",
+            "mklink",
+            "/J",
+            str(root / "runs"),
+            str(redirected_target),
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (root / "runs").is_junction()
+
+    with pytest.raises(ProjectError, match="filesystem redirection"):
+        build_execution_service().run(root)
+
+    assert list(redirected_target.iterdir()) == []
+    with sqlite3.connect(root / "state.sqlite") as connection:
+        assert connection.execute("SELECT count(*) FROM runs").fetchone() == (0,)

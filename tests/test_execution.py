@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from contextlib import closing
+from hashlib import sha256
 from pathlib import Path
 from uuid import UUID
 
@@ -16,7 +17,7 @@ from splatforge.application.execution import (
     PublicationUnresolvedError,
     UnresolvedExecutionError,
 )
-from splatforge.application.projects import ProjectWriterBusyError
+from splatforge.application.projects import ProjectError, ProjectWriterBusyError
 from splatforge.bootstrap import build_execution_service, build_project_service
 from splatforge.core.execution import RunWarning
 
@@ -339,3 +340,140 @@ def test_unused_opaque_project_settings_do_not_block_fake_route(tmp_path: Path) 
     result = build_execution_service().run(tmp_path)
 
     assert result.status == "succeeded"
+
+
+def test_active_attempt_blocks_new_run_before_snapshot_when_parent_is_not_running(
+    tmp_path: Path,
+) -> None:
+    build_project_service().create(tmp_path, "Unresolved attempt")
+    first = build_execution_service().run(tmp_path)
+    attempt_id = query(
+        tmp_path,
+        "SELECT attempt_id FROM attempts ORDER BY created_at, attempt_id LIMIT 1",
+    )[0][0]
+    with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection, connection:
+        connection.execute(
+            "UPDATE attempts SET status='running', finished_at=NULL WHERE attempt_id=?",
+            (attempt_id,),
+        )
+
+    run_count = query(tmp_path, "SELECT count(*) FROM runs")[0][0]
+    snapshots = {
+        path.relative_to(tmp_path).as_posix() for path in (tmp_path / "runs").glob("*/run.json")
+    }
+
+    with pytest.raises(UnresolvedExecutionError, match="unresolved attempt"):
+        build_execution_service().run(tmp_path)
+
+    assert query(tmp_path, "SELECT count(*) FROM runs") == [(run_count,)]
+    assert {
+        path.relative_to(tmp_path).as_posix() for path in (tmp_path / "runs").glob("*/run.json")
+    } == snapshots
+    assert query(
+        tmp_path,
+        "SELECT status FROM attempts WHERE attempt_id=?",
+        (attempt_id,),
+    ) == [("running",)]
+    assert query(
+        tmp_path,
+        "SELECT status FROM runs WHERE run_id=?",
+        (str(first.run_id),),
+    ) == [("succeeded",)]
+
+
+def test_writer_revalidates_raced_state_before_changing_diagnostics(
+    tmp_path: Path,
+) -> None:
+    build_project_service().create(tmp_path, "Version race")
+    diagnostics: list[dict[str, object]] = []
+
+    def make_state_unsupported() -> None:
+        with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection, connection:
+            connection.execute("UPDATE metadata SET value='3' WHERE key='state_schema_version'")
+
+    class RacingLease:
+        def __enter__(self) -> "RacingLease":
+            make_state_unsupported()
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+        def write_diagnostics(self, *, operation: str, owner_token: UUID) -> None:
+            diagnostics.append({"operation": operation, "owner_token": owner_token})
+
+    class RacingLockFactory:
+        def __call__(self, _path: Path) -> RacingLease:
+            return RacingLease()
+
+    repository = LocalExecutionRepository(lock_factory=RacingLockFactory())
+
+    with pytest.raises(ProjectError, match="Unsupported newer project versions"):
+        FakeExecutionService(repository, LocalFakeStages()).run(tmp_path)
+
+    assert diagnostics == []
+    assert query(tmp_path, "SELECT count(*) FROM runs") == [(0,)]
+    assert not (tmp_path / "runs").exists()
+
+
+@pytest.mark.parametrize("owned_name", ["runs", "work", "artifacts"])
+def test_execution_refuses_owned_directory_symlink_before_writing_through_it(
+    tmp_path: Path,
+    owned_name: str,
+) -> None:
+    root = tmp_path / f"{owned_name} redirection project"
+    build_project_service().create(root, "Owned path redirection")
+    redirected_target = root / f"{owned_name}-target"
+    redirected_target.mkdir()
+    try:
+        (root / owned_name).symlink_to(redirected_target, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"Directory symlinks unavailable: {exc}")
+
+    with pytest.raises(ProjectError, match="filesystem redirection"):
+        build_execution_service().run(root)
+
+    assert list(redirected_target.iterdir()) == []
+
+
+def test_cache_refuses_manifest_payload_through_directory_symlink(
+    tmp_path: Path,
+) -> None:
+    build_project_service().create(tmp_path, "Manifest payload redirection")
+    first = build_execution_service().run(tmp_path)
+    handle = first.outputs["numbers"]
+    manifest_path = tmp_path / handle.manifest_path
+    artifact_directory = manifest_path.parent
+    original_payload = artifact_payload(tmp_path, handle.manifest_path)
+    redirected_target = artifact_directory / "payload-target"
+    redirected_target.mkdir()
+    original_payload.replace(redirected_target / original_payload.name)
+    try:
+        (artifact_directory / "redirect").symlink_to(redirected_target, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"Directory symlinks unavailable: {exc}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["payloads"][0]["path"] = f"redirect/{original_payload.name}"
+    manifest_bytes = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    manifest_path.write_bytes(manifest_bytes)
+    with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection, connection:
+        connection.execute(
+            "UPDATE artifacts SET manifest_digest=? WHERE artifact_id=?",
+            (sha256(manifest_bytes).hexdigest(), str(handle.artifact_id)),
+        )
+
+    second = build_execution_service().run(tmp_path)
+
+    assert "numbers" not in second.cache_hits
+    assert second.outputs["numbers"].artifact_id != handle.artifact_id
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "runs" / str(second.run_id) / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    miss = next(
+        event for event in events if event["code"] == "cache.miss" and event["node_id"] == "numbers"
+    )
+    assert "filesystem redirection" in miss["details"]["ineligible"][0]["reason"]
