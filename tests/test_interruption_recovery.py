@@ -21,7 +21,7 @@ from splatforge.application.execution import (
 )
 from splatforge.application.projects import ProjectError
 from splatforge.bootstrap import build_execution_service, build_project_service
-from splatforge.core.execution import RunWarning
+from splatforge.core.execution import CancellationRequest, RunWarning
 
 
 class InjectedCrash(BaseException):
@@ -521,3 +521,95 @@ def test_event_append_failure_never_changes_cancel_recovery_or_retry_state(
     assert retried.status == "succeeded"
     assert retried.warnings
     assert query(retry_root, "SELECT status FROM runs") == [("succeeded",)]
+
+
+def test_cancel_request_publication_is_atomic_and_create_if_absent(
+    tmp_path: Path,
+) -> None:
+    build_project_service().create(tmp_path, "Atomic cancel request")
+
+    def crash_after_run(_root: Path) -> None:
+        raise InjectedCrash("leave running run")
+
+    with pytest.raises(InjectedCrash):
+        FakeExecutionService(
+            LocalExecutionRepository(
+                fault_hooks=ExecutionFaultHooks(after_run_record=crash_after_run)
+            ),
+            LocalFakeStages(),
+        ).run(tmp_path)
+    run_id = current_run_id(tmp_path)
+    run_directory = tmp_path / "runs" / str(run_id)
+    request_path = run_directory / "cancel.request"
+    authoritative_before = query(
+        tmp_path,
+        """
+        SELECT status, cancellation_accepted_at, cancellation_request_digest
+        FROM runs WHERE run_id=?
+        """,
+        (str(run_id),),
+    )
+    observed_temporaries: list[CancellationRequest] = []
+
+    def fail_before_publish(temporary: Path) -> None:
+        observed_temporaries.append(
+            CancellationRequest.model_validate_json(temporary.read_bytes())
+        )
+        raise InjectedCrash("after fsync before publication")
+
+    failing = LocalExecutionRepository(
+        fault_hooks=ExecutionFaultHooks(
+            before_cancellation_request_publish=fail_before_publish
+        )
+    )
+    with pytest.raises(InjectedCrash, match="after fsync"):
+        failing.request_cancellation(tmp_path, run_id=run_id)
+
+    assert len(observed_temporaries) == 1
+    assert observed_temporaries[0].run_id == run_id
+    assert not request_path.exists()
+    assert list(run_directory.glob(".cancel-request-*.tmp")) == []
+    assert query(
+        tmp_path,
+        """
+        SELECT status, cancellation_accepted_at, cancellation_request_digest
+        FROM runs WHERE run_id=?
+        """,
+        (str(run_id),),
+    ) == authoritative_before
+
+    winner = LocalExecutionRepository()
+    winner_results = []
+
+    def publish_competing_request(temporary: Path) -> None:
+        CancellationRequest.model_validate_json(temporary.read_bytes())
+        winner_results.append(winner.request_cancellation(tmp_path, run_id=run_id))
+
+    competing = LocalExecutionRepository(
+        fault_hooks=ExecutionFaultHooks(
+            before_cancellation_request_publish=publish_competing_request
+        )
+    )
+    raced = competing.request_cancellation(tmp_path, run_id=run_id)
+
+    assert len(winner_results) == 1
+    assert winner_results[0].created is True
+    assert raced.created is False
+    assert raced.request == winner_results[0].request
+    published_payload = request_path.read_bytes()
+    assert len(published_payload) <= 4096
+    assert CancellationRequest.model_validate_json(published_payload) == raced.request
+    assert list(run_directory.glob(".cancel-request-*.tmp")) == []
+
+    repeated = winner.request_cancellation(tmp_path, run_id=run_id)
+    assert repeated.created is False
+    assert repeated.request == raced.request
+    assert request_path.read_bytes() == published_payload
+    assert query(
+        tmp_path,
+        """
+        SELECT status, cancellation_accepted_at, cancellation_request_digest
+        FROM runs WHERE run_id=?
+        """,
+        (str(run_id),),
+    ) == authoritative_before

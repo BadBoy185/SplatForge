@@ -69,6 +69,7 @@ class ExecutionFaultHooks:
     after_artifact_move: Callable[[Path], None] = _no_fault
     after_run_record: Callable[[Path], None] = _no_fault
     before_artifact_move: Callable[[Path], None] = _no_fault
+    before_cancellation_request_publish: Callable[[Path], None] = _no_fault
 
 
 @dataclass(frozen=True)
@@ -216,11 +217,8 @@ class LocalExecutionRepository:
             )
         if row[1] in {"succeeded", "cancelled"}:
             return CancellationRequestResult(request=request, created=False, too_late=True)
-        payload = request.model_dump_json(indent=2).encode("utf-8") + b"\n"
-        if len(payload) > 4096:
-            raise ProjectError("Cancellation request exceeds its size limit")
         try:
-            self._write_new_file(path, payload)
+            self._publish_cancellation_request(root, path, request)
         except FileExistsError as exc:
             existing, _ = self._read_cancellation_request(root, run_id)
             if existing.run_id != run_id or existing.run_owner_token != request.run_owner_token:
@@ -1371,6 +1369,36 @@ class LocalExecutionRepository:
         if not path.is_relative_to(artifact_directory.resolve()):
             raise ValueError("Manifest payload escapes its artifact directory")
         return path
+
+    def _publish_cancellation_request(
+        self, root: Path, path: Path, request: CancellationRequest
+    ) -> None:
+        payload = request.model_dump_json(indent=2).encode("utf-8") + b"\n"
+        if len(payload) > 4096:
+            raise ProjectError("Cancellation request exceeds its size limit")
+        if CancellationRequest.model_validate_json(payload) != request:
+            raise ProjectError("Serialized cancellation request failed validation")
+
+        temporary: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                mode="w+b",
+                dir=path.parent,
+                prefix=".cancel-request-",
+                suffix=".tmp",
+                delete=False,
+            ) as stream:
+                temporary = Path(stream.name)
+                if stream.write(payload) != len(payload):
+                    raise OSError("Could not write complete cancellation request")
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary = self._owned_path(root, temporary.relative_to(root).as_posix())
+            self._fault_hooks.before_cancellation_request_publish(temporary)
+            os.link(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     @staticmethod
     def _write_new_file(path: Path, payload: bytes) -> None:
