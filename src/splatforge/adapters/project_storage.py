@@ -87,6 +87,7 @@ class LocalProjectStore:
 
             with self._lock_factory(root / "project.lock") as lease:
                 self._validate_create_destination_under_lock(root, lease)
+                lease.write_diagnostics(operation="create", owner_token=uuid4())
                 with closing(sqlite3.connect(root / "state.sqlite")) as connection:
                     connection.execute("PRAGMA foreign_keys = ON")
                     with connection:
@@ -132,6 +133,8 @@ class LocalProjectStore:
                         "Stale project revision: "
                         f"expected {expected_revision}, committed {current.revision}"
                     )
+                if current.created_at != document.created_at:
+                    raise ProjectError("Cannot change project created_at")
                 self._validate_document(root, document)
                 lease.write_diagnostics(operation="save", owner_token=uuid4())
                 self._write_document(root, document)

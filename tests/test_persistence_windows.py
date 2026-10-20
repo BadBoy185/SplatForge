@@ -4,6 +4,7 @@ import ctypes
 import json
 import multiprocessing
 import os
+import subprocess
 from ctypes import wintypes
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -11,8 +12,10 @@ from uuid import uuid4
 
 import pytest
 
+from splatforge.adapters.project_backup import LocalMigrationBackupPreparer
 from splatforge.adapters.project_lock import WindowsProjectWriterLock
 from splatforge.application.projects import (
+    ProjectError,
     ProjectSharingViolationError,
     ProjectWriterBusyError,
 )
@@ -143,3 +146,34 @@ def test_windows_sharing_violation_preserves_project_json(tmp_path: Path) -> Non
     assert target.read_bytes() == before
     assert service.open(root).label == "Previous"
     assert not list(root.glob(".project-*.tmp"))
+
+
+def test_windows_migration_backup_rejects_junction_root(tmp_path: Path) -> None:
+    root = tmp_path / "Junction backup project"
+    outside = tmp_path / "outside"
+    service = build_project_service()
+    service.create(root, "Junction backup")
+    outside.mkdir()
+    subprocess.run(
+        [
+            "cmd.exe",
+            "/d",
+            "/c",
+            "mklink",
+            "/J",
+            str(root / "backups"),
+            str(outside),
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (root / "backups").is_junction()
+    before = (root / "project.json").read_bytes(), (root / "state.sqlite").read_bytes()
+
+    with pytest.raises(ProjectError, match="filesystem redirection"):
+        LocalMigrationBackupPreparer().prepare(root, "must-not-escape")
+
+    assert ((root / "project.json").read_bytes(), (root / "state.sqlite").read_bytes()) == before
+    assert list(outside.iterdir()) == []

@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 from types import TracebackType
 from uuid import UUID
@@ -29,25 +30,28 @@ class FakeWriterLease:
         self,
         path: Path,
         *,
+        factory: "FakeLockFactory",
         diagnostics: list[dict[str, object]],
         on_acquire: Callable[[], None] | None = None,
-        busy: bool = False,
     ) -> None:
         self._path = path
+        self._factory = factory
         self._diagnostics = diagnostics
         self._on_acquire = on_acquire
-        self._busy = busy
         self.created = not path.exists()
 
     def __enter__(self) -> "FakeWriterLease":
-        if self._busy:
-            raise ProjectWriterBusyError("Fake writer is busy")
-        if self.created:
-            self._path.touch()
-        if self._on_acquire is not None:
-            callback = self._on_acquire
-            self._on_acquire = None
-            callback()
+        self._factory.acquire()
+        try:
+            if self.created:
+                self._path.touch()
+            if self._on_acquire is not None:
+                callback = self._on_acquire
+                self._on_acquire = None
+                callback()
+        except BaseException:
+            self._factory.release()
+            raise
         return self
 
     def __exit__(
@@ -56,7 +60,7 @@ class FakeWriterLease:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        return
+        self._factory.release()
 
     def write_diagnostics(self, *, operation: str, owner_token: UUID) -> None:
         self._diagnostics.append({"operation": operation, "owner_token": owner_token})
@@ -69,15 +73,24 @@ class FakeLockFactory:
         self.diagnostics: list[dict[str, object]] = []
         self._on_acquire = on_acquire
         self._busy = busy
+        self._held = False
+
+    def acquire(self) -> None:
+        if self._busy or self._held:
+            raise ProjectWriterBusyError("Fake writer is busy")
+        self._held = True
+
+    def release(self) -> None:
+        self._held = False
 
     def __call__(self, path: Path) -> FakeWriterLease:
         callback = self._on_acquire
         self._on_acquire = None
         return FakeWriterLease(
             path,
+            factory=self,
             diagnostics=self.diagnostics,
             on_acquire=callback,
-            busy=self._busy,
         )
 
 
@@ -119,7 +132,23 @@ def test_save_advances_revision_and_refuses_stale_document(tmp_path: Path) -> No
         service.save(tmp_path, second)
 
     assert service.open(tmp_path) == saved
-    assert len(locks.diagnostics) == 1
+    assert [entry["operation"] for entry in locks.diagnostics] == ["create", "save"]
+
+
+def test_save_refuses_changed_creation_time_without_authoritative_writes(
+    tmp_path: Path,
+) -> None:
+    service, _, locks = make_service()
+    opened = service.create(tmp_path, "Immutable creation time")
+    before = authoritative_bytes(tmp_path)
+    opened.created_at += timedelta(seconds=1)
+
+    with pytest.raises(ProjectError, match="Cannot change project created_at"):
+        service.save(tmp_path, opened)
+
+    assert authoritative_bytes(tmp_path) == before
+    assert [entry["operation"] for entry in locks.diagnostics] == ["create"]
+    assert not list(tmp_path.glob(".project-*.tmp"))
 
 
 def test_storage_rejects_contradictory_revision_pair_before_io(tmp_path: Path) -> None:
@@ -132,7 +161,7 @@ def test_storage_rejects_contradictory_revision_pair_before_io(tmp_path: Path) -
         store.save(tmp_path, candidate, expected_revision=0)
 
     assert authoritative_bytes(tmp_path) == before
-    assert locks.diagnostics == []
+    assert [entry["operation"] for entry in locks.diagnostics] == ["create"]
 
 
 @pytest.mark.parametrize(
@@ -216,9 +245,8 @@ def test_create_rechecks_empty_destination_after_owned_lock_creation(
     def concurrent_destination_change() -> None:
         (root / "unrelated.txt").write_text("not owned", encoding="utf-8")
 
-    service, _, _ = make_service(
-        lock_factory=FakeLockFactory(on_acquire=concurrent_destination_change)
-    )
+    locks = FakeLockFactory(on_acquire=concurrent_destination_change)
+    service, _, _ = make_service(lock_factory=locks)
 
     with pytest.raises(ProjectError, match="changed while acquiring writer lock"):
         service.create(root, "Must not create")
@@ -227,6 +255,7 @@ def test_create_rechecks_empty_destination_after_owned_lock_creation(
     assert (root / "project.lock").exists()
     assert not (root / "project.json").exists()
     assert not (root / "state.sqlite").exists()
+    assert locks.diagnostics == []
 
 
 @pytest.mark.parametrize("boundary", ["write", "before_replace"])
@@ -303,7 +332,7 @@ def test_reopen_resolves_caller_failure_at_replace_commit_point(tmp_path: Path) 
 
 
 def test_migration_backup_copies_referenced_inputs_and_sqlite(tmp_path: Path) -> None:
-    service, store, _ = make_service()
+    service, store, locks = make_service()
     document = service.create(tmp_path, "Backup")
     inventory = tmp_path / "sources" / "inventory.jsonl"
     inventory.parent.mkdir()
@@ -312,12 +341,107 @@ def test_migration_backup_copies_referenced_inputs_and_sqlite(tmp_path: Path) ->
     saved = service.save(tmp_path, document)
     assert not (tmp_path / "backups").exists()
 
-    prepared = LocalMigrationBackupPreparer(store=store).prepare(tmp_path, "future-step")
+    prepared = LocalMigrationBackupPreparer(
+        store=store, lock_factory=locks
+    ).prepare(tmp_path, "future-step")
 
     assert prepared.project_id == saved.project_id
     assert prepared.revision == saved.revision
     assert store.load(prepared.root) == saved
     assert (prepared.root / "sources" / "inventory.jsonl").read_bytes() == inventory.read_bytes()
+    assert [entry["operation"] for entry in locks.diagnostics] == [
+        "create",
+        "save",
+        "migration-backup",
+    ]
+
+
+def test_migration_backup_excludes_competing_writer_until_publication(
+    tmp_path: Path,
+) -> None:
+    service, store, locks = make_service()
+    original = service.create(tmp_path, "Backup lock")
+    candidate = service.open(tmp_path)
+    candidate.label = "Competing writer"
+    attempted = False
+
+    def attempt_competing_save(_staging: Path) -> None:
+        nonlocal attempted
+        attempted = True
+        with pytest.raises(ProjectWriterBusyError):
+            service.save(tmp_path, candidate)
+
+    prepared = LocalMigrationBackupPreparer(
+        store=store,
+        lock_factory=locks,
+        fault_hooks=BackupFaultHooks(before_publish=attempt_competing_save),
+    ).prepare(tmp_path, "locked-snapshot")
+
+    assert attempted
+    assert service.open(tmp_path) == original
+    assert store.load(prepared.root) == original
+    assert [entry["operation"] for entry in locks.diagnostics] == [
+        "create",
+        "migration-backup",
+    ]
+
+
+@pytest.mark.parametrize(
+    "backup_id",
+    [
+        "",
+        ".",
+        "..",
+        "C:drive",
+        "name:stream",
+        "nested/path",
+        "nested\\path",
+        "CON",
+        "con.txt",
+        "COM9.backup",
+        "LPT1",
+        "trailing.",
+        "trailing ",
+        "bad?name",
+    ],
+)
+def test_migration_backup_rejects_ambiguous_windows_names(
+    tmp_path: Path, backup_id: str
+) -> None:
+    service, store, locks = make_service()
+    service.create(tmp_path, "Backup ID")
+    before = authoritative_bytes(tmp_path)
+
+    with pytest.raises(ProjectError, match="Invalid migration backup ID"):
+        LocalMigrationBackupPreparer(store=store, lock_factory=locks).prepare(
+            tmp_path, backup_id
+        )
+
+    assert authoritative_bytes(tmp_path) == before
+    assert not (tmp_path / "backups").exists()
+    assert [entry["operation"] for entry in locks.diagnostics] == ["create"]
+
+
+def test_migration_backup_rejects_redirected_backups_root(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    service, store, locks = make_service()
+    service.create(project_root, "Redirected backup root")
+    before = authoritative_bytes(project_root)
+    try:
+        (project_root / "backups").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Directory symlinks are unavailable: {exc}")
+
+    with pytest.raises(ProjectError, match="filesystem redirection"):
+        LocalMigrationBackupPreparer(store=store, lock_factory=locks).prepare(
+            project_root, "must-not-escape"
+        )
+
+    assert authoritative_bytes(project_root) == before
+    assert list(outside.iterdir()) == []
+    assert [entry["operation"] for entry in locks.diagnostics] == ["create"]
 
 
 @pytest.mark.parametrize(
@@ -327,7 +451,7 @@ def test_migration_backup_copies_referenced_inputs_and_sqlite(tmp_path: Path) ->
 def test_failed_backup_preparation_does_not_mutate_authoritative_state(
     tmp_path: Path, boundary: str
 ) -> None:
-    service, store, _ = make_service()
+    service, store, locks = make_service()
     expected = service.create(tmp_path, "Backup failure")
     before = authoritative_bytes(tmp_path)
 
@@ -336,6 +460,7 @@ def test_failed_backup_preparation_does_not_mutate_authoritative_state(
 
     preparer = LocalMigrationBackupPreparer(
         store=store,
+        lock_factory=locks,
         fault_hooks=BackupFaultHooks(
             after_project_copy=disk_full
             if boundary == "after_project_copy"

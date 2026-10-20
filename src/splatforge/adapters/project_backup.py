@@ -11,9 +11,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from splatforge.adapters.project_lock import (
+    ProjectWriterLockFactory,
+    WindowsProjectWriterLock,
+)
 from splatforge.adapters.project_storage import LocalProjectStore
 from splatforge.application.projects import ProjectError
 from splatforge.core.project import ProjectDocument
+
+_WINDOWS_RESERVED_NAMES = {
+    "AUX",
+    "CON",
+    "CONIN$",
+    "CONOUT$",
+    "NUL",
+    "PRN",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+_WINDOWS_INVALID_NAME_CHARACTERS = frozenset('<>:"/\\|?*')
 
 
 def _no_fault(_path: Path) -> None:
@@ -45,62 +61,104 @@ class LocalMigrationBackupPreparer:
         self,
         *,
         store: LocalProjectStore | None = None,
+        lock_factory: ProjectWriterLockFactory = WindowsProjectWriterLock,
         fault_hooks: BackupFaultHooks | None = None,
     ) -> None:
         self._store = store or LocalProjectStore()
+        self._lock_factory = lock_factory
         self._fault_hooks = fault_hooks or BackupFaultHooks()
 
     def prepare(self, project_root: Path, backup_id: str) -> PreparedMigrationBackup:
         project_root = project_root.resolve()
-        backups_root = (project_root / "backups").resolve()
-        destination = backups_root / backup_id
-        if (
-            not backup_id
-            or backup_id in {".", ".."}
-            or "/" in backup_id
-            or "\\" in backup_id
-            or destination.parent != backups_root
-        ):
-            raise ProjectError("Invalid migration backup ID")
-        if destination.exists():
-            raise ProjectError(f"Migration backup already exists: {destination}")
+        self._validate_backup_id(backup_id)
 
-        document = self._store.load(project_root)
-        backups_root.mkdir(parents=True, exist_ok=True)
-        staging = backups_root / f".{backup_id}.{uuid4().hex}.pending"
-        staging.mkdir()
+        with self._lock_factory(project_root / "project.lock") as lease:
+            document = self._store.load(project_root)
+            backups_root = self._validated_backups_root(project_root)
+            destination = self._backup_destination(backups_root, backup_id)
+            self._require_available_destination(destination)
+            lease.write_diagnostics(operation="migration-backup", owner_token=uuid4())
 
-        project_bytes = (project_root / "project.json").read_bytes()
-        copied_document = ProjectDocument.model_validate_json(project_bytes)
-        if copied_document != document:
-            raise ProjectError("Project changed while migration backup was being prepared")
-        self._write_bytes(staging / "project.json", project_bytes)
-        self._fault_hooks.after_project_copy(staging)
+            backups_root.mkdir(exist_ok=True)
+            staging = backups_root / f".{backup_id}.{uuid4().hex}.pending"
+            staging.mkdir()
 
-        if document.inventory_reference is not None:
-            source_inventory = project_root / document.inventory_reference
-            if not source_inventory.is_file():
-                raise ProjectError("Referenced inventory is unavailable for migration backup")
-            self._copy_file(
-                source_inventory,
-                staging / document.inventory_reference,
+            project_bytes = (project_root / "project.json").read_bytes()
+            copied_document = ProjectDocument.model_validate_json(project_bytes)
+            if copied_document != document:
+                raise ProjectError("Project changed while migration backup was being prepared")
+            self._write_bytes(staging / "project.json", project_bytes)
+            self._fault_hooks.after_project_copy(staging)
+
+            if document.inventory_reference is not None:
+                source_inventory = project_root / document.inventory_reference
+                if not source_inventory.is_file():
+                    raise ProjectError("Referenced inventory is unavailable for migration backup")
+                self._copy_file(
+                    source_inventory,
+                    staging / document.inventory_reference,
+                )
+
+            self._fault_hooks.before_sqlite_backup(staging)
+            self._backup_sqlite(project_root / "state.sqlite", staging / "state.sqlite")
+
+            # Validate the complete backup using the normal current-version read path.
+            backed_up = self._store.load(staging)
+            if backed_up != document or self._store.load(project_root) != document:
+                raise ProjectError("Project changed while migration backup was being prepared")
+
+            self._fault_hooks.before_publish(staging)
+            publish_root = self._validated_backups_root(project_root)
+            if publish_root != backups_root:
+                raise ProjectError("Project backups path changed during backup preparation")
+            destination = self._backup_destination(publish_root, backup_id)
+            self._require_available_destination(destination)
+            os.replace(staging, destination)
+            return PreparedMigrationBackup(
+                root=destination,
+                project_id=document.project_id,
+                revision=document.revision,
             )
 
-        self._fault_hooks.before_sqlite_backup(staging)
-        self._backup_sqlite(project_root / "state.sqlite", staging / "state.sqlite")
+    @staticmethod
+    def _validate_backup_id(backup_id: str) -> None:
+        base_name = backup_id.split(".", maxsplit=1)[0].upper()
+        if (
+            not backup_id
+            or len(backup_id) > 64
+            or backup_id in {".", ".."}
+            or backup_id[-1] in {" ", "."}
+            or any(
+                character in _WINDOWS_INVALID_NAME_CHARACTERS or ord(character) < 32
+                for character in backup_id
+            )
+            or base_name in _WINDOWS_RESERVED_NAMES
+        ):
+            raise ProjectError("Invalid migration backup ID")
 
-        # Validate the complete backup using the normal current-version read path.
-        backed_up = self._store.load(staging)
-        if backed_up != document or self._store.load(project_root) != document:
-            raise ProjectError("Project changed while migration backup was being prepared")
+    @staticmethod
+    def _validated_backups_root(project_root: Path) -> Path:
+        candidate = project_root / "backups"
+        if candidate.is_symlink() or candidate.is_junction():
+            raise ProjectError("Project backups path must not be a filesystem redirection")
+        resolved = candidate.resolve()
+        if resolved != candidate or not resolved.is_relative_to(project_root):
+            raise ProjectError("Project backups path escapes the project directory")
+        if candidate.exists() and not candidate.is_dir():
+            raise ProjectError("Project backups path must be a directory")
+        return resolved
 
-        self._fault_hooks.before_publish(staging)
-        os.replace(staging, destination)
-        return PreparedMigrationBackup(
-            root=destination,
-            project_id=document.project_id,
-            revision=document.revision,
-        )
+    @staticmethod
+    def _backup_destination(backups_root: Path, backup_id: str) -> Path:
+        destination = backups_root / backup_id
+        if destination.resolve().parent != backups_root:
+            raise ProjectError("Invalid migration backup destination")
+        return destination
+
+    @staticmethod
+    def _require_available_destination(destination: Path) -> None:
+        if destination.exists() or destination.is_symlink() or destination.is_junction():
+            raise ProjectError(f"Migration backup already exists: {destination}")
 
     @staticmethod
     def _write_bytes(path: Path, payload: bytes) -> None:

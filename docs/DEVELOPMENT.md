@@ -143,7 +143,7 @@ redaction. Logs and telemetry remain local unless the user explicitly exports th
 | --- | --- |
 | Spaces, Unicode, long paths, drive/UNC names and reserved filenames | Use `Path`/argument arrays, generated owned names and tested backend path limits; report unsupported paths before work; never silently move originals |
 | Case collisions, junctions and symlinks | Validate resolved containment at each write/cleanup boundary, reject unexpected reparse points in owned trees and check path aliases; never rely on lexical prefixes or a one-time resolve. This is accidental-damage protection, not a hostile same-user sandbox |
-| Antivirus, open handles, disk-full or power loss during rename | Bounded sharing-error retry, closed handles, same-volume publication, transactions and failure-injection recovery tests |
+| Antivirus, open handles, disk-full or power loss during rename | Explicit sharing-violation reporting without automatic retry, closed handles, same-volume publication, transactions and failure-injection recovery tests; a bounded retry policy remains optional if later justified |
 | SQLite on shares/sync folders or simultaneous CLI/GUI writers | Local active storage and one writer initially; tested backups and locking; no blind copy of an open database |
 | Missing DLLs, unsupported CPU/GPU/runtime combinations | Isolated probes and tiny functional smoke checks per selected backend; do not infer health from a CUDA version banner |
 | CUDA memory exhaustion or desktop GPU contention | Preflight estimates, configurable feature/image/batch budgets, bounded concurrency and actionable failures; setting changes create a new recorded plan |
