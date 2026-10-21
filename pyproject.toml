@@ -29,6 +29,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "integration: opt-in tests requiring explicitly configured external tools",
+]
 
 [tool.ruff]
 target-version = "py312"

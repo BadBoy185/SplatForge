@@ -8,7 +8,9 @@ from uuid import UUID
 import typer
 
 from splatforge import __version__
+from splatforge.application.doctor import render_doctor_report
 from splatforge.bootstrap import (
+    build_doctor_service,
     build_execution_service,
     build_media_service,
     build_project_service,
@@ -305,6 +307,30 @@ def methods() -> None:
     for method in registry.list():
         suffix = " [experimental]" if method.experimental else ""
         typer.echo(f"{method.stage.value:20} {method.id:42} {method.display_name}{suffix}")
+
+
+@app.command()
+def doctor(
+    colmap: Annotated[Path | None, typer.Option("--colmap")] = None,
+    colmap_model_dir: Annotated[Path | None, typer.Option("--colmap-model-dir")] = None,
+    deep: Annotated[bool, typer.Option("--deep")] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    try:
+        report = build_doctor_service().report(
+            colmap=colmap,
+            model_directory=colmap_model_dir,
+            deep=deep,
+        )
+    except Exception as exc:
+        typer.echo(
+            f"Doctor could not complete its internal contract: {str(exc)[:1024]}", err=True
+        )
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        typer.echo(render_doctor_report(report))
 
 
 @app.command("show-default-config")

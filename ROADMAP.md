@@ -135,10 +135,13 @@ motion-aware selection stays deferred until a bounded quality benchmark exists.
 
 ## M5 — COLMAP and GPU capability integration
 
-Add explicit executable discovery, identity/version/operation probes, model-file
-checks, native-format support and backend-specific GPU/runtime health. Expose a
-`doctor` report with available/unavailable/unknown reasons. Catalog entries remain
-separate from implemented and runnable methods. Extend the shared process boundary.
+**Implemented.** `splatforge doctor` resolves COLMAP by explicit/environment/bundled/
+safe-PATH precedence, records strong executable/version identity, parses bounded
+operation and feature/matcher help fail-closed, checks concrete learned-model evidence,
+and reports generic NVIDIA inventory separately from COLMAP GPU health. `--deep` uses
+owned disposable workspaces for versioned native SQLite schema validation plus CPU/GPU
+SIFT smoke probes through the M2 process boundary. Evidence has process-local freshness
+limits and cached reports recheck concrete executable identity.
 
 Acceptance: fixture probes cover missing executable, unsupported ONNX/model route,
 missing Global Mapper, unhealthy CUDA/DLL loading and CPU-only capability. An opt-in

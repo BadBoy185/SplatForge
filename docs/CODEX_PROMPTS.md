@@ -179,6 +179,12 @@ rejected images as metadata-backed artifacts. Defer adaptive motion selection.
 
 ## M5 COLMAP and GPU capabilities
 
+Implemented by the project-free `doctor` application service and CLI. Lightweight
+discovery records exact executable/build identity, bounded raw commands/options/tokens,
+ONNX/model prerequisites and separate generic-GPU evidence. `--deep` adds disposable
+native database and CPU/GPU SIFT functional probes. All M7/M8 catalog methods remain
+planned and never become runnable from M5 evidence.
+
 Additional reading: [ARCHITECTURE: capability checks](../ARCHITECTURE.md#replaceable-methods-and-capability-checks),
 [PIPELINE: method execution contract](PIPELINE.md#method-execution-contract) and
 [DEVELOPMENT.md](DEVELOPMENT.md).

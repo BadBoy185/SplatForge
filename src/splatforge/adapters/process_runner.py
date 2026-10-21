@@ -21,7 +21,70 @@ from splatforge.core.media import ExecutableIdentity
 from splatforge.core.process import ProcessResult
 
 if os.name == "nt":  # pragma: win32 cover - declarations are exercised by Windows tests
+    import msvcrt
     from ctypes import wintypes
+
+    class _ExecutableBasicInfo(ctypes.Structure):
+        _fields_ = [
+            ("creation_time", ctypes.c_longlong),
+            ("last_access_time", ctypes.c_longlong),
+            ("last_write_time", ctypes.c_longlong),
+            ("change_time", ctypes.c_longlong),
+            ("attributes", wintypes.DWORD),
+        ]
+
+    _get_executable_information = ctypes.WinDLL(
+        "kernel32", use_last_error=True
+    ).GetFileInformationByHandleEx
+    _get_executable_information.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+    ]
+    _get_executable_information.restype = wintypes.BOOL
+    _read_executable_usn = ctypes.WinDLL(
+        "kernel32", use_last_error=True
+    ).DeviceIoControl
+    _read_executable_usn.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+    ]
+    _read_executable_usn.restype = wintypes.BOOL
+
+
+def _executable_change_sequence(stream: object) -> int | None:
+    """Read existing NTFS/ReFS USN evidence; never create or alter a journal."""
+
+    if os.name != "nt":
+        return 0  # POSIX ctime is already in the concrete file key.
+    versions = (ctypes.c_ushort * 2)(2, 3)
+    buffer = ctypes.create_string_buffer(4096)
+    returned = wintypes.DWORD()
+    handle = msvcrt.get_osfhandle(stream.fileno())  # type: ignore[attr-defined]
+    if not _read_executable_usn(
+        handle, 0x000900EB, ctypes.byref(versions), ctypes.sizeof(versions),
+        buffer, ctypes.sizeof(buffer), ctypes.byref(returned), None,
+    ):
+        return None
+    data = buffer.raw[:returned.value]
+    if len(data) < 8:
+        return None
+    version = int.from_bytes(data[4:6], "little")
+    offset = {2: 24, 3: 40}.get(version)
+    if offset is None or len(data) < offset + 8:
+        return None
+    sequence = int.from_bytes(data[offset:offset + 8], "little", signed=True)
+    return sequence if sequence > 0 else None
+
+
+def _executable_change_time(stream: object, stat: os.stat_result) -> int:
+    if os.name != "nt":
+        return stat.st_ctime_ns
+    information = _ExecutableBasicInfo()
+    handle = msvcrt.get_osfhandle(stream.fileno())  # type: ignore[attr-defined]
+    if not _get_executable_information(
+        handle, 0, ctypes.byref(information), ctypes.sizeof(information)
+    ):
+        raise OSError(ctypes.get_last_error(), "Cannot observe executable change time")
+    return information.change_time * 100
 
 
 class ProcessBoundaryError(ValueError):
@@ -51,30 +114,46 @@ class ProcessRequest:
 class ExecutableResolver:
     def __init__(self) -> None:
         self._identity_cache: dict[
-            tuple[str, int, int, int, int, int], ExecutableIdentity
+            tuple[str, int, int, int, int, int, int | None], ExecutableIdentity
         ] = {}
 
-    def resolve(self, requested: str) -> ExecutableIdentity:
+    def resolve(
+        self,
+        requested: str,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> ExecutableIdentity:
         candidate = Path(requested)
         if candidate.is_absolute() or candidate.parent != Path("."):
             path = candidate.absolute()
         else:
-            path = self._search_path(requested)
+            path = self._search_path(requested, environment=environment)
         if not path.is_file():
             raise ExecutableNotFoundError(f"Executable not found: {requested}")
         path = path.resolve(strict=True)
         for _attempt in range(2):
-            before = path.stat()
-            key = self._cache_key(path, before)
-            cached = self._identity_cache.get(key)
-            if cached is not None:
-                return cached
-            digest = hashlib.sha256()
             with path.open("rb") as stream:
+                before = os.fstat(stream.fileno())
+                change_before = _executable_change_time(stream, before)
+                sequence_before = _executable_change_sequence(stream)
+                key = self._cache_key(path, before, change_before, sequence_before)
+                cached = self._identity_cache.get(key)
+                if cached is not None and before.st_ino != 0 and sequence_before is not None:
+                    return cached
+                digest = hashlib.sha256()
                 while chunk := stream.read(1024 * 1024):
                     digest.update(chunk)
-            after = path.stat()
-            if self._cache_key(path, after) != key:
+                after = os.fstat(stream.fileno())
+                change_after = _executable_change_time(stream, after)
+                sequence_after = _executable_change_sequence(stream)
+            if self._cache_key(path, after, change_after, sequence_after) != key:
+                continue
+            path_after = path.stat()
+            if (
+                path_after.st_dev, path_after.st_ino, path_after.st_size, path_after.st_mtime_ns
+            ) != (
+                after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns
+            ):
                 continue
             identity = ExecutableIdentity(
                 resolved_path=str(path),
@@ -82,38 +161,67 @@ class ExecutableResolver:
                 last_write_ns=after.st_mtime_ns,
                 volume_id=str(after.st_dev),
                 file_id=str(after.st_ino),
-                change_time_ns=after.st_ctime_ns,
+                change_time_ns=change_after,
                 sha256=digest.hexdigest(),
             )
+            if cached is not None and cached == identity:
+                return cached
+            self._identity_cache = {
+                item_key: value for item_key, value in self._identity_cache.items()
+                if item_key[0] != str(path)
+            }
+            if len(self._identity_cache) >= 128:
+                self._identity_cache.clear()
             self._identity_cache[key] = identity
             return identity
         raise ProcessBoundaryError(
             f"Executable changed while establishing its identity: {path}"
         )
 
+    def verify_expected_identity(self, expected: ExecutableIdentity) -> bool:
+        """Re-observe a frozen executable identity immediately before later use."""
+
+        try:
+            current = self.resolve(expected.resolved_path)
+        except (ExecutableNotFoundError, ProcessBoundaryError, OSError):
+            return False
+        return current.model_copy(update={"version_line": None}) == expected.model_copy(
+            update={"version_line": None}
+        )
+
     @staticmethod
-    def _cache_key(path: Path, stat: os.stat_result) -> tuple[str, int, int, int, int, int]:
+    def _cache_key(
+        path: Path, stat: os.stat_result, change_time_ns: int, change_sequence: int | None
+    ) -> tuple[str, int, int, int, int, int, int | None]:
         return (
             str(path),
             stat.st_dev,
             stat.st_ino,
             stat.st_size,
             stat.st_mtime_ns,
-            stat.st_ctime_ns,
+            change_time_ns,
+            change_sequence,
         )
 
     @staticmethod
-    def _search_path(name: str) -> Path:
+    def _search_path(
+        name: str,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> Path:
+        values = os.environ if environment is None else environment
         suffixes = [""]
         if os.name == "nt" and not Path(name).suffix:
             suffixes = [
-                item.lower() for item in os.environ.get("PATHEXT", ".EXE").split(os.pathsep)
+                item.lower() for item in values.get("PATHEXT", ".EXE").split(os.pathsep)
             ]
-        for entry in os.environ.get("PATH", "").split(os.pathsep):
+        for entry in values.get("PATH", "").split(os.pathsep):
             if not entry:
                 continue
             directory = Path(entry)
             if not directory.is_absolute():
+                continue
+            if directory.resolve() == Path.cwd().resolve():
                 continue
             for suffix in suffixes:
                 candidate = directory / f"{name}{suffix}"

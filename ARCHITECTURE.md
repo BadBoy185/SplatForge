@@ -156,6 +156,13 @@ it is not guaranteed by the executable name or version alone. This motivates pro
 not a requirement that every learned method use COLMAP's ONNX implementation.
 See [COLMAP's feature guidance](https://colmap.github.io/faq.html#choosing-between-sift-aliked-and-loma-features).
 
+M5 implements this environment boundary as a project-free Doctor report. Static
+CLI evidence is short-lived, resource/GPU health is shorter-lived, and cached evidence
+is reused only while the same concrete executable identity remains observed. Deep
+native database and SIFT checks use owned temporary workspaces through the shared
+process boundary. Raw newer backend commands and feature/matcher tokens are
+informational; they neither mutate the method catalog nor promise pipeline support.
+
 Descriptor compatibility includes family, representation, dimensions, normalization,
 keypoint convention and matcher weight variant. Retrieval/Vocabulary Tree is not a
 universal operation over every local descriptor family. Keep retrieval model/index

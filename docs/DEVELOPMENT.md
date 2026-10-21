@@ -1,8 +1,8 @@
 # Development, testing and diagnostics
 
 [AGENTS.md](../AGENTS.md) is the engineering constitution. This guide defines the
-verification strategy; foundation, M1b2 execution/recovery and the M2 media/process
-boundary have automated coverage.
+verification strategy; foundation, M1b2 execution/recovery, the M2 media/process
+boundary and M5 capability diagnostics have automated coverage.
 Use the project virtual environment and the [README commands](../README.md#current-status).
 Python 3.12 is the baseline; wider `requires-python` metadata is not evidence of testing
 on every later Python release.
@@ -24,6 +24,36 @@ Add explicit integration/GPU markers when those tests exist. Tests skip with rea
 when prerequisites are absent; skips are not evidence of backend support. Configure
 separate Windows integration runs for supported backend builds and retain capability
 reports. Include Windows Server/headless execution before claiming support there.
+
+M5's real integration test is opt-in. Set `SPLATFORGE_TEST_COLMAP` to an absolute
+COLMAP executable, or to `1` for `SPLATFORGE_COLMAP`/safe-PATH resolution. The test
+records exact version/build identity, commands, mapper evidence and a disposable native
+database compatibility result. `SPLATFORGE_TEST_COLMAP_DEEP=1` additionally runs tiny
+CPU and GPU SIFT probes. GPU failure is a valid capability result unless a separate
+environment explicitly requires GPU. No test downloads binaries, runtimes or models.
+Set `SPLATFORGE_TEST_COLMAP_REQUIRE_GPU=1` together with the deep opt-in to make GPU
+smoke success mandatory. Exact path/hash/version, mapper, database and ONNX/model
+evidence are retained as test properties for optional JUnit output.
+Headless CUDA success is valid evidence; an OpenGL-only route without a display is
+reported as unavailable while CPU SIFT can remain available.
+
+The shared executable resolver caches SHA-256 only with concrete file/change evidence.
+Windows also reads an existing NTFS/ReFS USN marker to detect rapid same-size writes
+with restored modification times; it never enables or alters a journal. If this marker
+is unavailable, the resolver rehashes rather than trusting an insufficient cache key.
+Future frozen attempts can call `verify_expected_identity()` immediately before launch.
+
+Doctor schema v1 uses five-minute maximum static CLI evidence and thirty-second
+resource/functional evidence. The process-local report cache expires at its earliest
+evidence expiry and rechecks executable identity/configuration on reuse. Parsing v1
+recognizes braced feature/matcher enums and a narrow legacy SIFT option profile;
+unrecognized formats fail closed. Per-command failure codes/excerpts remain separate.
+Learned model roles follow the selected binary's concrete model-path option defaults.
+No ONNX inference or model compatibility is certified by recording a readable file.
+Native schema probe v1 validates only the required cameras/images/features/matches/
+geometry columns, storage types, primary IDs and unique image names, read-only, with
+bounded SQLite work. GPU SIFT must produce valid positive native feature records and
+advertise actual GPU extractor execution; generic GPU inventory is independent.
 
 Use generated tiny images/videos and synthetic reconstructions for deterministic
 expectations. Keep a documented manifest with origin/license, content checksums and
@@ -207,6 +237,11 @@ For an open SQLite store, use a supported consistent backup operation, not raw c
 of database/WAL files: [SQLite backup API](https://sqlite.org/backup.html).
 These upstream references were reviewed on 2026-10-19; they are not a substitute for
 runtime evidence from the user's machine.
+
+Release packaging should prefer current stable upstream toolchains only after tests,
+pin shipped binary/model identities and never auto-trust a new upstream release.
+Application updates may ship a newer tested runtime side-by-side; recorded work keeps
+the concrete backend identity actually used.
 
 ## Definition of done
 

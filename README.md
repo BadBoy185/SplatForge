@@ -37,8 +37,10 @@ FFmpeg, preserves selected input presentation timestamps, applies orientation ex
 and validates every published image without modifying originals. M4 measures exact
 8-bit edge-response variance and dHash64 from candidate pixels, keeps thresholds out of
 the reusable report, records a typed decision for every candidate and compares video
-duplicates only against a bounded same-clip accepted history. COLMAP, training and GUI
-remain planned.
+duplicates only against a bounded same-clip accepted history. M5 adds project-free,
+read-only COLMAP/GPU diagnostics with exact binary identity, bounded command/help
+discovery, model evidence, native-database compatibility and optional CPU/GPU SIFT
+smoke probes. Feature extraction, matching, mapping, training and GUI remain planned.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 These commands work in the foundation:
@@ -48,6 +50,8 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\splatforge.exe version
 .\.venv\Scripts\splatforge.exe methods
+.\.venv\Scripts\splatforge.exe doctor
+.\.venv\Scripts\splatforge.exe doctor --deep --json --colmap "C:\COLMAP\colmap.exe" --colmap-model-dir "C:\COLMAP\models"
 .\.venv\Scripts\splatforge.exe show-default-config
 .\.venv\Scripts\splatforge.exe project create "C:\SplatForge Projects\First scene" --label "First scene"
 .\.venv\Scripts\splatforge.exe project show "C:\SplatForge Projects\First scene"
@@ -83,6 +87,23 @@ target FPS; video requests below that density are refused. Changing target FPS,
 minimum sharpness or duplicate policy reuses candidate pixels and QualityReport, while
 changing `--quality-max-side` recomputes measurements and their selection consumer.
 
+`splatforge doctor` does not require or mutate a project. COLMAP selection is, in order:
+`--colmap`, `SPLATFORGE_COLMAP`, an explicitly composed bundled candidate and safe
+absolute `PATH` entries. Model roots use `--colmap-model-dir`,
+`SPLATFORGE_COLMAP_MODEL_DIR` or an explicitly composed bundled root. Lightweight mode
+reads bounded binary/build and CLI evidence only. `--deep` additionally creates and
+removes owned temporary databases and images for native-schema, CPU SIFT and GPU SIFT
+functional checks. Missing COLMAP, NVIDIA tools, CUDA, ONNX support or model files are
+valid diagnostic results, not project failures. Doctor never downloads COLMAP, models,
+ONNX Runtime, CUDA or drivers.
+
+On Windows select the native `colmap.exe`; batch/script wrappers are refused so
+the recorded hash identifies the backend actually being probed.
+
+Unknown help layouts and learned tokens without sufficient ONNX build evidence remain
+`unknown`. Model records certify local byte identity, not successful learned inference.
+Raw newer backend tokens are informational and do not add runnable SplatForge methods.
+
 For programmatic editing:
 
 ```python
@@ -101,8 +122,17 @@ timeout, owner-death descendant cleanup and local fixed-volume read leases that 
 write/delete while allowing readers. Default tests require no FFmpeg installation; set
 `SPLATFORGE_TEST_FFPROBE` for the generated-PNG real FFprobe test and
 `SPLATFORGE_TEST_FFMPEG` to an FFmpeg executable (or `1` for configured PATH lookup)
-for the generated VFR/rotation candidate-view integration test. COLMAP, CUDA and trainer
-installation remain unnecessary.
+for the generated VFR/rotation candidate-view integration test. Set
+`SPLATFORGE_TEST_COLMAP` to an absolute executable, or `1` for
+`SPLATFORGE_COLMAP`/safe-PATH resolution, to opt into real M5 identity, command and
+native-database checks. `SPLATFORGE_TEST_COLMAP_DEEP=1` also enables disposable CPU/GPU
+SIFT smoke checks; a missing functional GPU is reported rather than assumed. Default
+tests still require no COLMAP, GPU, model files or network.
+
+Future SplatForge releases should prefer the current stable upstream toolchain only
+after compatibility testing and should pin each shipped backend by exact identity/hash.
+New upstream binaries are not trusted automatically. A newer tested runtime may be
+shipped side-by-side; it must not reinterpret the concrete provenance of older work.
 
 ## Intended workflow
 
@@ -147,4 +177,4 @@ translation/benchmarking stays with training integration.
 | [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
 
 Keep source media, generated projects, model weights and training output outside the
-repository. Next is **M4 — frame quality and selection**.
+repository. Next is **M6 — minimal pair selection**.

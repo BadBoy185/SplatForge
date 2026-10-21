@@ -169,6 +169,103 @@ def test_executable_cache_invalidates_same_size_mtime_replacement(tmp_path: Path
     assert first.sha256 == hashlib.sha256(b"first-binary").hexdigest()
     assert second.sha256 == hashlib.sha256(b"other-binary").hexdigest()
     assert second.sha256 != first.sha256
+    assert resolver.verify_expected_identity(first) is False
+    assert resolver.verify_expected_identity(second) is True
+
+
+def test_executable_identity_digest_is_cached_while_strong_identity_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "backend.exe"
+    executable.write_bytes(b"stable-binary")
+    resolver = ExecutableResolver()
+
+    first = resolver.resolve(str(executable))
+    second = resolver.resolve(str(executable))
+
+    assert second is first
+    assert resolver.verify_expected_identity(first) is True
+
+
+def test_safe_path_ignores_empty_and_relative_entries(tmp_path: Path) -> None:
+    unsafe = tmp_path / "working"
+    unsafe.mkdir()
+    safe = tmp_path / "safe tools ž"
+    safe.mkdir()
+    (unsafe / "backend.exe").write_bytes(b"unsafe")
+    expected = safe / "backend.exe"
+    expected.write_bytes(b"safe")
+    environment = {
+        "PATH": os.pathsep.join(("", ".", str(safe.absolute()))),
+        "PATHEXT": ".EXE",
+    }
+
+    identity = ExecutableResolver().resolve("backend", environment=environment)
+
+    assert identity.resolved_path == str(expected.resolve())
+    assert identity.sha256 == hashlib.sha256(b"safe").hexdigest()
+
+
+def test_executable_cache_detects_in_place_change_with_restored_size_and_mtime(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "backend.exe"
+    executable.write_bytes(b"first-binary")
+    resolver = ExecutableResolver()
+    first = resolver.resolve(str(executable))
+    executable.write_bytes(b"other-binary")
+    os.utime(executable, ns=(first.last_write_ns, first.last_write_ns))
+    second = resolver.resolve(str(executable))
+    assert first.file_id == second.file_id
+    assert first.last_write_ns == second.last_write_ns
+    assert first.sha256 != second.sha256
+    assert resolver.verify_expected_identity(first) is False
+
+
+def test_safe_path_does_not_search_absolute_current_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "backend.exe").write_bytes(b"unsafe")
+    with pytest.raises(process_runner_module.ExecutableNotFoundError):
+        ExecutableResolver().resolve(
+            "backend", environment={"PATH": str(tmp_path), "PATHEXT": ".EXE"}
+        )
+
+
+def test_valid_change_marker_avoids_rehashing_the_same_binary(tmp_path: Path, monkeypatch) -> None:
+    executable = tmp_path / "backend.exe"
+    executable.write_bytes(b"stable binary")
+    monkeypatch.setattr(process_runner_module, "_executable_change_sequence", lambda stream: 42)
+    original = hashlib.sha256
+    hashes = []
+
+    def count_hashes(*args, **kwargs):
+        hashes.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(process_runner_module.hashlib, "sha256", count_hashes)
+    resolver = ExecutableResolver()
+    first = resolver.resolve(str(executable))
+    assert resolver.resolve(str(executable)) is first
+    assert resolver.verify_expected_identity(first) is True
+    assert len(hashes) == 1
+
+
+def test_missing_change_marker_rehashes_even_when_all_recorded_times_match(
+    tmp_path: Path, monkeypatch
+) -> None:
+    executable = tmp_path / "backend.exe"
+    executable.write_bytes(b"first-binary")
+    monkeypatch.setattr(process_runner_module, "_executable_change_sequence", lambda stream: None)
+    monkeypatch.setattr(process_runner_module, "_executable_change_time", lambda stream, stat: 123)
+    resolver = ExecutableResolver()
+    first = resolver.resolve(str(executable))
+    executable.write_bytes(b"other-binary")
+    os.utime(executable, ns=(first.last_write_ns, first.last_write_ns))
+    second = resolver.resolve(str(executable))
+    assert first.change_time_ns == second.change_time_ns
+    assert first.sha256 != second.sha256
 
 
 def test_unconfirmed_teardown_is_structured_not_fabricated_success(tmp_path: Path) -> None:
