@@ -12,7 +12,11 @@ Windows entrypoints, full candidate decode integrity, atomic state v1/v2/v3 upgr
 orientation/source-PTS semantics, fresh FFmpeg plan identity and exceptional teardown
 quarantine. Preserve these regressions in later milestones. Adapter version 2 changes
 candidate recipes; state v4 and candidate contract 1 stay unchanged. M6/PairSet is
-implemented; the pre-M7 scalability/operability work remains a separate task.
+implemented. The dedicated post-M6/pre-M7 scalability/operability pass is complete:
+preserve the brute-force selector oracle, early expansion bounds, operation-scoped
+validation, linear producer provenance and bounded optional attempt diagnostics in
+later milestones. Numerical keys and existing project/state/artifact versions are
+unchanged. M7 remains a separate, unimplemented task.
 
 ## Common instructions for every task
 

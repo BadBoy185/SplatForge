@@ -16,8 +16,11 @@ native-only Windows process execution, candidate decode integrity, atomic histor
 DDL upgrades, photo/video orientation, source PTS origin, per-plan FFmpeg observation
 and exceptional teardown quarantine. It changes FFmpeg adapter recipe identity to 2,
 without changing project/state/artifact JSON versions. M6 PairSet is implemented below.
-Fixed-FPS scalability, shared-lineage validation memoization, verification provenance
-scaling and durable invocation logging remain deferred to the pre-M7 pass.
+The bounded post-M6/pre-M7 scalability/operability pass is complete: ordered exact
+fixed-FPS selection and early slot/interval bounds, operation-scoped typed artifact
+validation, one complete candidate provenance write and bounded durable FFmpeg attempt
+diagnostics. Numerical identities and project/state/artifact versions stay unchanged.
+M7 remains planned.
 
 ## M0 — existing foundation and architecture review
 
@@ -172,7 +175,8 @@ durable cancellation and publication recovery, with no COLMAP/CUDA or image deco
 Acceptance is covered by deterministic core, projection/key, coverage, CLI, cache,
 corruption, cancellation/recovery and upstream M3/M4 regression tests. PairSet production
 is independent of local features. Retrieval remains M7c; spatial pairing remains M13a.
-The pre-M7 scalability/operability pass remains separate.
+The dedicated pre-M7 scalability/operability pass is complete. Its regression and
+diagnostic contracts are documented in [DEVELOPMENT.md](docs/DEVELOPMENT.md#structured-events-and-diagnostics).
 
 ## M7 — features, matching and geometric verification
 

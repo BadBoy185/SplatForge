@@ -16,7 +16,9 @@ from splatforge.adapters.artifact_validation import (
     stream_sha256,
     validate_workspace_output,
 )
+from splatforge.adapters.execution_storage import LocalExecutionRepository
 from splatforge.adapters.ffmpeg import FFmpegAdapter
+from splatforge.bootstrap import build_media_service, build_project_service, build_views_service
 from splatforge.core.media import (
     FullHashEvidence,
     MediaType,
@@ -24,13 +26,16 @@ from splatforge.core.media import (
     SourceEvidence,
     SourceOccurrence,
     StorageKind,
+    VerificationPolicyId,
 )
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     CandidateEncodingSettings,
     CandidatePoolSettings,
+    CandidateResourceLimits,
     CandidateView,
     CandidateViewSet,
+    FixedFpsSettings,
     FrameTimestamp,
     ImageFormat,
     PixelTransform,
@@ -253,4 +258,30 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
 
     assert validated.parsed == candidate
     assert all((output / view.image_path).is_file() for view in candidate.views)
+    assert video.read_bytes() == original
+
+    # Exercise the same real VFR source through an attempt, including durable
+    # process diagnostics and a fresh typed artifact read.
+    project = tmp_path / "real attempt žluťoučký"
+    build_project_service().create(project, "Real FFmpeg attempt")
+    build_media_service(ffprobe_path=ffprobe).add(project, [video])
+    completed = build_views_service(ffmpeg_path=executable).prepare(
+        project,
+        candidate_settings=settings,
+        selection_settings=FixedFpsSettings(target_fps=parse_fps("1")),
+        resource_limits=CandidateResourceLimits(),
+        verification_policy=VerificationPolicyId.BALANCED_LOCAL,
+    )
+    assert completed.status == "succeeded"
+    repository = LocalExecutionRepository()
+    published = repository.load_candidate_views(project, completed.candidate_artifact)
+    assert [view.presentation_timestamp.seconds() for view in published.views] == source_times
+    shown = json.loads(repository.show_run(project, completed.run_id))
+    diagnostics = shown["attempts"][0]["process_diagnostics"]
+    assert diagnostics["invocation_count"] == 1
+    record = json.loads((project / diagnostics["path"]).read_bytes().splitlines()[0])
+    assert record["executable"]["sha256"] == backend.sha256
+    assert record["executable"]["resolved_path"] == backend.resolved_path
+    assert record["executable"]["version_line"] == backend.version_line
+    assert record["outcome"] == "succeeded" and record["teardown_confirmed"]
     assert video.read_bytes() == original

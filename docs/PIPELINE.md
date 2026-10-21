@@ -333,6 +333,12 @@ continues to report all components, including excluded ones, to preserve coverag
 
 ## Stage fingerprints and cache eligibility
 
+Operation-scoped validation memoization, provenance write strategy and optional process
+diagnostics do not enter numerical fingerprints. Validation strength, memo contents,
+hash-pass counts, diagnostics paths/output/duration/truncation do not change recipe
+keys or semantic digests. Source assurance and publication eligibility remain separate
+gates; a later application operation revalidates immutable upstream byte integrity.
+
 A stage recipe key is a cryptographic digest of a versioned canonical representation:
 
 ```text

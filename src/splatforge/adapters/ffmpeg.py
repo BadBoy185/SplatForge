@@ -5,10 +5,14 @@ from __future__ import annotations
 import os
 import re
 import sys
+import time
+import warnings
+from contextlib import suppress
 from fractions import Fraction
 from pathlib import Path
 from typing import Never
 
+from splatforge.adapters.process_diagnostics import ProcessEvidenceSink, invocation_evidence
 from splatforge.adapters.process_runner import (
     ExecutableNotFoundError,
     LocalProcessRunner,
@@ -114,6 +118,7 @@ class FFmpegAdapter:
         timeout_seconds: int,
         expected_backend: ExecutableIdentity,
         cancellation: ProcessCancellation | None = None,
+        evidence_sink: ProcessEvidenceSink | None = None,
     ) -> tuple[MaterializedFrame, ...]:
         absolute = source_path.absolute()
         output_directory.mkdir(parents=True, exist_ok=False)
@@ -175,28 +180,59 @@ class FFmpegAdapter:
                 )
             )
         argv.append(str(pattern))
+        request = ProcessRequest(
+            executable=expected_backend.resolved_path,
+            argv=tuple(argv),
+            working_directory=output_directory.parent,
+            environment={},
+            timeout_seconds=timeout_seconds,
+            max_stdout_bytes=64 * 1024,
+            max_stderr_bytes=self._max_metadata_bytes,
+            expected_executable=expected_backend,
+        )
+        started = time.monotonic()
+
+        def record(result: ProcessResult | None = None, error: Exception | None = None) -> None:
+            if evidence_sink is None:
+                return
+            try:
+                evidence_sink(
+                    invocation_evidence(
+                        request,
+                        executable=expected_backend,
+                        diagnostic_argv=request.argv,
+                        tool_role="ffmpeg.materialize",
+                        source_id=source.source_id,
+                        elapsed_seconds=max(0, time.monotonic() - started),
+                        result=result,
+                        error=error,
+                    )
+                )
+            except Exception as exc:
+                # Optional evidence cannot become a backend failure under -Werror.
+                with suppress(RuntimeWarning):
+                    warnings.warn(
+                        f"Process diagnostic recording failed: {str(exc)[:512]}",
+                        RuntimeWarning, stacklevel=2,
+                    )
+
         try:
-            result = self._runner.run(
-                ProcessRequest(
-                    executable=expected_backend.resolved_path,
-                    argv=tuple(argv),
-                    working_directory=output_directory.parent,
-                    environment={},
-                    timeout_seconds=timeout_seconds,
-                    max_stdout_bytes=64 * 1024,
-                    max_stderr_bytes=self._max_metadata_bytes,
-                    expected_executable=expected_backend,
-                ),
-                cancellation=cancellation,
-            )
+            result = self._runner.run(request, cancellation=cancellation)
         except ExecutableNotFoundError as exc:
+            record(error=exc)
             raise FFmpegMissingError(
                 "The frozen FFmpeg executable is no longer available"
             ) from exc
         except ProcessCleanupError as exc:
+            record(error=exc)
             self._raise_cleanup_error(exc)
         except (ProcessBoundaryError, OSError) as exc:
+            record(error=exc)
             raise FFmpegBackendError(f"FFmpeg process boundary failed: {exc}") from exc
+        except Exception as exc:
+            record(error=exc)
+            raise
+        record(result=result)
         self._require_success(result, version_probe=False)
         if not self._same_binary(expected_backend, result.executable):
             self._backend = None
@@ -247,9 +283,15 @@ class FFmpegAdapter:
 
     @staticmethod
     def _raise_cleanup_error(exc: ProcessCleanupError) -> Never:
+        summary = (
+            f"FFmpeg process boundary failed: {type(exc.original_error).__name__}: "
+            f"{str(exc.original_error)[:512]}; teardown_confirmed={exc.teardown_confirmed}; "
+            f"forced_tree_termination={exc.forced_tree_termination}; "
+            f"cleanup_error_count={len(exc.cleanup_errors)}"
+        )
         if not exc.teardown_confirmed:
-            raise FFmpegTeardownError(f"FFmpeg process boundary failed: {exc}") from exc
-        raise FFmpegBackendError(f"FFmpeg process boundary failed: {exc}") from exc
+            raise FFmpegTeardownError(summary) from exc
+        raise FFmpegBackendError(summary) from exc
 
     @staticmethod
     def _same_binary(left: ExecutableIdentity, right: ExecutableIdentity) -> bool:
@@ -275,11 +317,12 @@ class FFmpegAdapter:
                 "FFmpeg left surviving descendants that required forced tree termination"
             )
         if result.exit_code != 0:
-            detail = result.stderr_text().strip()[:1024]
             action = "version probe" if version_probe else "materialization"
+            detail = f": {result.stderr_text().strip()[:1024] or 'no diagnostic output'}" if (
+                version_probe
+            ) else ""
             raise FFmpegBackendError(
-                f"FFmpeg {action} exited with code {result.exit_code}: "
-                f"{detail or 'no diagnostic output'}"
+                f"FFmpeg {action} exited with code {result.exit_code}{detail}"
             )
 
 

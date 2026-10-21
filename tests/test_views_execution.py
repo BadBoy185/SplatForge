@@ -189,6 +189,7 @@ class FakeMaterializer:
         timeout_seconds: int,
         expected_backend: ExecutableIdentity,
         cancellation=None,
+        evidence_sink=None,
     ) -> tuple[MaterializedFrame, ...]:
         absolute = source_path.absolute()
         assert absolute in self.source_files.active
@@ -577,7 +578,10 @@ def test_strict_unsupported_never_falls_back_to_balanced(tmp_path: Path) -> None
         prepare(value, policy=VerificationPolicyId.STRICT)
     assert value.materializer.calls == []
     provenance = query(value.root, "SELECT source_verification_json FROM attempts")[0][0]
-    assert "strict_unavailable" in provenance
+    assert json.loads(provenance)["evidence"] == []
+    assert query(value.root, "SELECT outcome FROM source_verifications") == [
+        ("strict_unavailable",)
+    ]
 
 
 def test_m3_records_verification_without_reacquiring_project_writer_lock(
@@ -738,6 +742,8 @@ def test_durable_cancellation_blocks_partial_candidate_publication(tmp_path: Pat
     assert attempt[0][1] is not None
     assert attempt[0][2] == "confirmed"
     assert query(value.root, "SELECT count(*) FROM artifacts") == [(0,)]
+    encoded = query(value.root, "SELECT source_verification_json FROM attempts")[0][0]
+    assert json.loads(encoded)["evidence"] == []
 
     value.materializer.on_call = None
     value.materializer.mode = "success"

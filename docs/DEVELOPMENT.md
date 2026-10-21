@@ -207,6 +207,58 @@ creates a new resolved plan. Free-VRAM estimates cannot guarantee allocation.
 
 ## Structured events and diagnostics
 
+The pre-M7 pass keeps artifact validation operation-scoped. A repository writer lease
+creates a fresh `ArtifactValidationContext` for one prepare/build/recover/retry command
+and discards it on every exit. Read-only callers can explicitly use
+`validation_operation()`; unscoped reads get a fresh traversal context. Memo identity
+includes the project root, complete artifact handle, concrete manifest path, indexed
+manifest digest and producer attempt. `FULL_DECODE` can satisfy `PAYLOAD_INTEGRITY`,
+but the reverse requires a new stronger validation. A recursion-path set detects cycles
+separately from the memo. Typed metadata and small integrity results are retained;
+candidate image bytes are never cached. A later command always checks bytes again.
+
+Published validation streams each payload hash once and reuses that evidence while
+checking typed metadata, image headers and supported full pixel decode. Shared lineage
+and loaders reuse the parsed result. PairSet operations still establish exact upstream
+byte integrity without pixel decode. Test actual candidate image hash calls for cached
+M3/M4/M6 routes, stronger-after-weaker requests, diamond ancestry, recovery and corruption
+between operations; do not substitute cache UUID equality for integrity assertions.
+
+Fixed-FPS sorts exact rational times and performs an O(N + K) nearest-neighbor sweep
+after O(N log N) sorting. Earlier time, then stable ID, wins ties. Reusing the global
+nearest candidate leaves an unsatisfied slot, with no second-nearest fallback. Both
+selectors refuse slot/interval counts beyond candidate count plus remaining bounded
+unsatisfied capacity before expansion. Keep a deterministic brute-force test oracle
+and counting-sequence complexity checks; default tests have no timing thresholds.
+Manual 1k/2k/5k/10k timings are evidence, not acceptance limits.
+
+M3 persists each source verification row durably, accumulates only its compact producer
+projection, then writes the complete attempt provenance once after every source has
+been consumed successfully and cancellation checked. This precedes expected-publication
+identity and rename. Failure/cancellation can leave durable source rows with empty
+attempt provenance; those attempts cannot publish or become cache eligible. Test write
+count and serialized-byte scaling with synthetic 1/10/100/300-source attempts.
+
+`ProcessInvocationEvidence` v1 is an explicit optional evidence callback from FFmpeg,
+not automatic ProcessRunner logging. Each materialization invocation records native
+identity/version, diagnostic argv, cwd, source/index, elapsed time, exit/timeout/cancel,
+tree teardown/forced cleanup, captured sizes/digests and bounded readable excerpts.
+Exceptional cleanup retains original cause and cleanup facts; streams unavailable from
+the runner remain null. Future callers must explicitly redact secret argv. FFmpeg records
+an empty scoped environment; the contract permits only bounded numeric thread/device
+overrides. Never serialize inherited environment, API keys, passwords or tokens.
+
+Readable excerpts are at most 16 KiB UTF-8 per stream (smaller when JSON escaping needs
+space), records at most 96 KiB and the attempt file at most 4 MiB including a reserved
+retention marker. Appends flush/fsync. At the file limit, append one truncation marker,
+refuse subsequent detail deterministically and warn without failing computation.
+Append failures also warn through the result/events where possible; SQLite attempt
+status and artifact publication remain authoritative. `run show` exposes only a bounded
+summary. Test append failure before/after earlier records, bounds, secret exclusion,
+exceptional teardown and unchanged numerical keys/digests. Doctor and ingest FFprobe
+remain outside project attempt logging. The real FFmpeg integration also verifies a
+durable record from the complete candidate route and unchanged source bytes.
+
 Operational events contain a schema version, UTC time, monotonic sequence/duration,
 project/run/attempt/stage IDs, severity, stable event/error code, message and bounded
 structured fields. Progress includes completed/total units when known. Raw backend

@@ -19,6 +19,9 @@ from pydantic import ValidationError
 
 from splatforge.adapters.artifact_validation import (
     MAX_MANIFEST_BYTES,
+    ArtifactValidationContext,
+    ValidatedArtifact,
+    ValidationStrength,
     validate_pair_lineage,
     validate_published_artifact,
     validate_workspace_output,
@@ -72,6 +75,7 @@ from splatforge.core.pairs import (
     project_pairing_universe,
     sequential_recipe_key,
 )
+from splatforge.core.process import MAX_PROCESS_RECORD_BYTES, ProcessInvocationEvidence
 from splatforge.core.project import ProjectDocument
 from splatforge.core.quality import (
     QualityReport,
@@ -92,6 +96,10 @@ from splatforge.core.views import (
 
 def _no_fault(_path: Path) -> None:
     return
+
+
+MAX_ATTEMPT_DIAGNOSTIC_BYTES = 4 * 1024 * 1024
+_DIAGNOSTIC_RESERVE_BYTES = 512
 
 
 @dataclass(frozen=True)
@@ -121,6 +129,19 @@ class LocalExecutionRepository:
         self._fault_hooks = fault_hooks or ExecutionFaultHooks()
         self._monotonic_starts: dict[UUID, float] = {}
         self._event_sequences: dict[UUID, int] = {}
+        self._validation_context: ArtifactValidationContext | None = None
+
+    @contextmanager
+    def validation_operation(self) -> Iterator[ArtifactValidationContext]:
+        """Explicit scope for read-only operations and nested repository loaders."""
+        if self._validation_context is not None:
+            yield self._validation_context
+            return
+        self._validation_context = ArtifactValidationContext()
+        try:
+            yield self._validation_context
+        finally:
+            self._validation_context = None
 
     @contextmanager
     def writer(
@@ -129,7 +150,10 @@ class LocalExecutionRepository:
         root = root.resolve()
         # Read-only preflight avoids creating a lock for an invalid or unsupported project.
         self._project_store.inspect(root)
-        with self._lock_factory(root / "project.lock") as lease:
+        with (
+            self._lock_factory(root / "project.lock") as lease,
+            self.validation_operation(),
+        ):
             # Refuse a raced unsupported format before changing lock diagnostics.
             self._project_store.inspect(root)
             lease.write_diagnostics(operation=operation, owner_token=owner_token)
@@ -477,6 +501,108 @@ class LocalExecutionRepository:
             return 0
         return int(json.loads(lines[-1].decode("utf-8"))["sequence"])
 
+    def append_process_evidence(
+        self, root: Path, run_id: UUID, attempt_id: UUID, evidence: ProcessInvocationEvidence
+    ) -> RunWarning | None:
+        """Best-effort diagnostic append; SQLite alone decides numerical status."""
+        try:
+            root = root.resolve()
+            with self._read_connection(root) as connection:
+                row = connection.execute(
+                    "SELECT run_id FROM attempts WHERE attempt_id=?", (str(attempt_id),)
+                ).fetchone()
+            if row is None or row[0] != str(run_id):
+                raise ValueError("Process diagnostics require the exact owning run/attempt")
+            path = self._owned_path(root, f"runs/{run_id}/attempts/{attempt_id}/process.jsonl")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            evidence = ProcessInvocationEvidence.model_validate(evidence.model_dump())
+            record = evidence.model_dump(mode="json")
+            record.update({"run_id": str(run_id), "attempt_id": str(attempt_id)})
+            data = canonical_json_bytes(record) + b"\n"
+            if len(data) > MAX_PROCESS_RECORD_BYTES:
+                raise ValueError("Process diagnostic record exceeds its byte bound")
+            size = path.stat().st_size if path.exists() else 0
+            if size:
+                with path.open("rb") as stream:
+                    stream.seek(max(0, size - _DIAGNOSTIC_RESERVE_BYTES))
+                    tail = stream.read(_DIAGNOSTIC_RESERVE_BYTES)
+                if not tail.endswith(b"\n") or not tail.splitlines():
+                    raise ValueError("Process diagnostic tail is incomplete")
+                last = tail.splitlines()[-1]
+                if b'"retention_limit_reached":true' in last:
+                    return RunWarning(
+                        code="process.diagnostics_truncated",
+                        message="Attempt process diagnostic retention limit was reached",
+                    )
+            if size + len(data) > MAX_ATTEMPT_DIAGNOSTIC_BYTES - _DIAGNOSTIC_RESERVE_BYTES:
+                data = canonical_json_bytes({
+                    "diagnostic_schema_version": 1, "run_id": str(run_id),
+                    "attempt_id": str(attempt_id), "diagnostics_truncated": True,
+                    "retention_limit_reached": True,
+                }) + b"\n"
+                if size + len(data) > MAX_ATTEMPT_DIAGNOSTIC_BYTES:
+                    raise ValueError("Existing process diagnostics exceed retention bound")
+                truncated = True
+            else:
+                truncated = False
+            with path.open("ab") as stream:
+                if stream.write(data) != len(data):
+                    raise OSError("Could not append complete process diagnostic record")
+                stream.flush()
+                os.fsync(stream.fileno())
+            if truncated:
+                return RunWarning(
+                    code="process.diagnostics_truncated",
+                    message="Attempt process diagnostic retention limit was reached",
+                )
+        except (OSError, ValueError, TypeError, sqlite3.Error, ProjectError) as exc:
+            return RunWarning(
+                code="process.diagnostics_append_failed",
+                message=f"Optional process diagnostic append failed: {str(exc)[:512]}",
+            )
+        return None
+
+    def _process_diagnostic_summary(
+        self, root: Path, run_id: UUID, attempt_id: UUID
+    ) -> dict[str, object]:
+        relative = f"runs/{run_id}/attempts/{attempt_id}/process.jsonl"
+        summary: dict[str, object] = {
+            "path": relative, "exists": False, "invocation_count": 0, "truncated": False,
+        }
+        try:
+            path = self._owned_path(root, relative)
+            if not path.exists():
+                return summary
+            summary["exists"] = True
+            if path.stat().st_size > MAX_ATTEMPT_DIAGNOSTIC_BYTES:
+                raise ValueError("Process diagnostics exceed retention bound")
+            count = 0
+            with path.open("rb") as stream:
+                while line := stream.readline(MAX_PROCESS_RECORD_BYTES + 1):
+                    if len(line) > MAX_PROCESS_RECORD_BYTES:
+                        raise ValueError("Process diagnostic line exceeds record bound")
+                    record = json.loads(line)
+                    if not isinstance(record, dict):
+                        raise ValueError("Process diagnostic record must be an object")
+                    if record.get("run_id") != str(run_id) or record.get("attempt_id") != str(
+                        attempt_id
+                    ):
+                        raise ValueError("Process diagnostic owner identity mismatch")
+                    if "invocation_index" in record:
+                        count += 1
+                    if record.get("diagnostics_truncated") or any(
+                        record.get(name) for name in (
+                            "stdout_truncated", "stderr_truncated", "stdout_excerpt_truncated",
+                            "stderr_excerpt_truncated",
+                        )
+                    ):
+                        summary["truncated"] = True
+            summary["invocation_count"] = count
+        except (OSError, ValueError, ProjectError) as exc:
+            summary["warning"] = str(exc)[:512]
+            summary["truncated"] = True
+        return summary
+
     def find_cache(
         self,
         root: Path,
@@ -502,6 +628,7 @@ class LocalExecutionRepository:
                 (recipe_key, artifact_type, contract_version),
             ).fetchall()
         ineligible: list[CacheIneligible] = []
+        context = self._validation_context or ArtifactValidationContext()
         for row in rows:
             handle = ArtifactHandle(
                 artifact_id=UUID(row[0]),
@@ -521,7 +648,7 @@ class LocalExecutionRepository:
                 ineligible.append(CacheIneligible(artifact_id=handle.artifact_id, reason=str(exc)))
                 continue
             try:
-                self._validate_indexed_artifact(root, handle)
+                self._validate_indexed_artifact(root, handle, context=context)
             except (OSError, ValueError, ValidationError, json.JSONDecodeError) as exc:
                 ineligible.append(CacheIneligible(artifact_id=handle.artifact_id, reason=str(exc)))
                 continue
@@ -907,13 +1034,13 @@ class LocalExecutionRepository:
                 raise ProjectError("Run did not enter succeeded state")
 
     def load_numbers(self, root: Path, artifact: ArtifactHandle) -> NumbersPayload:
-        manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
-        payload = artifact_directory / manifest.payloads[0].path
-        return NumbersPayload.model_validate_json(payload.read_bytes())
+        _, _, validated = self._validate_indexed_artifact(root.resolve(), artifact)
+        if not isinstance(validated.parsed, NumbersPayload):
+            raise ValueError("Artifact is not a NumbersPayload")
+        return validated.parsed
 
     def load_candidate_views(self, root: Path, artifact: ArtifactHandle) -> CandidateViewSet:
-        manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
-        validated = validate_published_artifact(artifact_directory, manifest)
+        _, _, validated = self._validate_indexed_artifact(root.resolve(), artifact)
         if not isinstance(validated.parsed, CandidateViewSet):
             raise ValueError("Artifact is not a CandidateViewSet")
         return validated.parsed
@@ -921,8 +1048,7 @@ class LocalExecutionRepository:
     def load_selected_views(
         self, root: Path, artifact: ArtifactHandle
     ) -> SelectedViewSet | SharpestSelectedViewSet:
-        manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
-        validated = validate_published_artifact(artifact_directory, manifest)
+        _, _, validated = self._validate_indexed_artifact(root.resolve(), artifact)
         if not isinstance(validated.parsed, (SelectedViewSet, SharpestSelectedViewSet)):
             raise ValueError("Artifact is not a supported SelectedViewSet")
         return validated.parsed
@@ -970,11 +1096,10 @@ class LocalExecutionRepository:
         selected: ArtifactHandle,
     ) -> tuple[CandidateViewSet, SelectedViewSet | SharpestSelectedViewSet]:
         result = []
-        for handle in (candidate, selected):
-            manifest, directory = self._validate_indexed_artifact(root, handle, metadata_only=True)
-            result.append(
-                validate_published_artifact(directory, manifest, decode_pixels=False).parsed
-            )
+        with self.validation_operation():
+            for handle in (candidate, selected):
+                _, _, validated = self._validate_indexed_artifact(root, handle, metadata_only=True)
+                result.append(validated.parsed)
         if not isinstance(result[0], CandidateViewSet) or not isinstance(
             result[1], (SelectedViewSet, SharpestSelectedViewSet)
         ):
@@ -983,21 +1108,20 @@ class LocalExecutionRepository:
         return result[0], result[1]
 
     def load_pair_set(self, root: Path, handle: ArtifactHandle) -> PairSet:
-        manifest, directory = self._validate_indexed_artifact(root, handle)
-        parsed = validate_published_artifact(directory, manifest, decode_pixels=False).parsed
+        _, _, validated = self._validate_indexed_artifact(root, handle)
+        parsed = validated.parsed
         if not isinstance(parsed, PairSet):
             raise ValueError("Artifact is not a PairSet")
         return parsed
 
     def load_quality_report(self, root: Path, artifact: ArtifactHandle) -> QualityReport:
-        manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
-        validated = validate_published_artifact(artifact_directory, manifest)
+        _, _, validated = self._validate_indexed_artifact(root.resolve(), artifact)
         if not isinstance(validated.parsed, QualityReport):
             raise ValueError("Artifact is not a QualityReport")
         return validated.parsed
 
     def artifact_directory(self, root: Path, artifact: ArtifactHandle) -> Path:
-        _, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
+        _, artifact_directory, _ = self._validate_indexed_artifact(root.resolve(), artifact)
         return artifact_directory
 
     def recover_run(self, root: Path, *, run_id: UUID) -> RecoveryResult:
@@ -1337,7 +1461,12 @@ class LocalExecutionRepository:
         rendered = {
             "snapshot": snapshot.model_dump(mode="json"),
             "state": dict(run),
-            "attempts": [dict(row) for row in attempts],
+            "attempts": [
+                {**dict(row), "process_diagnostics": self._process_diagnostic_summary(
+                    root, run_id, UUID(row["attempt_id"])
+                )}
+                for row in attempts
+            ],
             "outputs": [dict(row) for row in outputs],
         }
         return json.dumps(rendered, ensure_ascii=False, indent=2)
@@ -1675,6 +1804,19 @@ class LocalExecutionRepository:
                 """,
                 (now, attempt["attempt_id"]),
             )
+        if self._validation_context is not None:
+            identity = (
+                str(root.resolve()), str(artifact_id), manifest.artifact_type,
+                str(manifest.contract_version), manifest.recipe_key, manifest.semantic_digest,
+                str(manifest_path), attempt["expected_manifest_digest"], attempt["attempt_id"],
+            )
+            strength = (
+                ValidationStrength.PAYLOAD_INTEGRITY
+                if manifest.artifact_type == PAIR_ARTIFACT_TYPE else ValidationStrength.FULL_DECODE
+            )
+            self._validation_context.results[identity] = (
+                strength, manifest, artifact_directory, validated,
+            )
         return ArtifactHandle(
             artifact_id=artifact_id,
             artifact_type=manifest.artifact_type,
@@ -1766,7 +1908,10 @@ class LocalExecutionRepository:
         _seen: frozenset[UUID] = frozenset(),
         *,
         metadata_only: bool = False,
-    ) -> tuple[ArtifactManifest, Path]:
+        context: ArtifactValidationContext | None = None,
+    ) -> tuple[ArtifactManifest, Path, ValidatedArtifact]:
+        root = root.resolve()
+        context = context or self._validation_context or ArtifactValidationContext()
         if handle.artifact_id in _seen:
             raise ValueError("Artifact lineage contains a cycle")
         seen = _seen | {handle.artifact_id}
@@ -1787,6 +1932,18 @@ class LocalExecutionRepository:
             ).fetchone()
         if attempt is None or attempt[0] != "succeeded":
             raise ValueError("Producer attempt is not succeeded")
+        strength = (
+            ValidationStrength.PAYLOAD_INTEGRITY
+            if metadata_only else ValidationStrength.FULL_DECODE
+        )
+        identity = (
+            str(root), str(handle.artifact_id), handle.artifact_type,
+            str(handle.contract_version), handle.recipe_key, handle.semantic_digest,
+            str(manifest_path), row[0], row[1],
+        )
+        memo = context.results.get(identity)
+        if memo is not None and memo[0] >= strength:
+            return memo[1], memo[2], memo[3]
         manifest_size = manifest_path.stat().st_size
         if manifest_size > MAX_MANIFEST_BYTES:
             raise ValueError("Manifest exceeds its explicit size limit")
@@ -1808,7 +1965,9 @@ class LocalExecutionRepository:
         ):
             raise ValueError("Manifest identity or contract mismatch")
         artifact_directory = manifest_path.parent
-        validate_published_artifact(artifact_directory, manifest, decode_pixels=not metadata_only)
+        validated = validate_published_artifact(
+            artifact_directory, manifest, decode_pixels=not metadata_only
+        )
         for lineage in manifest.input_lineage:
             with self._read_connection(root) as connection:
                 upstream = connection.execute(
@@ -1836,9 +1995,10 @@ class LocalExecutionRepository:
                 manifest_path=upstream[0],
             )
             self._validate_indexed_artifact(
-                root, upstream_handle, seen, metadata_only=metadata_only
+                root, upstream_handle, seen, metadata_only=metadata_only, context=context
             )
-        return manifest, artifact_directory
+        context.results[identity] = (strength, manifest, artifact_directory, validated)
+        return manifest, artifact_directory, validated
 
     @staticmethod
     def _artifact_payload_path(artifact_directory: Path, relative: str) -> Path:

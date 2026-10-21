@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from collections import Counter
+from collections.abc import Iterator, Sequence
 from enum import StrEnum
 from fractions import Fraction
 from pathlib import PurePosixPath, PureWindowsPath
@@ -768,20 +769,28 @@ def select_fixed_fps(
             source_selected += 1
 
         if videos:
-            first_time = videos[0].presentation_timestamp.seconds()  # type: ignore[union-attr]
-            last_time = videos[-1].presentation_timestamp.seconds()  # type: ignore[union-attr]
+            # Only the first stable ID at a timestamp can ever win. Collapsing
+            # equal times prevents a duplicate from obstructing the forward sweep.
+            timeline: list[tuple[Fraction, CandidateView]] = []
+            for view in videos:
+                assert view.presentation_timestamp is not None
+                actual = view.presentation_timestamp.seconds()
+                if not timeline or actual != timeline[-1][0]:
+                    timeline.append((actual, view))
+            first_time, last_time = timeline[0][0], timeline[-1][0]
             slot_count = math.floor((last_time - first_time) / target_step) + 1
+            bound_timeline_expansion(
+                source_key[0], slot_count,
+                candidate_count=len(timeline), unsatisfied_count=len(unsatisfied),
+            )
             used: set[UUID] = set()
-            for slot_index in range(slot_count):
+            nearest_indices = _nearest_timeline_indices(
+                [item[0] for item in timeline],
+                (first_time + index * target_step for index in range(slot_count)),
+            )
+            for slot_index, nearest_index in enumerate(nearest_indices):
                 target = first_time + slot_index * target_step
-                nearest = min(
-                    videos,
-                    key=lambda view: (
-                        abs(view.presentation_timestamp.seconds() - target),  # type: ignore[union-attr]
-                        view.presentation_timestamp.seconds(),  # type: ignore[union-attr]
-                        str(view.view_id),
-                    ),
-                )
+                actual, nearest = timeline[nearest_index]
                 if nearest.view_id in used:
                     unsatisfied.append(
                         UnsatisfiedSlot(
@@ -794,7 +803,6 @@ def select_fixed_fps(
                     source_unsatisfied += 1
                     continue
                 used.add(nearest.view_id)
-                actual = nearest.presentation_timestamp.seconds()  # type: ignore[union-attr]
                 provisional.append(
                     SelectedView(
                         view_id=nearest.view_id,
@@ -832,6 +840,28 @@ def select_fixed_fps(
     )
     validate_selected_against_candidate(selected, candidate)
     return selected
+
+
+def bound_timeline_expansion(
+    source_id: str, count: int, *, candidate_count: int, unsatisfied_count: int,
+) -> None:
+    """Each expanded slot must consume a candidate or remaining unsatisfied capacity."""
+    bound = candidate_count + MAX_VIEWS - unsatisfied_count
+    if count > bound:
+        raise ValueError(
+            f"Source {source_id} computed slots/intervals={count} exceeds expansion bound={bound}"
+        )
+
+
+def _nearest_timeline_indices(
+    times: Sequence[Fraction], targets: Iterator[Fraction]
+) -> Iterator[int]:
+    """Sweep distinct ordered times in O(N + K); exact midpoint ties stay earlier."""
+    cursor = 0
+    for target in targets:
+        while cursor + 1 < len(times) and 2 * target > times[cursor] + times[cursor + 1]:
+            cursor += 1
+        yield cursor
 
 
 def validate_selected_against_candidate(

@@ -24,6 +24,7 @@ from splatforge.core.views import (
     CandidateViewSet,
     FrozenModel,
     RationalValue,
+    bound_timeline_expansion,
     candidate_semantic_digest,
     canonical_json_bytes,
     sha256_bytes,
@@ -641,6 +642,10 @@ def _select_sharpest_interval(
             anchor = videos[0].presentation_timestamp.seconds()  # type: ignore[union-attr]
             last_time = videos[-1].presentation_timestamp.seconds()  # type: ignore[union-attr]
             interval_count = math.floor((last_time - anchor) / step) + 1
+            bound_timeline_expansion(
+                source_key[0], interval_count,
+                candidate_count=len(videos), unsatisfied_count=len(unsatisfied),
+            )
             by_interval: dict[int, list[CandidateView]] = {}
             for view in videos:
                 actual = view.presentation_timestamp.seconds()  # type: ignore[union-attr]

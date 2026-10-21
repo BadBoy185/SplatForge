@@ -45,6 +45,11 @@ smoke probes. M6 builds immutable metadata-only candidate view graphs independen
 COLMAP/GPU or local features. Feature extraction, matching, mapping, training and GUI remain planned.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
+Fixed-FPS selection uses an exact ordered sweep with bounded target expansion.
+Artifact integrity checks share results only within one command. M3 attempts retain
+bounded local FFmpeg invocation diagnostics; `run show` lists their path, retained
+invocation count and truncation status without printing backend logs.
+
 These commands work in the foundation:
 
 ```powershell

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -57,6 +58,7 @@ from splatforge.core.media import (
     VerificationPolicyId,
     VerificationResult,
 )
+from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.project import ProjectDocument
 from splatforge.core.quality import (
     QUALITY_ARTIFACT_CONTRACT_VERSION,
@@ -485,6 +487,21 @@ class ViewsService:
             self._execution, root, snapshot.run_id, attempt.attempt_id
         )
         verification_entries: list[dict[str, object]] = []
+        invocation_index = 0
+
+        def record_process(evidence: ProcessInvocationEvidence) -> None:
+            nonlocal invocation_index
+            invocation_index += 1
+            warning = self._execution.append_process_evidence(
+                root, snapshot.run_id, attempt.attempt_id,
+                evidence.model_copy(update={"invocation_index": invocation_index}),
+            )
+            if warning is not None:
+                warnings.append(warning)
+                self._event(
+                    warnings, root, snapshot.run_id, code=warning.code,
+                    attempt_id=attempt.attempt_id, details={"warning": warning.message},
+                )
         try:
             estimate = estimate_candidate_budget(
                 route.sources,
@@ -506,8 +523,19 @@ class ViewsService:
                 bridge,
                 verification_entries,
                 warnings,
+                record_process,
             )
             bridge.checkpoint()
+            self._execution.update_attempt_provenance(
+                root,
+                attempt_id=attempt.attempt_id,
+                environment=self._ffmpeg_environment(route),
+                source_verification={
+                    "policy": route.verification_policy.value,
+                    "artifact_backed": False,
+                    "evidence": verification_entries,
+                },
+            )
             artifact = self._execution.publish_attempt(
                 root,
                 run_id=snapshot.run_id,
@@ -586,6 +614,7 @@ class ViewsService:
         bridge: _OwnerCancellationBridge,
         verification_entries: list[dict[str, object]],
         warnings: list[RunWarning],
+        evidence_sink: Callable[[ProcessInvocationEvidence], None],
     ) -> CandidateViewSet:
         route = self._view_route(snapshot)
         self._workspace.prepare_candidate(workspace)
@@ -616,6 +645,7 @@ class ViewsService:
                 source_output,
                 bridge,
                 verification_entries,
+                evidence_sink,
             )
             source_estimate = source_estimates[source.source_id]
             if len(frames) > source_estimate.candidate_count:
@@ -754,6 +784,7 @@ class ViewsService:
         output_directory: Path,
         bridge: _OwnerCancellationBridge,
         verification_entries: list[dict[str, object]],
+        evidence_sink: Callable[[ProcessInvocationEvidence], None],
     ) -> tuple[MaterializedFrame, ...]:
         route = self._view_route(snapshot)
         path = Path(source.external_locator)
@@ -857,6 +888,7 @@ class ViewsService:
                     timeout_seconds=route.resource_limits.per_source_timeout_seconds,
                     expected_backend=route.ffmpeg_backend,
                     cancellation=bridge,
+                    evidence_sink=evidence_sink,
                 )
                 lease_after = lease.current_evidence()
                 path_after = self._sources.evidence(path)
@@ -965,16 +997,6 @@ class ViewsService:
                 "outcome": result.outcome.value,
                 "checked_at": result.checked_at.isoformat(),
             }
-        )
-        self._execution.update_attempt_provenance(
-            root,
-            attempt_id=attempt_id,
-            environment=self._ffmpeg_environment(route),
-            source_verification={
-                "policy": route.verification_policy.value,
-                "artifact_backed": False,
-                "evidence": entries,
-            },
         )
 
     def _run_quality(

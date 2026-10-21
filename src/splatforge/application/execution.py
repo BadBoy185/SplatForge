@@ -33,6 +33,7 @@ from splatforge.core.fake_pipeline import (
     sequence_recipe_key,
 )
 from splatforge.core.media import SourceOccurrence, VerificationPolicyId
+from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.project import ProjectDocument
 from splatforge.core.quality import QualityReport, SharpestSelectedViewSet
 from splatforge.core.views import CandidateViewSet, SelectedViewSet
@@ -96,6 +97,8 @@ class FakeStageMethods(Protocol):
 
 
 class ExecutionRepository(Protocol):
+    # One writer lease owns one fresh artifact-validation operation. Implementations
+    # discard its memo on exit, including failure/cancellation/recovery exits.
     def writer(
         self,
         root: Path,
@@ -119,6 +122,10 @@ class ExecutionRepository(Protocol):
         node_id: str | None = None,
         attempt_id: UUID | None = None,
         details: dict[str, object] | None = None,
+    ) -> RunWarning | None: ...
+
+    def append_process_evidence(
+        self, root: Path, run_id: UUID, attempt_id: UUID, evidence: ProcessInvocationEvidence
     ) -> RunWarning | None: ...
 
     def find_cache(

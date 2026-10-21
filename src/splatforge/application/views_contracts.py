@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from splatforge.core.media import ExecutableIdentity, SourceOccurrence
+from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.quality import (
     QualityAnalysisSettings,
     QualityBackendIdentity,
@@ -90,6 +92,7 @@ class CandidateMaterializer(Protocol):
         timeout_seconds: int,
         expected_backend: ExecutableIdentity,
         cancellation: CancellationSignal | None = None,
+        evidence_sink: Callable[[ProcessInvocationEvidence], None] | None = None,
     ) -> tuple[MaterializedFrame, ...]: ...
 
 

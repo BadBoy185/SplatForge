@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from PIL import Image
@@ -63,6 +64,21 @@ class ValidatedArtifact:
     )
 
 
+class ValidationStrength(IntEnum):
+    PAYLOAD_INTEGRITY = 1
+    FULL_DECODE = 2
+
+
+class ArtifactValidationContext:
+    """One operation's immutable typed results; never retains image bytes."""
+
+    def __init__(self) -> None:
+        self.results: dict[
+            tuple[str, ...],
+            tuple[ValidationStrength, ArtifactManifest, Path, ValidatedArtifact],
+        ] = {}
+
+
 def stream_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
@@ -74,20 +90,22 @@ def stream_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> tuple[int, st
 
 
 def validate_workspace_output(
-    output: Path, artifact_type: str, *, decode_pixels: bool = True
+    output: Path, artifact_type: str, *, decode_pixels: bool = True,
+    verified_payloads: dict[str, PayloadFile] | None = None,
 ) -> ValidatedArtifact:
     if not output.is_dir() or output.is_symlink() or output.is_junction():
         raise ValueError("Stage did not create a safe output directory")
     if artifact_type in {NUMBERS_ARTIFACT_TYPE, SCALED_ARTIFACT_TYPE}:
-        return _validate_fake(output, artifact_type)
+        return _validate_fake(output, artifact_type, verified_payloads)
     if artifact_type == CANDIDATE_ARTIFACT_TYPE:
-        return _validate_candidate(output, decode_pixels=decode_pixels)
+        return _validate_candidate(output, decode_pixels=decode_pixels,
+                                   verified_payloads=verified_payloads)
     if artifact_type == PAIR_ARTIFACT_TYPE:
-        return _validate_pairs(output)
+        return _validate_pairs(output, verified_payloads)
     if artifact_type == QUALITY_ARTIFACT_TYPE:
-        return _validate_quality(output)
+        return _validate_quality(output, verified_payloads)
     if artifact_type == SELECTED_ARTIFACT_TYPE:
-        return _validate_selected(output)
+        return _validate_selected(output, verified_payloads)
     raise ValueError(f"Unsupported artifact type: {artifact_type}")
 
 
@@ -103,6 +121,7 @@ def validate_published_artifact(
     paths = [payload.path for payload in manifest.payloads]
     if len(paths) != len(set(paths)):
         raise ValueError("Artifact manifest declares a duplicate payload path")
+    verified_payloads = {}
     for payload in manifest.payloads:
         path = safe_payload_path(artifact_directory, payload.path)
         if not _plain_file(path):
@@ -114,8 +133,10 @@ def validate_published_artifact(
         size, digest = stream_sha256(path)
         if size != payload.size or digest != payload.sha256:
             raise ValueError("Published payload size or digest mismatch")
+        verified_payloads[payload.path] = payload
     validated = validate_workspace_output(
-        artifact_directory, manifest.artifact_type, decode_pixels=decode_pixels
+        artifact_directory, manifest.artifact_type, decode_pixels=decode_pixels,
+        verified_payloads=verified_payloads,
     )
     if validated.payloads != manifest.payloads:
         raise ValueError("Published payload manifest differs from validated files")
@@ -167,7 +188,19 @@ def validate_pair_lineage(parsed: PairSet, manifest: ArtifactManifest) -> None:
             raise ValueError("PairSet provenance differs from manifest lineage")
 
 
-def _validate_pairs(output: Path) -> ValidatedArtifact:
+def _payload_digest(
+    output: Path, path: Path, verified: dict[str, PayloadFile] | None,
+) -> tuple[int, str]:
+    payload = (
+        verified.get(path.resolve().relative_to(output.resolve()).as_posix())
+        if verified is not None else None
+    )
+    return (payload.size, payload.sha256) if payload is not None else stream_sha256(path)
+
+
+def _validate_pairs(
+    output: Path, verified_payloads: dict[str, PayloadFile] | None = None,
+) -> ValidatedArtifact:
     entries = set()
     for index, path in enumerate(output.iterdir()):
         if index >= 2:
@@ -181,7 +214,7 @@ def _validate_pairs(output: Path) -> ValidatedArtifact:
     parsed = PairSet.model_validate_json(
         _read_bounded(metadata, MAX_PAIR_METADATA_BYTES, "PairSet metadata")
     )
-    size, digest = stream_sha256(metadata)
+    size, digest = _payload_digest(output, metadata, verified_payloads)
     return ValidatedArtifact(
         payloads=(PayloadFile(path="pair_set.json", size=size, sha256=digest),),
         semantic_digest=parsed.semantic_digest,
@@ -189,7 +222,9 @@ def _validate_pairs(output: Path) -> ValidatedArtifact:
     )
 
 
-def _validate_fake(output: Path, artifact_type: str) -> ValidatedArtifact:
+def _validate_fake(
+    output: Path, artifact_type: str, verified_payloads: dict[str, PayloadFile] | None = None,
+) -> ValidatedArtifact:
     if artifact_type == NUMBERS_ARTIFACT_TYPE:
         name = "numbers.json"
         model = NumbersPayload
@@ -203,7 +238,7 @@ def _validate_fake(output: Path, artifact_type: str) -> ValidatedArtifact:
         raise ValueError(f"Fake stage output must contain exactly {name}")
     data = _read_bounded(entries[0], MAX_METADATA_BYTES, "fake payload")
     parsed = model.model_validate_json(data)
-    size, digest = stream_sha256(entries[0])
+    size, digest = _payload_digest(output, entries[0], verified_payloads)
     return ValidatedArtifact(
         payloads=(PayloadFile(path=name, size=size, sha256=digest),),
         semantic_digest=semantic_digest(parsed),
@@ -211,7 +246,10 @@ def _validate_fake(output: Path, artifact_type: str) -> ValidatedArtifact:
     )
 
 
-def _validate_candidate(output: Path, *, decode_pixels: bool = True) -> ValidatedArtifact:
+def _validate_candidate(
+    output: Path, *, decode_pixels: bool = True,
+    verified_payloads: dict[str, PayloadFile] | None = None,
+) -> ValidatedArtifact:
     entries = {path.name: path for path in output.iterdir()}
     allowed = {"candidate_views.json", "images", "manifest.json"}
     if not set(entries).issubset(allowed) or not {"candidate_views.json", "images"}.issubset(
@@ -245,7 +283,7 @@ def _validate_candidate(output: Path, *, decode_pixels: bool = True) -> Validate
             f"Candidate image listing mismatch; missing={missing[:3]}, unexpected={unexpected[:3]}"
         )
     payloads: list[PayloadFile] = []
-    metadata_size, metadata_digest = stream_sha256(metadata)
+    metadata_size, metadata_digest = _payload_digest(output, metadata, verified_payloads)
     payloads.append(
         PayloadFile(path="candidate_views.json", size=metadata_size, sha256=metadata_digest)
     )
@@ -258,7 +296,7 @@ def _validate_candidate(output: Path, *, decode_pixels: bool = True) -> Validate
             raise ValueError(f"Candidate image encoding disagrees for {view.view_id}")
         if decode_pixels:
             validate_decodable_image(image_path, width, height, image_format)
-        size, digest = stream_sha256(image_path)
+        size, digest = _payload_digest(output, image_path, verified_payloads)
         if digest != view.image_sha256:
             raise ValueError(f"Candidate image digest disagrees for {view.view_id}")
         payloads.append(PayloadFile(path=view.image_path, size=size, sha256=digest))
@@ -271,7 +309,9 @@ def _validate_candidate(output: Path, *, decode_pixels: bool = True) -> Validate
     )
 
 
-def _validate_selected(output: Path) -> ValidatedArtifact:
+def _validate_selected(
+    output: Path, verified_payloads: dict[str, PayloadFile] | None = None,
+) -> ValidatedArtifact:
     entries = list(output.iterdir())
     allowed = {"selected_views.json", "manifest.json"}
     if {path.name for path in entries} - allowed:
@@ -291,7 +331,7 @@ def _validate_selected(output: Path) -> ValidatedArtifact:
         semantic_digest = selected_semantic_digest(parsed)
     else:
         raise ValueError(f"Unsupported selected-view method: {method_id!r}")
-    size, digest = stream_sha256(metadata)
+    size, digest = _payload_digest(output, metadata, verified_payloads)
     return ValidatedArtifact(
         payloads=(PayloadFile(path="selected_views.json", size=size, sha256=digest),),
         semantic_digest=semantic_digest,
@@ -299,7 +339,9 @@ def _validate_selected(output: Path) -> ValidatedArtifact:
     )
 
 
-def _validate_quality(output: Path) -> ValidatedArtifact:
+def _validate_quality(
+    output: Path, verified_payloads: dict[str, PayloadFile] | None = None,
+) -> ValidatedArtifact:
     entries = list(output.iterdir())
     allowed = {"quality_report.json", "manifest.json"}
     if {path.name for path in entries} - allowed:
@@ -310,7 +352,7 @@ def _validate_quality(output: Path) -> ValidatedArtifact:
     parsed = QualityReport.model_validate_json(
         _read_bounded(metadata, MAX_METADATA_BYTES, "quality metadata")
     )
-    size, digest = stream_sha256(metadata)
+    size, digest = _payload_digest(output, metadata, verified_payloads)
     return ValidatedArtifact(
         payloads=(PayloadFile(path="quality_report.json", size=size, sha256=digest),),
         semantic_digest=quality_semantic_digest(parsed),

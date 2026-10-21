@@ -27,7 +27,7 @@ project/
     <run-id>/run.json                   # Frozen resolved plan and environment snapshot
     <run-id>/events.jsonl               # Structured operational events
     <run-id>/cancel.request             # Atomic request carrying this run's ownership token
-    <run-id>/logs/<attempt-id>/...      # Raw backend stdout/stderr and invocation metadata
+    <run-id>/attempts/<attempt-id>/process.jsonl # Optional bounded process evidence
   checkpoints/
     <run-id>/<attempt-id>/...           # Explicitly retained trainer checkpoints
   exports/
@@ -428,6 +428,28 @@ checkpoint resume requires matching dataset, trainer and declared settings plus 
 validated checkpoint. An external/manual training handoff is not resumable execution.
 
 ## Retention and diagnosis
+
+M3 FFmpeg stage attempts append optional `ProcessInvocationEvidence` v1 records under
+`runs/<run-id>/attempts/<attempt-id>/process.jsonl`. Each record binds run/attempt IDs,
+source where applicable and an invocation index. The file is project-owned diagnostic
+evidence, separate from immutable artifacts and SQLite status. Records contain exact
+local native argv and binary/version identity, an explicitly safe scoped environment
+projection (empty for FFmpeg), elapsed/outcome/teardown evidence, stream captured sizes,
+SHA-256 and readable excerpts. Missing exceptional captures are null. Future secret
+arguments must be redacted explicitly; inherited environment is never serialized.
+
+Excerpts are at most 16 KiB UTF-8 per stream, complete JSONL records at most 96 KiB,
+and a file at most 4 MiB including its retention-limit marker. Appends are flushed and
+fsynced. Once the limit is reached, no further invocation details are retained;
+`run show` reports retained invocation count and truncation, not a total executed count.
+Missing, partial or unwritable diagnostics reduce evidence and produce bounded warnings
+where possible; they cannot reverse numerical success or certify failed computation.
+No project, config, state or artifact version changes are needed for this optional file.
+
+Complete candidate producer verification provenance is written once after all sources
+have completed successfully, before expected publication identity is recorded. Durable
+per-source verification rows remain independent of the attempt. A crash before the
+complete projection cannot make a partial attempt cache eligible or adoptable.
 
 Invalidation never deletes files. Retain artifacts during foundation work; by M10 add
 explicit manual cleanup with a size/reference preview. Historical lineage references
