@@ -148,6 +148,21 @@ global `PATH` mutation. Record the selected binary identity and invocation; reda
 credentials if a future backend introduces them. Return structured exit, timeout,
 cancellation and output-validation results, not an unclassified text blob.
 
+M5's Windows COLMAP runtime profile `windows_official_prebuilt_v1` requires an inert
+`COLMAP.bat` marker beside native `colmap.exe` or above `bin/colmap.exe`. Supplying that
+wrapper path is supported as a locator only; no commands are read or interpreted.
+Only existing, nonredirected root/bin/lib directories are prepended to child PATH.
+Bounded Qt plugin candidates include plugins, bin/plugins, lib/plugins, lib, bin,
+the root, Qt5/plugins, Qt6/plugins and lib/qt5/plugins or lib/qt6/plugins. Only a
+positively located `platforms/qwindows.dll` enables child-only `QT_PLUGIN_PATH` and
+`QT_QPA_PLATFORM_PLUGIN_PATH`. All help, database and CPU/GPU probes share the same
+resolved overrides. Native SHA-256 remains independent of this typed layout evidence;
+the full inherited PATH/environment is not included in Doctor output. No system PATH
+modification is needed. A system/vcpkg/custom exe without the marker is probed normally,
+not rejected or assigned arbitrary sibling libraries. Shape recognition is not package
+authenticity verification. Real official packages are not certified by fixture tests;
+the `SPLATFORGE_TEST_COLMAP` integration remains opt-in and no package is downloaded.
+
 Use bounded buffers and drain both output streams to avoid hanging on verbose tools.
 Preserve raw bytes or use explicit decoding with replacement; parsed progress must
 not destroy original logs. Emit indeterminate progress when a backend has no reliable

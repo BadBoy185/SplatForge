@@ -163,6 +163,13 @@ native database and SIFT checks use owned temporary workspaces through the share
 process boundary. Raw newer backend commands and feature/matcher tokens are
 informational; they neither mutate the method catalog nor promise pipeline support.
 
+On Windows the COLMAP adapter recognizes bounded official-style portable layouts,
+using `COLMAP.bat` only as an inert installation locator. Every help/deep probe executes
+the same native executable with one child-scoped runtime environment. Typed runtime
+layout evidence is separate from native byte identity and excludes inherited PATH.
+Unrecognized native installations retain their caller environment, without guessed
+sibling runtime directories. No wrapper execution or global environment mutation.
+
 Descriptor compatibility includes family, representation, dimensions, normalization,
 keypoint convention and matcher weight variant. Retrieval/Vocabulary Tree is not a
 universal operation over every local descriptor family. Keep retrieval model/index

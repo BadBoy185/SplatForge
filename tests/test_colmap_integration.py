@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from splatforge.adapters.colmap_capabilities import ColmapCapabilityAdapter
+from splatforge.adapters.colmap_runtime import scoped_runtime_environment
 from splatforge.core.capabilities import CapabilityStatus, FreshnessPolicy
 
 
@@ -52,6 +53,7 @@ def test_configured_real_colmap_capability_report(
         report.command_discovery.commands,
         now,
         FreshnessPolicy(),
+        scoped_runtime_environment(report.selected_executable.runtime_layout, os.environ),
     )
     assert database.evidence.status == CapabilityStatus.AVAILABLE
     record_property("colmap_database", database.model_dump_json())

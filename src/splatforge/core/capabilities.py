@@ -107,12 +107,25 @@ class FreshnessPolicy(BaseModel):
     binary_identity_rule: Literal["same_concrete_file_identity"] = "same_concrete_file_identity"
 
 
+class ColmapRuntimeLayout(BaseModel):
+    """Bounded adapter evidence, separate from native executable byte identity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    profile: Literal["windows_official_prebuilt_v1"] = "windows_official_prebuilt_v1"
+    installation_root: str = Field(min_length=1, max_length=4096)
+    native_executable: str = Field(min_length=1, max_length=4096)
+    path_entries: tuple[str, ...] = Field(min_length=1, max_length=3)
+    qt_platform_plugin_directory: str | None = Field(default=None, max_length=4096)
+
+
 class ExecutableSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     source: ExecutableSource
     requested: str = Field(min_length=1, max_length=4096)
     identity: ExecutableIdentity
+    runtime_layout: ColmapRuntimeLayout | None = None
 
 
 class SubcommandDiscovery(BaseModel):

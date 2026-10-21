@@ -97,8 +97,16 @@ functional checks. Missing COLMAP, NVIDIA tools, CUDA, ONNX support or model fil
 valid diagnostic results, not project failures. Doctor never downloads COLMAP, models,
 ONNX Runtime, CUDA or drivers.
 
-On Windows select the native `colmap.exe`; batch/script wrappers are refused so
-the recorded hash identifies the backend actually being probed.
+On Windows SplatForge always executes and hash-identifies native `colmap.exe`.
+You may supply an official `COLMAP.bat` path as an installation locator: SplatForge
+never reads or executes its commands, but resolves `bin/colmap.exe` or `colmap.exe`
+at that installation root. For recognized layouts (also when selecting the native exe
+directly), existing root/bin/lib runtime directories are prepended to the child's PATH;
+known Qt plugin locations are supplied only when `platforms/qwindows.dll` exists.
+The inherited PATH follows those controlled entries. No system PATH modification is
+required. Custom native installs remain probeable without guessed sibling paths.
+Doctor records the bounded runtime layout separately from executable identity, never
+the user's complete PATH or environment. Other batch/script entry points are refused.
 
 Unknown help layouts and learned tokens without sufficient ONNX build evidence remain
 `unknown`. Model records certify local byte identity, not successful learned inference.

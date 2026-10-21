@@ -142,6 +142,9 @@ and reports generic NVIDIA inventory separately from COLMAP GPU health. `--deep`
 owned disposable workspaces for versioned native SQLite schema validation plus CPU/GPU
 SIFT smoke probes through the M2 process boundary. Evidence has process-local freshness
 limits and cached reports recheck concrete executable identity.
+Windows official-style layouts use an inert `COLMAP.bat` locator or native exe path,
+with bounded child-scoped DLL/Qt paths; the wrapper is never executed. Deterministic
+layout fixtures are covered; real package coverage remains opt-in, not implied.
 
 Acceptance: fixture probes cover missing executable, unsupported ONNX/model route,
 missing Global Mapper, unhealthy CUDA/DLL loading and CPU-only capability. An opt-in

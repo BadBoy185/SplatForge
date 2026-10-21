@@ -184,6 +184,10 @@ discovery records exact executable/build identity, bounded raw commands/options/
 ONNX/model prerequisites and separate generic-GPU evidence. `--deep` adds disposable
 native database and CPU/GPU SIFT functional probes. All M7/M8 catalog methods remain
 planned and never become runnable from M5 evidence.
+Windows official-style installations accept `COLMAP.bat` only as an inert locator;
+all probes execute hash-verified native `colmap.exe` with the same controlled child
+runtime paths. Record typed layout evidence separately; never execute the wrapper,
+change system PATH or infer portable layout from a `bin` directory alone.
 
 Additional reading: [ARCHITECTURE: capability checks](../ARCHITECTURE.md#replaceable-methods-and-capability-checks),
 [PIPELINE: method execution contract](PIPELINE.md#method-execution-contract) and

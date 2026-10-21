@@ -25,6 +25,11 @@ from splatforge.adapters.colmap_help import (
     parse_command_listing,
     parse_option_help,
 )
+from splatforge.adapters.colmap_runtime import (
+    discover_runtime_layout,
+    native_from_locator,
+    scoped_runtime_environment,
+)
 from splatforge.adapters.process_runner import (
     ExecutableNotFoundError,
     ExecutableResolver,
@@ -132,12 +137,31 @@ class ColmapExecutableLocator:
             and not candidate.is_absolute()
         ):
             raise ExecutableNotFoundError("Configured COLMAP executable path must be absolute")
-        identity = self._resolver.resolve(requested, environment=self._environment)
+        native_requested = requested
+        if os.name == "nt" and candidate.suffix.lower() in {".bat", ".cmd"}:
+            if source == ExecutableSource.PATH or candidate.name.lower() != "colmap.bat":
+                raise ProcessBoundaryError(
+                    "Select native COLMAP or the official COLMAP.bat locator"
+                )
+            if not candidate.is_absolute():
+                raise ExecutableNotFoundError("COLMAP.bat installation locator must be absolute")
+            native_requested = str(native_from_locator(candidate))
+        lookup_environment = (
+            {key.upper(): value for key, value in self._environment.items()}
+            if os.name == "nt"
+            else self._environment
+        )
+        identity = self._resolver.resolve(native_requested, environment=lookup_environment)
         if os.name == "nt" and Path(identity.resolved_path).suffix.lower() not in {".exe", ".com"}:
             raise ProcessBoundaryError(
                 "Select the native COLMAP executable (colmap.exe), not a batch/script wrapper"
             )
-        return ExecutableSelection(source=source, requested=requested, identity=identity)
+        return ExecutableSelection(
+            source=source,
+            requested=requested,
+            identity=identity,
+            runtime_layout=discover_runtime_layout(Path(identity.resolved_path)),
+        )
 
 
 class ColmapCapabilityAdapter:
@@ -175,6 +199,8 @@ class ColmapCapabilityAdapter:
                 "SPLATFORGE_COLMAP_MODEL_DIR",
                 "PATH",
                 "PATHEXT",
+                "QT_PLUGIN_PATH",
+                "QT_QPA_PLATFORM_PLUGIN_PATH",
             )
         )
 
@@ -210,8 +236,14 @@ class ColmapCapabilityAdapter:
                 code="colmap.identity_unavailable",
                 status=CapabilityStatus.UNKNOWN,
             )
+        environment = scoped_runtime_environment(selection.runtime_layout, self._environment)
         try:
-            top = self._run(selection.identity.resolved_path, ("help",), self._version_help_timeout)
+            top = self._run(
+                selection.identity.resolved_path,
+                ("help",),
+                self._version_help_timeout,
+                environment=environment,
+            )
         except (ProcessBoundaryError, OSError) as exc:
             return self._failed_start_report(
                 selection=selection,
@@ -286,7 +318,7 @@ class ColmapCapabilityAdapter:
         )
         help_results = tuple(
             self._probe_subcommand_help(
-                identity, command, commands, listing_ok, observed_at, freshness
+                identity, command, commands, listing_ok, observed_at, freshness, environment
             )
             for command in ("feature_extractor", "exhaustive_matcher", "sequential_matcher")
         )
@@ -336,7 +368,7 @@ class ColmapCapabilityAdapter:
             freshness,
         )
         database = (
-            self._probe_database(identity, commands, observed_at, freshness)
+            self._probe_database(identity, commands, observed_at, freshness, environment)
             if deep
             else self._not_run_database(identity, observed_at, freshness)
         )
@@ -352,6 +384,7 @@ class ColmapCapabilityAdapter:
             observed_at=observed_at,
             freshness=freshness,
             build_text=combined,
+            environment=environment,
         )
         if binary.status != CapabilityStatus.AVAILABLE:
             capabilities = tuple(
@@ -404,6 +437,7 @@ class ColmapCapabilityAdapter:
         observed_at: datetime,
         freshness: FreshnessPolicy,
         build_text: str,
+        environment: Mapping[str, str],
     ) -> tuple[CapabilityEvidence, ...]:
         results: list[CapabilityEvidence] = []
         for operation in _REQUIRED_COMMANDS:
@@ -431,6 +465,7 @@ class ColmapCapabilityAdapter:
                 identity,
                 commands,
                 use_gpu=False,
+                environment=environment,
                 options=feature,
                 observed_at=observed_at,
                 freshness=freshness,
@@ -468,6 +503,7 @@ class ColmapCapabilityAdapter:
                 identity,
                 commands,
                 use_gpu=True,
+                environment=environment,
                 options=feature,
                 observed_at=observed_at,
                 freshness=freshness,
@@ -671,6 +707,7 @@ class ColmapCapabilityAdapter:
         listing_ok: bool,
         observed_at: datetime,
         freshness: FreshnessPolicy,
+        environment: Mapping[str, str],
     ) -> tuple[str, SubcommandDiscovery, ParsedOptionHelp]:
         text = ""
         parsed = ParsedOptionHelp(False, (), (), ())
@@ -681,7 +718,10 @@ class ColmapCapabilityAdapter:
         else:
             try:
                 result = self._run(
-                    identity.resolved_path, (command, "-h"), self._version_help_timeout
+                    identity.resolved_path,
+                    (command, "-h"),
+                    self._version_help_timeout,
+                    environment=environment,
                 )
             except (ProcessBoundaryError, OSError) as exc:
                 status, code, message = (
@@ -891,6 +931,7 @@ class ColmapCapabilityAdapter:
         commands: tuple[str, ...],
         observed_at: datetime,
         freshness: FreshnessPolicy,
+        environment: Mapping[str, str],
     ) -> DatabaseCompatibility:
         if "database_creator" not in commands:
             return DatabaseCompatibility(
@@ -916,6 +957,7 @@ class ColmapCapabilityAdapter:
                     ("database_creator", "--database_path", str(database_path)),
                     self._database_timeout,
                     working_directory=workspace,
+                    environment=environment,
                 )
             except (ProcessBoundaryError, OSError) as exc:
                 compatibility = DatabaseCompatibility(
@@ -1032,6 +1074,7 @@ class ColmapCapabilityAdapter:
         commands: tuple[str, ...],
         *,
         use_gpu: bool,
+        environment: Mapping[str, str],
         options: ParsedOptionHelp,
         observed_at: datetime,
         freshness: FreshnessPolicy,
@@ -1061,6 +1104,7 @@ class ColmapCapabilityAdapter:
                     ("database_creator", "--database_path", str(database_path)),
                     self._database_timeout,
                     working_directory=workspace,
+                    environment=environment,
                 )
                 create_problem = self._process_problem(create, operation="database_creator")
                 if not self._same_identity(identity, create.executable):
@@ -1098,6 +1142,7 @@ class ColmapCapabilityAdapter:
                     argv,
                     self._smoke_timeout,
                     working_directory=workspace,
+                    environment=environment,
                 )
             except (ProcessBoundaryError, OSError, ValueError, sqlite3.DatabaseError) as exc:
                 evidence = self._evidence(
@@ -1246,6 +1291,7 @@ class ColmapCapabilityAdapter:
         timeout: float,
         *,
         working_directory: Path | None = None,
+        environment: Mapping[str, str],
     ) -> ProcessResult:
         workspace = (
             Path(tempfile.mkdtemp(prefix="splatforge-colmap-help-")).resolve()
@@ -1261,7 +1307,7 @@ class ColmapCapabilityAdapter:
                     executable=executable,
                     argv=argv,
                     working_directory=cwd,
-                    environment={},
+                    environment=environment,
                     timeout_seconds=timeout,
                     max_stdout_bytes=self._maximum_output,
                     max_stderr_bytes=self._maximum_output,

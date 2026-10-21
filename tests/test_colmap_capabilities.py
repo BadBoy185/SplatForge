@@ -19,6 +19,7 @@ from splatforge.adapters.colmap_capabilities import (
 )
 from splatforge.adapters.process_runner import (
     ExecutableNotFoundError,
+    ExecutableResolver,
     ProcessBoundaryError,
     ProcessRequest,
 )
@@ -28,6 +29,186 @@ from splatforge.core.media import ExecutableIdentity
 from splatforge.core.process import ProcessResult
 
 NOW = datetime(2026, 10, 21, 12, tzinfo=UTC)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows portable runtime layout")
+@pytest.mark.parametrize("entry", ["wrapper", "native", "path", "root_native"])
+@pytest.mark.parametrize("plugin_root", ["plugins", "lib", "bin/plugins", None])
+def test_official_windows_layout_scopes_every_probe(
+    tmp_path: Path,
+    entry: str,
+    plugin_root: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "COLMAP portable ž"
+    (root / "bin").mkdir(parents=True)
+    (root / "lib").mkdir()
+    wrapper = root / "COLMAP.bat"
+    wrapper.write_text("THIS IS NOT A SCRIPT AND MUST NEVER BE READ OR EXECUTED")
+    executable = root / ("colmap.exe" if entry == "root_native" else "bin/colmap.exe")
+    executable.write_bytes(b"synthetic native executable identity")
+    platform = None
+    if plugin_root is not None:
+        platform = root / plugin_root / "platforms"
+        platform.mkdir(parents=True, exist_ok=True)
+        (platform / "qwindows.dll").write_bytes(b"synthetic plugin")
+    else:
+        # A directory alone, or a differently named DLL, is insufficient.
+        (root / "plugins/platforms").mkdir(parents=True)
+        (root / "plugins/platforms/qminimal.dll").write_bytes(b"not qwindows")
+    inherited_path = str(tmp_path / "private inherited path")
+    environment = {"Path": str(executable.parent) + os.pathsep + inherited_path}
+    original_environment = dict(environment)
+    global_environment = dict(os.environ)
+    resolver = ExecutableResolver()
+    identity = resolver.resolve(str(executable))
+
+    original_open = Path.open
+
+    def refuse_wrapper_read(path: Path, *args, **kwargs):
+        assert path != wrapper, "The installation locator must never be read/interpreted"
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", refuse_wrapper_read)
+
+    def callback(request: ProcessRequest) -> ProcessResult:
+        assert request.executable == identity.resolved_path
+        if request.argv == ("help",):
+            return process_result(request, stdout=TOP_HELP.encode(), identity=identity)
+        if request.argv == ("feature_extractor", "-h"):
+            return process_result(request, stdout=FEATURE_HELP.encode(), identity=identity)
+        if request.argv[0] in {"exhaustive_matcher", "sequential_matcher"}:
+            return process_result(request, stdout=MATCHER_HELP.encode(), identity=identity)
+        if request.argv[0] == "database_creator":
+            create_schema(Path(request.argv[request.argv.index("--database_path") + 1]))
+            return process_result(request, identity=identity)
+        if request.argv[0] == "feature_extractor":
+            return process_result(request, exit_code=1, identity=identity)
+        raise AssertionError(request.argv)
+
+    runner = FakeRunner(callback)
+    report = ColmapCapabilityAdapter(
+        runner=runner,
+        resolver=resolver,
+        environment=environment,
+    ).probe(
+        explicit_executable=None
+        if entry == "path"
+        else (wrapper if entry == "wrapper" else executable),
+        explicit_model_directory=None,
+        bundled_executable=None,
+        bundled_model_directory=None,
+        deep=True,
+        observed_at=NOW,
+        freshness=FreshnessPolicy(),
+    )
+    selected = report.selected_executable
+    assert selected is not None
+    assert selected.identity.sha256 == hashlib.sha256(executable.read_bytes()).hexdigest()
+    assert selected.identity.resolved_path == str(executable.resolve())
+    layout = selected.runtime_layout
+    assert layout is not None
+    assert layout.profile == "windows_official_prebuilt_v1"
+    assert layout.native_executable == selected.identity.resolved_path
+    assert layout.path_entries == tuple(str(path) for path in (root, root / "bin", root / "lib"))
+    expected = dict(environment)
+    del expected["Path"]
+    expected["PATH"] = os.pathsep.join(layout.path_entries) + os.pathsep + environment["Path"]
+    if platform is not None:
+        expected["QT_PLUGIN_PATH"] = str(platform.parent)
+        expected["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(platform)
+        assert layout.qt_platform_plugin_directory == str(platform)
+    else:
+        assert layout.qt_platform_plugin_directory is None
+        assert "QT_PLUGIN_PATH" not in expected
+        assert "QT_QPA_PLATFORM_PLUGIN_PATH" not in expected
+    assert len(runner.requests) == 9  # help x4, database x3, CPU/GPU SIFT x2
+    assert all(dict(request.environment) == expected for request in runner.requests)
+    assert all(Path(request.executable).suffix == ".exe" for request in runner.requests)
+    assert inherited_path not in report.model_dump_json()
+    assert environment == original_environment
+    assert dict(os.environ) == global_environment
+    # Replacing native bytes still invalidates the original cached identity.
+    executable.write_bytes(b"changed native executable identity!!")
+    assert not resolver.verify_expected_identity(identity)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native installation locator")
+@pytest.mark.parametrize("name", ["something.bat", "COLMAP.cmd", "COLMAP.ps1"])
+def test_invalid_windows_wrappers_never_reach_runner(tmp_path: Path, name: str) -> None:
+    wrapper = tmp_path / name
+    wrapper.write_text("never execute")
+    runner = FakeRunner()
+    report = ColmapCapabilityAdapter(runner=runner, environment={}).probe(
+        explicit_executable=wrapper,
+        explicit_model_directory=None,
+        bundled_executable=None,
+        bundled_model_directory=None,
+        deep=True,
+        observed_at=NOW,
+        freshness=FreshnessPolicy(),
+    )
+    assert report.binary.status != CapabilityStatus.AVAILABLE
+    assert not runner.requests
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native installation locator")
+def test_official_wrapper_without_native_is_actionably_unavailable(tmp_path: Path) -> None:
+    wrapper = tmp_path / "COLMAP.bat"
+    wrapper.write_text("never execute")
+    runner = FakeRunner()
+    report = ColmapCapabilityAdapter(runner=runner, environment={}).probe(
+        explicit_executable=wrapper,
+        explicit_model_directory=None,
+        bundled_executable=None,
+        bundled_model_directory=None,
+        deep=True,
+        observed_at=NOW,
+        freshness=FreshnessPolicy(),
+    )
+    assert report.binary.status == CapabilityStatus.UNAVAILABLE
+    assert "bin/colmap.exe" in report.binary.message
+    assert not runner.requests
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native installation layout")
+@pytest.mark.parametrize("entry", ["explicit", "path"])
+def test_unrecognized_native_install_does_not_inject_siblings(tmp_path: Path, entry: str) -> None:
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "plugins/platforms").mkdir(parents=True)
+    (tmp_path / "plugins/platforms/qwindows.dll").write_bytes(b"unrelated plugin")
+    executable = tmp_path / "bin/colmap.exe"
+    executable.write_bytes(b"custom native")
+    environment = {"PATH": str(executable.parent), "QT_PLUGIN_PATH": "caller scoped Qt"}
+    resolver = ExecutableResolver()
+    identity = resolver.resolve(str(executable))
+    runner = FakeRunner(
+        lambda request: process_result(
+            request,
+            stdout=TOP_HELP.encode(),
+            identity=identity,
+        )
+    )
+    report = ColmapCapabilityAdapter(
+        runner=runner,
+        resolver=resolver,
+        environment=environment,
+    ).probe(
+        explicit_executable=executable if entry == "explicit" else None,
+        explicit_model_directory=None,
+        bundled_executable=None,
+        bundled_model_directory=None,
+        deep=False,
+        observed_at=NOW,
+        freshness=FreshnessPolicy(),
+    )
+    assert report.selected_executable is not None
+    assert report.selected_executable.runtime_layout is None
+    assert report.binary.status == CapabilityStatus.AVAILABLE
+    assert all(dict(request.environment) == environment for request in runner.requests)
+
+
 IDENTITY = ExecutableIdentity(
     resolved_path="C:/Tools/COLMAP ž/colmap.exe",
     size=123,
@@ -268,7 +449,7 @@ def test_colmap_locator_refuses_batch_wrapper_identity() -> None:
     resolver = FakeResolver(IDENTITY.model_copy(update={"resolved_path": "C:/Tools/colmap.bat"}))
     with pytest.raises(ProcessBoundaryError, match="native COLMAP"):
         ColmapExecutableLocator(resolver, environment={}).locate(
-            explicit=Path("C:/Tools/colmap.bat"), bundled=None
+            explicit=Path("C:/Tools/something.bat"), bundled=None
         )
 
 
@@ -488,6 +669,7 @@ def test_database_probe_uses_owned_workspace_and_cleans_it(
         COMMANDS,
         NOW,
         FreshnessPolicy(),
+        {},
     )
     assert report.evidence.status == CapabilityStatus.AVAILABLE
     assert not workspace.exists()
@@ -500,13 +682,14 @@ def test_database_probe_missing_command_timeout_and_malformed_output() -> None:
         tuple(item for item in COMMANDS if item != "database_creator"),
         NOW,
         FreshnessPolicy(),
+        {},
     )
     assert missing.evidence.status == CapabilityStatus.UNAVAILABLE
     assert missing.evidence.diagnostic_code == "colmap.operation_missing"
 
     timed_out = adapter(
         FakeRunner(lambda request: process_result(request, exit_code=None, timed_out=True))
-    )._probe_database(IDENTITY, COMMANDS, NOW, FreshnessPolicy())
+    )._probe_database(IDENTITY, COMMANDS, NOW, FreshnessPolicy(), {})
     assert timed_out.evidence.status == CapabilityStatus.UNKNOWN
     assert timed_out.evidence.diagnostic_code == "colmap.probe_timeout"
 
@@ -520,6 +703,7 @@ def test_database_probe_missing_command_timeout_and_malformed_output() -> None:
         COMMANDS,
         NOW,
         FreshnessPolicy(),
+        {},
     )
     assert incompatible.evidence.status == CapabilityStatus.UNAVAILABLE
     assert incompatible.evidence.diagnostic_code == "colmap.database_incompatible"
@@ -817,6 +1001,7 @@ def test_gpu_smoke_failure_does_not_publish_success_or_leave_probe_files(updates
         IDENTITY,
         COMMANDS,
         use_gpu=True,
+        environment={},
         options=parse_option_help(FEATURE_HELP, "FeatureExtraction.type"),
         observed_at=NOW,
         freshness=FreshnessPolicy(),
@@ -834,7 +1019,7 @@ def test_database_command_failure_and_cleanup_failure_have_bounded_diagnostics(m
             )
         )
     )
-    report = instance._probe_database(IDENTITY, COMMANDS, NOW, FreshnessPolicy())
+    report = instance._probe_database(IDENTITY, COMMANDS, NOW, FreshnessPolicy(), {})
     assert report.evidence.diagnostic_code == "colmap.database_creation_failed"
     assert len(report.evidence.message) <= 1024
 
@@ -853,7 +1038,7 @@ def test_database_command_failure_and_cleanup_failure_have_bounded_diagnostics(m
 
     monkeypatch.setattr(instance, "_cleanup_workspace", fail_cleanup)
     try:
-        failed = instance._probe_database(IDENTITY, COMMANDS, NOW, FreshnessPolicy())
+        failed = instance._probe_database(IDENTITY, COMMANDS, NOW, FreshnessPolicy(), {})
         assert failed.evidence.diagnostic_code == "colmap.probe_cleanup_failed"
     finally:
         for workspace in workspaces:
@@ -926,6 +1111,7 @@ def test_headless_display_failure_is_distinct_from_cuda_health(stderr, code) -> 
         IDENTITY,
         COMMANDS,
         use_gpu=True,
+        environment={},
         options=parse_option_help(FEATURE_HELP, "FeatureExtraction.type"),
         observed_at=NOW,
         freshness=FreshnessPolicy(),
