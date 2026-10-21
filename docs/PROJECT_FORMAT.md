@@ -78,7 +78,7 @@ indexes and their relationships at M1b. Do not put descriptor arrays, media or r
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
 
-### Implemented project and state formats through M1b2
+### Implemented project and state formats through M2
 
 `project.json` uses `project_format_version: 1`, a UUID `project_id`, `revision`,
 `label`, UTC `created_at`/`updated_at`, nullable `inventory_reference`, nullable
@@ -122,22 +122,20 @@ structures reject unrecognized fields instead of silently discarding them. Unsup
 project/config/state versions are refused without rewriting either store. Envelope
 recognition or execution compatibility is not required for open/show/save.
 
-New projects use `state_schema_version = "3"`. Alongside `metadata`, SQLite contains
-`runs`, `attempts`, `artifacts` and `run_outputs`; recipe keys are indexed but are not
-unique artifact identities. State v3 adds run cancellation acceptance time/request
-digest and attempt retry linkage, failure category, cancellation acceptance time and
-teardown state. Status values are validated by application models rather than a narrow
-database CHECK constraint.
+New projects use `state_schema_version = "4"`. Alongside `metadata`, SQLite contains
+`runs`, `attempts`, `artifacts`, `run_outputs` and `source_verifications`; recipe keys are
+indexed but are not unique artifact identities. State v3 fields remain unchanged. State
+v4 adds only bounded source verification policy, evidence, digest, assurance, stability,
+outcome and diagnostics records indexed by source revision/content/check time. It stores
+neither media, full FFprobe JSON nor unbounded logs.
 
-Existing state v1 and v2 projects remain supported by open/show/save without implicit
-writes; valid historical v2 runs remain inspectable. Mutating M1b2 execution operations
-refuse both versions with a state-upgrade-required diagnostic. Explicit upgrade rechecks
-versions under the writer lock and publishes one validated backup of the original state.
-The v1-to-v3 path creates the final execution schema directly in one SQLite transaction;
-the v2-to-v3 path adds only the M1b2 columns in one transaction. Both set version 3
-without rewriting `project.json` or advancing its revision. Calling upgrade on v3 is a
-read-only no-op. Unsupported newer versions are refused without writes; no state v0
-migration exists.
+Existing state v1/v2/v3 projects remain supported by open/show/save without implicit
+writes; historical runs remain inspectable. The fake M1b route works on v3 and v4; M2
+mutation/verification requires v4. Explicit upgrade rechecks under the writer lock and
+publishes one validated backup. v1 creates the final execution plus verification schema,
+v2 adds M1b2 columns plus verification state, and v3 adds only verification state, each
+in one transaction. All become v4 without rewriting `project.json` or its revision.
+Calling upgrade on v4 is a read-only no-op; unsupported newer versions remain untouched.
 
 Creation accepts a missing or empty destination and creates `project.json`,
 `project.lock` and `state.sqlite`. The destination is checked again after acquiring
@@ -147,10 +145,9 @@ Saving flushes, closes and validates a temporary sibling before same-volume repl
 the previous document, while reopen after a completed replacement observes the new
 revision. This is not an atomic multi-file or blanket power-loss guarantee. There is
 no general partial-create recovery framework.
-The only persisted owned-path field is `inventory_reference`: null initially, or a
-relative path using `/`. Absolute/drive-qualified/traversal paths are refused, and
-references are resolved under the project root. Inventory contents are not loaded or
-created by M1a1. Full reparse-point/lifetime safety remains outside this slice.
+The persisted owned-path field `inventory_reference` is null initially or a canonical
+`sources/<inventory-id>.jsonl` path. Absolute/drive-qualified/traversal/alternate-stream
+paths and symlink/junction redirection are refused at publication/read boundaries.
 
 ## Paths and source identity
 
@@ -173,12 +170,22 @@ while preserving distinct source occurrences, camera/timeline metadata and prove
 Equal bytes do not authorize merging observations or calibration groups. A relink preserves
 identity only after a full digest match; different bytes are a new source revision.
 
+M2 inventory schema 1 is JSONL. Its first strict record contains record type, inventory
+ID/schema/revision, project ID, parent inventory ID, UTC creation time and source count.
+Each following strict source record contains an occurrence UUID/revision, external
+locator and display filename, media type/extension/size/SHA-256, full-hash time/evidence,
+independent source and camera group IDs, calibration policy and normalized probe result.
+Probe data preserves backend identity, selected stream, codec/dimensions/orientation and
+nullable rational video timing/rotation fields. Revisions publish new files; old files
+are never rewritten. External originals are neither copied nor made project-owned.
+
 ## Source verification policies
 
-Later runs choose a versioned verification policy, saved in project intent and frozen
-in run provenance. Do not unconditionally reread every multi-gigabyte source. Record
-per source: policy, prior digest and full-hash time, current metadata/identity/change
-indicators, evidence availability, check time, rehash reason/result and assurance.
+Media verification chooses a versioned policy per operation; future source-consuming
+runs will freeze that choice in run provenance. Do not unconditionally reread every
+multi-gigabyte source. Record per source: policy, prior digest and full-hash time,
+current metadata/identity/change indicators, evidence availability, check time, rehash
+reason/result and assurance.
 
 | Policy | Behavior and recorded assurance |
 | --- | --- |
@@ -201,14 +208,15 @@ report Strict unavailable for that source/backend. Balanced uses before/after ev
 checks and retains its weaker assurance. These are source-adapter responsibilities,
 not a distributed file-watch service.
 
-If rehash confirms the same bytes, record new verification evidence in run/attempt
-metadata and retain content identity/cache eligibility. Do not rewrite an immutable
+If rehash confirms the same bytes, record new durable verification evidence in state
+and retain content identity/cache eligibility. Do not rewrite an immutable
 inventory or bump editable project revision merely to record a check. Later checks use
 the latest completed content-verified evidence for that source revision/digest, indexed
 in state; a Balanced acceptance does not reset that baseline. Otherwise unchanged
 sources would be rehashed forever against obsolete ingest metadata. Changed bytes
-require a new source revision and invalidate only its consumers. Stop/replan affected
-work against that revision; never silently replace a frozen run's inputs. Preserve
+require a future explicit replacement workflow and a new source revision; M2 reports
+the change without rewriting intent. Stop/replan affected work; never silently replace
+a frozen run's inputs. Preserve
 historical artifacts. Detect changes during a read and
 fail or retry rather than certify unstable input. Hashing remains streamed/cancellable.
 

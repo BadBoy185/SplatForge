@@ -22,7 +22,7 @@ from splatforge.adapters.project_lock import (
 from splatforge.adapters.state_schema import (
     CURRENT_STATE_SCHEMA_VERSION,
     SUPPORTED_STATE_SCHEMA_VERSIONS,
-    initialize_state_v3,
+    initialize_state_v4,
 )
 from splatforge.application.projects import (
     ProjectError,
@@ -95,7 +95,7 @@ class LocalProjectStore:
                 with closing(sqlite3.connect(root / "state.sqlite")) as connection:
                     connection.execute("PRAGMA foreign_keys = ON")
                     with connection:
-                        initialize_state_v3(connection, document.project_id)
+                        initialize_state_v4(connection, document.project_id)
                 self._write_document(root, document)
 
     def load(self, root: Path) -> ProjectDocument:
@@ -122,20 +122,35 @@ class LocalProjectStore:
             self._load_committed(root)
 
             with self._lock_factory(root / "project.lock") as lease:
-                # Close the preflight/acquisition race before any diagnostic or temp write.
-                current = self._load_committed(root).document
-                if current.project_id != document.project_id:
-                    raise ProjectError("Cannot save a different project into this directory")
-                if current.revision != expected_revision:
-                    raise StaleProjectRevisionError(
-                        "Stale project revision: "
-                        f"expected {expected_revision}, committed {current.revision}"
-                    )
-                if current.created_at != document.created_at:
-                    raise ProjectError("Cannot change project created_at")
-                self._validate_document(root, document)
+                self._validate_save_candidate(root, document, expected_revision)
                 lease.write_diagnostics(operation="save", owner_token=uuid4())
                 self._write_document(root, document)
+
+    def save_under_lease(
+        self, root: Path, document: ProjectDocument, *, expected_revision: int
+    ) -> None:
+        """Save after a caller acquired project.lock; never acquires it again."""
+
+        root = root.resolve()
+        self._validate_save_candidate(root, document, expected_revision)
+        self._write_document(root, document)
+
+    def _validate_save_candidate(
+        self, root: Path, document: ProjectDocument, expected_revision: int
+    ) -> None:
+        current = self._load_committed(root).document
+        if current.project_id != document.project_id:
+            raise ProjectError("Cannot save a different project into this directory")
+        if current.revision != expected_revision:
+            raise StaleProjectRevisionError(
+                "Stale project revision: "
+                f"expected {expected_revision}, committed {current.revision}"
+            )
+        if document.revision != expected_revision + 1:
+            raise ProjectError("Candidate revision must equal expected_revision + 1")
+        if current.created_at != document.created_at:
+            raise ProjectError("Cannot change project created_at")
+        self._validate_document(root, document)
 
     def _load_committed(self, root: Path) -> CommittedProject:
         raw = json.loads(self._owned_path(root, "project.json").read_text(encoding="utf-8"))

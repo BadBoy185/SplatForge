@@ -76,6 +76,10 @@ foundation cleanup task, not incidentally.
 
 ## M2 — media ingest and process boundary
 
+Status: implemented. M2 provides immutable source inventories, streamed identity,
+FFprobe metadata, Balanced/local and Strict verification, relinking, the bounded process
+boundary and tested Windows Job Object/read-lease behavior. Frame extraction remains M3.
+
 Implement source inventory, streaming content identity, read-only registration and
 relinking for ordinary MP4/MOV/JPEG/PNG inputs. Add FFprobe metadata via the first
 process adapter, with bounded logs, timeout, Windows process-tree cancellation and

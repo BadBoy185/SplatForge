@@ -1,4 +1,4 @@
-"""The concrete state schema v3 and its explicit historical migrations."""
+"""The concrete state schema v4 and its explicit historical migrations."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from splatforge.adapters.project_lock import (
 from splatforge.application.projects import ProjectError, StateUpgradeResult
 from splatforge.core.project import ProjectDocument
 
-CURRENT_STATE_SCHEMA_VERSION = 3
-SUPPORTED_STATE_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+CURRENT_STATE_SCHEMA_VERSION = 4
+SUPPORTED_STATE_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 
 _EXECUTION_TABLES = (
     """
@@ -91,6 +91,33 @@ _EXECUTION_TABLES = (
     "CREATE INDEX attempts_run_lookup ON attempts(run_id, node_id, created_at)",
 )
 
+_SOURCE_VERIFICATION_TABLES = (
+    """
+    CREATE TABLE source_verifications (
+        verification_id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        source_revision INTEGER NOT NULL,
+        expected_content_digest TEXT NOT NULL,
+        policy_id TEXT NOT NULL,
+        policy_version INTEGER NOT NULL,
+        checked_at TEXT NOT NULL,
+        baseline_evidence_json TEXT,
+        current_evidence_json TEXT,
+        full_hash_performed INTEGER NOT NULL,
+        observed_content_digest TEXT,
+        rehash_reason TEXT,
+        assurance TEXT NOT NULL,
+        stability_mechanism TEXT,
+        outcome TEXT NOT NULL,
+        diagnostic_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX source_verifications_lookup
+    ON source_verifications(source_id, source_revision, expected_content_digest, checked_at)
+    """,
+)
+
 
 class _VersionView(Protocol):
     state: int
@@ -123,9 +150,15 @@ def create_execution_tables(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
-def initialize_state_v3(connection: sqlite3.Connection, project_id: UUID) -> None:
+def create_source_verification_tables(connection: sqlite3.Connection) -> None:
+    for statement in _SOURCE_VERIFICATION_TABLES:
+        connection.execute(statement)
+
+
+def initialize_state_v4(connection: sqlite3.Connection, project_id: UUID) -> None:
     connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     create_execution_tables(connection)
+    create_source_verification_tables(connection)
     connection.executemany(
         "INSERT INTO metadata (key, value) VALUES (?, ?)",
         [
@@ -136,7 +169,7 @@ def initialize_state_v3(connection: sqlite3.Connection, project_id: UUID) -> Non
 
 
 class LocalStateSchemaUpgrader:
-    """Upgrade state v1/v2 directly to v3 after a validated backup."""
+    """Upgrade state v1/v2/v3 directly to v4 after a validated backup."""
 
     def __init__(
         self,
@@ -158,7 +191,7 @@ class LocalStateSchemaUpgrader:
                 current_version=CURRENT_STATE_SCHEMA_VERSION,
                 upgraded=False,
             )
-        if preflight.versions.state not in {1, 2}:
+        if preflight.versions.state not in {1, 2, 3}:
             raise ProjectError(
                 f"No state migration from version {preflight.versions.state} is supported"
             )
@@ -171,7 +204,7 @@ class LocalStateSchemaUpgrader:
                     current_version=CURRENT_STATE_SCHEMA_VERSION,
                     upgraded=False,
                 )
-            if committed.versions.state not in {1, 2}:
+            if committed.versions.state not in {1, 2, 3}:
                 raise ProjectError(
                     f"No state migration from version {committed.versions.state} is supported"
                 )
@@ -179,7 +212,7 @@ class LocalStateSchemaUpgrader:
             lease.write_diagnostics(operation="state-upgrade", owner_token=uuid4())
             backup = self._backup_preparer.prepare_under_lease(
                 root,
-                f"state-v{previous_version}-to-v3-{uuid4().hex}",
+                f"state-v{previous_version}-to-v4-{uuid4().hex}",
                 committed.document,
             )
             if not backup.root.is_dir():
@@ -191,7 +224,8 @@ class LocalStateSchemaUpgrader:
                     with connection:
                         if previous_version == 1:
                             create_execution_tables(connection)
-                        else:
+                            create_source_verification_tables(connection)
+                        elif previous_version == 2:
                             connection.execute(
                                 "ALTER TABLE runs ADD COLUMN cancellation_accepted_at TEXT"
                             )
@@ -212,6 +246,9 @@ class LocalStateSchemaUpgrader:
                                 "ALTER TABLE attempts ADD COLUMN teardown_state TEXT NOT NULL "
                                 "DEFAULT 'not_required'"
                             )
+                            create_source_verification_tables(connection)
+                        else:
+                            create_source_verification_tables(connection)
                         updated = connection.execute(
                             """
                             UPDATE metadata SET value=?

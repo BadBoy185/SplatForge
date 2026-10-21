@@ -36,7 +36,7 @@ from splatforge.core.project import ProjectDocument
 
 
 class StateUpgradeRequiredError(ProjectError):
-    """Execution requires the explicit state v1/v2 to v3 migration."""
+    """Execution requires a schema containing the M1b execution tables."""
 
 
 class UnresolvedExecutionError(ProjectError):
@@ -240,7 +240,7 @@ class FakeExecutionService:
                 raise StateUpgradeRequiredError(
                     "State upgrade required: run 'splatforge project upgrade-state <project>'"
                 )
-            if project.state_version != 3:
+            if project.state_version not in {3, 4}:
                 raise ProjectError(f"Unsupported state schema version {project.state_version}")
             self._repository.ensure_no_unfinished_run(root)
             project_copy = ProjectDocument.model_validate(project.document.model_dump(mode="json"))
@@ -394,7 +394,7 @@ class FakeExecutionService:
             raise StateUpgradeRequiredError(
                 "State upgrade required: run 'splatforge project upgrade-state <project>'"
             )
-        if version != 3:
+        if version not in {3, 4}:
             raise ProjectError(f"Unsupported state schema version {version}")
 
     def _run_sequence(

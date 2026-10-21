@@ -35,6 +35,12 @@ MediaIngest publishes versioned project input inventories through the project-sa
 protocol; subsequent stages publish derived artifacts through the attempt-publication
 protocol. Both protocols are defined in PROJECT_FORMAT.md.
 
+M2 implements MediaIngest for JPEG/PNG/MP4/MOV as read-only external locators. It fully
+hashes bytes, records normalized FFprobe metadata and distinct source/camera groups, and
+publishes a new immutable inventory revision only after a writer-locked CAS recheck.
+Balanced/local and Strict verification evidence is durable state, not an inventory
+rewrite. MediaIngest does not decode video or publish `CandidateViewSet`; M3 owns that.
+
 Viewing is a consumer of artifacts, not an implicit processing stage. If generating
 previews changes data, implement a separately fingerprinted conversion. A dataset
 export is available without training; migrate the prototype `training.none` meaning

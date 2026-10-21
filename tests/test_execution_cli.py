@@ -62,8 +62,8 @@ def test_upgrade_current_state_cli_is_safe_no_op(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload == {
-        "previous_version": 3,
-        "current_version": 3,
+        "previous_version": 4,
+        "current_version": 4,
         "upgraded": False,
         "backup_path": None,
     }

@@ -179,7 +179,7 @@ def test_versions_are_rechecked_after_writer_lock_before_diagnostics(
         if version_field == "state_schema_version":
             with sqlite3.connect(tmp_path / "state.sqlite") as connection:
                 connection.execute(
-                    "UPDATE metadata SET value='4' WHERE key='state_schema_version'"
+                    "UPDATE metadata SET value='5' WHERE key='state_schema_version'"
                 )
             return
         raw = json.loads(path.read_text(encoding="utf-8"))

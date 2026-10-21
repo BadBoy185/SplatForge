@@ -191,7 +191,7 @@ class LocalExecutionRepository:
         project = self.inspect_project(root)
         if project.state_version in {1, 2}:
             raise ProjectError("State upgrade required before cancellation")
-        if project.state_version != 3:
+        if project.state_version not in {3, 4}:
             raise ProjectError(f"Unsupported state schema version {project.state_version}")
         with self._read_connection(root) as connection:
             row = connection.execute(

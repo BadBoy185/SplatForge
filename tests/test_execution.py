@@ -380,7 +380,7 @@ def test_writer_revalidates_raced_state_before_changing_diagnostics(
 
     def make_state_unsupported() -> None:
         with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection, connection:
-            connection.execute("UPDATE metadata SET value='4' WHERE key='state_schema_version'")
+            connection.execute("UPDATE metadata SET value='5' WHERE key='state_schema_version'")
 
     class RacingLease:
         def __enter__(self) -> "RacingLease":

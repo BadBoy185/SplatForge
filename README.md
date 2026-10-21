@@ -14,22 +14,22 @@ inputs come later through preprocessing into perspective views.
 
 ## Current status
 
-The repository contains configuration models, a method catalog, compatibility
-validation, a default profile, safe local project persistence and the M1b2 fake-stage
-execution, interruption and recovery slice. The CLI can create/show projects, explicitly
-upgrade state schema v1 or v2 to v3, execute one deterministic two-node fake route and
-inspect, cancel, recover or retry its runs. Saved intent lives in `project.json`; state
-v3 stores runs, attempts, cancellation acceptance and indexed publications in
-`state.sqlite`.
+The repository contains configuration models, a method catalog, safe local project
+persistence, the M1b2 fake-stage execution/recovery slice and M2 media ingest. The CLI
+can create/show projects, upgrade historical state v1/v2/v3 to v4, register/list/verify/
+relink ordinary JPEG/PNG/MP4/MOV sources, and execute or inspect the deterministic fake
+route. Saved intent lives in `project.json`; immutable input inventories live under
+`sources/`; state v4 stores execution history and durable source-verification evidence.
 
 Project saves and fake runs share one OS-held Windows writer lock. Fake outputs are
 validated before immutable publication and cache reuse rechecks manifests and payload
 digests. A second CLI can create the bounded `cancel.request` without taking that lock;
 the owner durably accepts it before stopping, publishing or succeeding. Recovery and
-manual bounded retry are implemented only for in-process fake stages. Media ingest,
-external tools, FFmpeg/COLMAP execution, training and GUI remain planned. Catalog entries
-describe intended methods, not installed or implemented capabilities. The existing
-`PipelineConfig` remains a prototype and is explicitly converted when creating a project.
+manual bounded retry are implemented only for in-process fake stages. M2 streams source
+hashes, normalizes FFprobe metadata and runs external processes with bounded output,
+timeouts, cancellation and Windows Job Object containment. It does not extract video
+frames or copy originals. FFmpeg decoding, COLMAP, training and GUI remain planned.
+Catalog entries describe intended methods, not installed or implemented capabilities.
 
 These commands work in the foundation:
 
@@ -42,6 +42,11 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\splatforge.exe project create "C:\SplatForge Projects\First scene" --label "First scene"
 .\.venv\Scripts\splatforge.exe project show "C:\SplatForge Projects\First scene"
 .\.venv\Scripts\splatforge.exe project upgrade-state "C:\SplatForge Projects\First scene"
+.\.venv\Scripts\splatforge.exe media add "C:\SplatForge Projects\First scene" "D:\Media\photo.jpg" "D:\Media\clip.mp4" --ffprobe "C:\ffmpeg\bin\ffprobe.exe"
+.\.venv\Scripts\splatforge.exe media list "C:\SplatForge Projects\First scene"
+.\.venv\Scripts\splatforge.exe media verify "C:\SplatForge Projects\First scene" --policy balanced
+.\.venv\Scripts\splatforge.exe media verify "C:\SplatForge Projects\First scene" --policy strict
+.\.venv\Scripts\splatforge.exe media relink "C:\SplatForge Projects\First scene" <source-id> "E:\Moved\photo.jpg"
 .\.venv\Scripts\splatforge.exe run fake "C:\SplatForge Projects\First scene" --start 0 --count 3 --factor 2
 .\.venv\Scripts\splatforge.exe run show "C:\SplatForge Projects\First scene" <run-id>
 .\.venv\Scripts\splatforge.exe run cancel "C:\SplatForge Projects\First scene" <run-id>
@@ -52,10 +57,11 @@ py -3.12 -m venv .venv
 ```
 
 Creation requires a missing or empty directory. It creates `project.json`,
-`project.lock` and state schema v3 in `state.sqlite`; execution directories are created
-only by a run. Existing state v1/v2 projects remain open/show/save compatible and
-require `project upgrade-state` before mutating execution operations. Projects open from
-their saved settings without reapplying a preset, and opaque method/settings envelopes round-trip.
+`project.lock` and state schema v4 in `state.sqlite`; source and execution directories
+are created only by their operations. Existing state v1/v2/v3 projects remain
+open/show/save compatible. The M1b fake route remains usable on v3, while M2 mutation and
+verification require explicit upgrade to v4. `SPLATFORGE_FFPROBE` may provide the
+FFprobe path instead of `--ffprobe`.
 
 For programmatic editing:
 
@@ -70,10 +76,11 @@ document.label = "Renamed scene"
 document = projects.save(root, document)
 ```
 
-Python 3.12 is the tested baseline. Windows 10/11 and Windows Server 2022 are target
-platforms; support must be established by tests as adapters are added. FFmpeg, COLMAP,
-CUDA and trainer installation are not required for the foundation. At the architecture
-review baseline, the three tests pass and Ruff reports 18 existing source violations.
+Python 3.12 is the tested baseline. Windows tests exercise Job Object cancellation,
+timeout, owner-death descendant cleanup and local fixed-volume read leases that deny
+write/delete while allowing readers. Default tests require no FFmpeg installation; set
+`SPLATFORGE_TEST_FFPROBE` for the generated-PNG real FFprobe test. COLMAP, CUDA and
+trainer installation remain unnecessary.
 
 ## Intended workflow
 
@@ -117,6 +124,5 @@ translation/benchmarking stays with training integration.
 | [ROADMAP.md](ROADMAP.md) | Incremental, verifiable milestones |
 | [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
 
-Keep source media, generated projects, model weights and training output outside
-the repository. Next is **M2: media ingest and process boundary**. Review each diff; commit
-only on request.
+Keep source media, generated projects, model weights and training output outside the
+repository. Next is **M3 — candidate views and fixed-FPS extraction**.

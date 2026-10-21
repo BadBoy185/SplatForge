@@ -2,19 +2,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Annotated
 from uuid import UUID
 
 import typer
 
 from splatforge import __version__
-from splatforge.bootstrap import build_execution_service, build_project_service
+from splatforge.bootstrap import (
+    build_execution_service,
+    build_media_service,
+    build_project_service,
+)
 from splatforge.core import build_builtin_registry, recommended_flat_video_profile
+from splatforge.core.media import VerificationPolicyId
 
 app = typer.Typer(no_args_is_help=True, help="SplatForge development CLI")
 project_app = typer.Typer(no_args_is_help=True, help="Basic project persistence")
 app.add_typer(project_app, name="project")
 run_app = typer.Typer(no_args_is_help=True, help="Deterministic fake execution")
 app.add_typer(run_app, name="run")
+media_app = typer.Typer(no_args_is_help=True, help="Read-only media registration")
+app.add_typer(media_app, name="media")
 
 
 @project_app.command("create")
@@ -97,6 +105,84 @@ def retry_run(path: Path, run_id: UUID) -> None:
     try:
         result = build_execution_service().retry(path, run_id)
     except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@media_app.command("add")
+def add_media(
+    path: Path,
+    sources: Annotated[list[Path], typer.Argument()],
+    ffprobe: Annotated[Path | None, typer.Option("--ffprobe")] = None,
+    source_group: Annotated[UUID | None, typer.Option("--source-group")] = None,
+    camera_group: Annotated[UUID | None, typer.Option("--camera-group")] = None,
+) -> None:
+    try:
+        result = build_media_service(
+            ffprobe_path=str(ffprobe.absolute()) if ffprobe is not None else None
+        ).add(
+            path,
+            sources,
+            source_group_id=source_group,
+            camera_group_id=camera_group,
+        )
+    except (ValueError, KeyError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@media_app.command("list")
+def list_media(path: Path) -> None:
+    try:
+        inventory = build_media_service().list(path)
+    except (ValueError, KeyError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {"inventory": inventory.model_dump(mode="json") if inventory else None},
+            indent=2,
+        )
+    )
+
+
+@media_app.command("verify")
+def verify_media(
+    path: Path,
+    policy: str = typer.Option("balanced", "--policy"),
+    source_id: Annotated[list[UUID] | None, typer.Option("--source-id")] = None,
+) -> None:
+    policies = {
+        "balanced": VerificationPolicyId.BALANCED_LOCAL,
+        "strict": VerificationPolicyId.STRICT,
+    }
+    if policy not in policies:
+        typer.echo("--policy must be 'balanced' or 'strict'", err=True)
+        raise typer.Exit(code=1)
+    try:
+        results = build_media_service().verify(
+            path,
+            policy=policies[policy],
+            source_ids=set(source_id) if source_id else None,
+        )
+    except (ValueError, KeyError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {"results": [result.model_dump(mode="json") for result in results]},
+            indent=2,
+        )
+    )
+
+
+@media_app.command("relink")
+def relink_media(path: Path, source_id: UUID, new_path: Path) -> None:
+    try:
+        result = build_media_service().relink(path, source_id, new_path)
+    except (ValueError, KeyError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(result.model_dump_json(indent=2))

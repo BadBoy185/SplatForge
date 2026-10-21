@@ -12,6 +12,7 @@ from splatforge.bootstrap import build_execution_service, build_project_service
 
 def downgrade_to_real_state_v1(root: Path) -> None:
     with closing(sqlite3.connect(root / "state.sqlite")) as connection, connection:
+        connection.execute("DROP TABLE source_verifications")
         connection.execute("DROP TABLE run_outputs")
         connection.execute("DROP TABLE artifacts")
         connection.execute("DROP TABLE attempts")
@@ -28,6 +29,7 @@ def downgrade_to_real_state_v2(root: Path) -> None:
     with closing(sqlite3.connect(root / "state.sqlite")) as connection, connection:
         connection.executescript(
             """
+            DROP TABLE source_verifications;
             DROP TABLE run_outputs;
             DROP TABLE artifacts;
             DROP TABLE attempts;
@@ -77,6 +79,12 @@ def downgrade_to_real_state_v2(root: Path) -> None:
         )
 
 
+def downgrade_to_real_state_v3(root: Path) -> None:
+    with closing(sqlite3.connect(root / "state.sqlite")) as connection, connection:
+        connection.execute("DROP TABLE source_verifications")
+        connection.execute("UPDATE metadata SET value='3' WHERE key='state_schema_version'")
+
+
 def test_state_v1_open_show_save_without_implicit_upgrade(tmp_path: Path) -> None:
     service = build_project_service()
     created = service.create(tmp_path, "State v1")
@@ -110,7 +118,7 @@ def test_fake_run_requires_explicit_state_upgrade_without_run_records(
     assert read_metadata(tmp_path)["state_schema_version"] == "1"
 
 
-def test_state_v2_remains_readable_and_upgrades_directly_to_v3(tmp_path: Path) -> None:
+def test_state_v2_remains_readable_and_upgrades_directly_to_v4(tmp_path: Path) -> None:
     service = build_project_service()
     project = service.create(tmp_path, "State v2")
     downgrade_to_real_state_v2(tmp_path)
@@ -127,7 +135,7 @@ def test_state_v2_remains_readable_and_upgrades_directly_to_v3(tmp_path: Path) -
     before_upgrade = (tmp_path / "project.json").read_bytes()
     upgraded = service.upgrade_state(tmp_path)
 
-    assert (upgraded.previous_version, upgraded.current_version) == (2, 3)
+    assert (upgraded.previous_version, upgraded.current_version) == (2, 4)
     assert upgraded.upgraded is True and upgraded.backup_path is not None
     backup = tmp_path / upgraded.backup_path
     assert read_metadata(backup)["state_schema_version"] == "2"
@@ -157,7 +165,7 @@ def test_explicit_state_upgrade_preserves_project_document_and_is_idempotent(
     upgraded = service.upgrade_state(tmp_path)
 
     assert upgraded.upgraded is True
-    assert (upgraded.previous_version, upgraded.current_version) == (1, 3)
+    assert (upgraded.previous_version, upgraded.current_version) == (1, 4)
     assert upgraded.backup_path is not None
     backup = tmp_path / upgraded.backup_path
     assert backup.is_dir()
@@ -170,18 +178,25 @@ def test_explicit_state_upgrade_preserves_project_document_and_is_idempotent(
     assert (backup / "project.json").read_bytes() == project_bytes
     assert (tmp_path / "project.json").read_bytes() == project_bytes
     assert service.open(tmp_path).revision == project.revision == 0
-    assert read_metadata(tmp_path)["state_schema_version"] == "3"
+    assert read_metadata(tmp_path)["state_schema_version"] == "4"
     with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection:
         tables = {
             row[0]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-    assert tables == {"metadata", "runs", "attempts", "artifacts", "run_outputs"}
+    assert tables == {
+        "metadata",
+        "runs",
+        "attempts",
+        "artifacts",
+        "run_outputs",
+        "source_verifications",
+    }
 
     backups_before = {path.name for path in (tmp_path / "backups").iterdir()}
     again = service.upgrade_state(tmp_path)
     assert again.upgraded is False
-    assert (again.previous_version, again.current_version) == (3, 3)
+    assert (again.previous_version, again.current_version) == (4, 4)
     assert again.backup_path is None
     assert {path.name for path in (tmp_path / "backups").iterdir()} == backups_before
     assert (tmp_path / "project.json").read_bytes() == project_bytes
@@ -193,7 +208,7 @@ def test_unsupported_newer_state_is_untouched_by_all_project_operations(
     service = build_project_service()
     project = service.create(tmp_path, "Future state")
     with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection, connection:
-        connection.execute("UPDATE metadata SET value='4' WHERE key='state_schema_version'")
+        connection.execute("UPDATE metadata SET value='5' WHERE key='state_schema_version'")
     before = {
         path.relative_to(tmp_path).as_posix(): path.read_bytes()
         for path in tmp_path.rglob("*")
@@ -213,3 +228,36 @@ def test_unsupported_newer_state_is_untouched_by_all_project_operations(
             for path in tmp_path.rglob("*")
             if path.is_file()
         } == before
+
+
+def test_state_v3_fake_execution_and_upgrade_to_v4_preserve_history(tmp_path: Path) -> None:
+    service = build_project_service()
+    project = service.create(tmp_path, "Historical v3")
+    downgrade_to_real_state_v3(tmp_path)
+    assert service.open(tmp_path) == project
+    assert json.loads(service.show(tmp_path))["revision"] == project.revision
+    project.label = "Saved on v3"
+    saved = service.save(tmp_path, project)
+    assert read_metadata(tmp_path)["state_schema_version"] == "3"
+
+    result = build_execution_service().run(tmp_path, start=2, count=2, factor=3)
+    project_bytes = (tmp_path / "project.json").read_bytes()
+    assert result.status == "succeeded"
+    assert (
+        json.loads(build_execution_service().show(tmp_path, result.run_id))["state"]["status"]
+        == "succeeded"
+    )
+
+    upgraded = service.upgrade_state(tmp_path)
+
+    assert (upgraded.previous_version, upgraded.current_version) == (3, 4)
+    assert (tmp_path / "project.json").read_bytes() == project_bytes
+    assert service.open(tmp_path).revision == saved.revision
+    assert (
+        json.loads(build_execution_service().show(tmp_path, result.run_id))["state"]["status"]
+        == "succeeded"
+    )
+    with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection:
+        assert connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='source_verifications'"
+        ).fetchone() == ("source_verifications",)

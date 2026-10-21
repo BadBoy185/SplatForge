@@ -113,6 +113,10 @@ process containment; do not claim it from fake tests. No network service or sche
 
 ## M2 Media ingest
 
+Status: implemented with state schema v4, immutable JSONL inventory revisions, durable
+verification evidence, FFprobe normalization, relinking and the Windows-contained
+bounded process adapter. M2 does not decode frames; candidate views start in M3.
+
 Additional reading: [PROJECT_FORMAT: paths](PROJECT_FORMAT.md#paths-and-source-identity),
 [source verification](PROJECT_FORMAT.md#source-verification-policies),
 [PIPELINE: view and camera rules](PIPELINE.md#view-and-camera-rules) and

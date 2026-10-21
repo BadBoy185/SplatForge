@@ -1,13 +1,11 @@
 # Development, testing and diagnostics
 
 [AGENTS.md](../AGENTS.md) is the engineering constitution. This guide defines the
-verification strategy; foundation and M1b2 fake execution/interruption tests exist while
-external-process integration remains planned.
+verification strategy; foundation, M1b2 execution/recovery and the M2 media/process
+boundary have automated coverage.
 Use the project virtual environment and the [README commands](../README.md#current-status).
-At the 2026-10-19 review baseline, `pytest` passes three tests and Ruff finds 18
-pre-existing violations (17 E501 and one UP037). Keep documentation-only diffs free
-of incidental code fixes. Python 3.12 is the baseline; wider `requires-python` metadata
-is not evidence of testing on every later Python release.
+Python 3.12 is the baseline; wider `requires-python` metadata is not evidence of testing
+on every later Python release.
 
 ## Testing layers
 
@@ -52,7 +50,14 @@ backed-up v1/v2 upgrades, lock-free cancellation requests, durable acceptance,
 publication races, stale fake owners, exact orphan adoption, unresolved teardown and
 bounded linked retry. For this in-process fake backend only, acquiring the writer lock is
 sufficient stale-owner evidence because there are no child workers. These tests do not
-establish Windows process-tree containment; M2 must prove the external-process contract.
+establish Windows process-tree containment by themselves.
+
+M2 tests cover immutable inventory revisions, CAS races, durable verification evidence,
+FFprobe JSON normalization, bounded dual-stream capture, timeout/cancellation and exact
+argument/cwd/environment handling. Windows-only tests prove that cancellation, timeout
+and abrupt owner death terminate descendants holding file locks, and that the local
+fixed-volume Strict lease blocks modification/replacement/deletion while permitting a
+read-only consumer. Non-Windows skips are explicit and are not evidence of support.
 
 Source-verification tests distinguish Balanced/local and Strict: unchanged metadata
 must not read the entire source under Balanced; changed/unreliable indicators trigger
@@ -81,6 +86,13 @@ quality gate. Check component-scoped versus project-wide failures and exact over
 binding; deselecting a bad component cannot waive a project-wide coverage rule.
 
 ## External process contract
+
+M2 implements this contract with a one-shot worker that waits for its launch message
+until the parent has assigned it to a kill-on-close Windows Job Object. The Job handle is
+not inherited. The worker then launches exactly one backend with `shell=False`; the
+parent concurrently drains bounded stdout/stderr and confirms the contained tree is gone
+before returning. POSIX process-group behavior is a testable fallback, not a claim of the
+Windows support baseline.
 
 The process adapter owns executable resolution, argument arrays, working directory,
 scoped environment, lifecycle and streamed stdout/stderr. No shell interpolation or
