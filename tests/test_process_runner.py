@@ -9,9 +9,11 @@ from pathlib import Path
 
 import pytest
 
+import splatforge.adapters.process_runner as process_runner_module
 from splatforge.adapters.process_runner import (
     ExecutableResolver,
     LocalProcessRunner,
+    ProcessBoundaryError,
     ProcessRequest,
 )
 
@@ -176,6 +178,105 @@ def test_unconfirmed_teardown_is_structured_not_fabricated_success(tmp_path: Pat
     assert result.exit_code == 0
     assert result.teardown_confirmed is False
     assert result.forced_tree_termination is True
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Object setup ordering")
+def test_job_setup_failure_spawns_no_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    popen_calls = 0
+
+    class SetupFailureJob:
+        def __init__(self) -> None:
+            raise ProcessBoundaryError("job setup sentinel")
+
+    def unexpected_popen(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal popen_calls
+        popen_calls += 1
+        raise AssertionError("worker must not spawn before Job setup")
+
+    monkeypatch.setattr(process_runner_module, "_WindowsJob", SetupFailureJob)
+    monkeypatch.setattr(process_runner_module.subprocess, "Popen", unexpected_popen)
+
+    with pytest.raises(ProcessBoundaryError, match="job setup sentinel"):
+        LocalProcessRunner().run(request(tmp_path, "-c", "pass"))
+
+    assert popen_calls == 0
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Object spawn cleanup")
+def test_worker_spawn_failure_closes_empty_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jobs = []
+
+    class TrackingJob:
+        def __init__(self) -> None:
+            self.closed = False
+            jobs.append(self)
+
+        def close(self) -> None:
+            self.closed = True
+
+    def fail_spawn(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise OSError("worker spawn sentinel")
+
+    monkeypatch.setattr(process_runner_module, "_WindowsJob", TrackingJob)
+    monkeypatch.setattr(process_runner_module.subprocess, "Popen", fail_spawn)
+
+    with pytest.raises(OSError, match="worker spawn sentinel"):
+        LocalProcessRunner().run(request(tmp_path, "-c", "pass"))
+
+    assert len(jobs) == 1
+    assert jobs[0].closed is True
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Object assignment cleanup")
+def test_job_assignment_failure_preserves_error_and_reaps_waiting_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend_marker = tmp_path / "backend-launched.marker"
+    workers: list[subprocess.Popen[bytes]] = []
+    jobs = []
+    original_popen = subprocess.Popen
+
+    class AssignmentFailureJob:
+        def __init__(self) -> None:
+            self.closed = False
+            jobs.append(self)
+
+        def assign(self, process: subprocess.Popen[bytes]) -> None:
+            raise ProcessBoundaryError("job assignment sentinel")
+
+        def close(self) -> None:
+            self.closed = True
+
+    def recording_popen(*args, **kwargs):  # type: ignore[no-untyped-def]
+        process = original_popen(*args, **kwargs)
+        workers.append(process)
+        return process
+
+    monkeypatch.setattr(process_runner_module, "_WindowsJob", AssignmentFailureJob)
+    monkeypatch.setattr(process_runner_module.subprocess, "Popen", recording_popen)
+    backend = (
+        "from pathlib import Path;import sys;"
+        "Path(sys.argv[1]).write_text('launched', encoding='utf-8')"
+    )
+
+    with pytest.raises(ProcessBoundaryError, match="job assignment sentinel") as raised:
+        LocalProcessRunner().run(
+            request(tmp_path, "-c", backend, str(backend_marker))
+        )
+
+    assert "cannot join thread" not in str(raised.value)
+    assert not backend_marker.exists()
+    assert len(workers) == 1
+    assert workers[0].poll() is not None
+    assert workers[0].stdin is not None and workers[0].stdin.closed
+    assert workers[0].stdout is not None and workers[0].stdout.closed
+    assert workers[0].stderr is not None and workers[0].stderr.closed
+    assert len(jobs) == 1
+    assert jobs[0].closed is True
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Job Object tree containment")

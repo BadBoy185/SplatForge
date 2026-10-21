@@ -309,30 +309,48 @@ class LocalProcessRunner:
         popen_kwargs: dict[str, object] = {}
         if os.name != "nt":
             popen_kwargs["start_new_session"] = True
-        process = subprocess.Popen(
-            [sys.executable, str(worker)],
-            shell=False,
-            cwd=str(cwd),
-            env=dict(os.environ),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            close_fds=True,
-            **popen_kwargs,
-        )
+        job = _WindowsJob() if os.name == "nt" else None
+        try:
+            process = subprocess.Popen(
+                [sys.executable, str(worker)],
+                shell=False,
+                cwd=str(cwd),
+                env=dict(os.environ),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                close_fds=True,
+                **popen_kwargs,
+            )
+        except BaseException:
+            if job is not None:
+                job.close()
+            raise
         stdout = _BoundedCollector(process.stdout, request.max_stdout_bytes)
         stderr = _BoundedCollector(process.stderr, request.max_stderr_bytes)
-        job = _WindowsJob() if os.name == "nt" else None
+        if job is not None:
+            try:
+                job.assign(process)
+            except BaseException:
+                with suppress(Exception):
+                    self._stop_uncontained_worker(
+                        process, request.teardown_timeout_seconds
+                    )
+                self._close_process_pipes(process)
+                job.close()
+                raise
         timed_out = False
         cancelled = False
         teardown_confirmed = False
         forced_tree_termination = False
         exit_code: int | None = None
+        stdout_started = False
+        stderr_started = False
         try:
-            if job is not None:
-                job.assign(process)
             stdout.thread.start()
+            stdout_started = True
             stderr.thread.start()
+            stderr_started = True
             assert process.stdin is not None
             process.stdin.write(message)
             process.stdin.flush()
@@ -364,8 +382,14 @@ class LocalProcessRunner:
         finally:
             if process.stdin is not None and not process.stdin.closed:
                 process.stdin.close()
-            stdout.thread.join(timeout=request.teardown_timeout_seconds)
-            stderr.thread.join(timeout=request.teardown_timeout_seconds)
+            if stdout_started:
+                stdout.thread.join(timeout=request.teardown_timeout_seconds)
+            if stderr_started:
+                stderr.thread.join(timeout=request.teardown_timeout_seconds)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    with suppress(OSError):
+                        stream.close()
             if job is not None:
                 job.close()
         return ProcessResult(
@@ -391,6 +415,19 @@ class LocalProcessRunner:
         elif process.poll() is None:
             with suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
+
+    @staticmethod
+    def _stop_uncontained_worker(process: subprocess.Popen[bytes], timeout: float) -> None:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=timeout)
+
+    @staticmethod
+    def _close_process_pipes(process: subprocess.Popen[bytes]) -> None:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None and not stream.closed:
+                with suppress(OSError):
+                    stream.close()
 
     @staticmethod
     def _wait_tree_empty(

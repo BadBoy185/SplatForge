@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -22,7 +24,11 @@ from splatforge.application.media_contracts import (
     SourceUnavailableError,
     StrictSourceUnavailableError,
 )
-from splatforge.application.projects import ProjectError, StaleProjectRevisionError
+from splatforge.application.projects import (
+    ProjectError,
+    ProjectWriterBusyError,
+    StaleProjectRevisionError,
+)
 from splatforge.bootstrap import build_project_service
 from splatforge.core.media import (
     ExecutableIdentity,
@@ -148,6 +154,43 @@ class FakeProbe:
             height=12,
             time_base="1/90000" if media_type == MediaType.VIDEO else None,
         )
+
+
+class RecordingWriterLease:
+    created = False
+
+    def __init__(self, factory: RecordingWriterLockFactory) -> None:
+        self._factory = factory
+
+    def __enter__(self) -> RecordingWriterLease:
+        self._factory.attempts += 1
+        if self._factory.on_acquire is not None:
+            self._factory.on_acquire()
+        if self._factory.busy:
+            raise ProjectWriterBusyError("verification writer is busy")
+        return self
+
+    def write_diagnostics(self, *, operation: str, owner_token: UUID) -> None:
+        self._factory.diagnostics.append(operation)
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[no-untyped-def]
+        return None
+
+
+class RecordingWriterLockFactory:
+    def __init__(
+        self,
+        *,
+        busy: bool = False,
+        on_acquire: Callable[[], None] | None = None,
+    ) -> None:
+        self.busy = busy
+        self.on_acquire = on_acquire
+        self.attempts = 0
+        self.diagnostics: list[str] = []
+
+    def __call__(self, path: Path) -> RecordingWriterLease:
+        return RecordingWriterLease(self)
 
 
 def media_service(
@@ -385,6 +428,95 @@ def test_balanced_rehash_updates_durable_baseline_without_inventory_revision(
         assert connection.execute(
             "SELECT COUNT(*) FROM source_verifications WHERE full_hash_performed=1"
         ).fetchone() == (1,)
+
+
+def test_verification_hashes_before_busy_writer_and_inserts_no_row(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    source = tmp_path / "photo.png"
+    source.write_bytes(b"same content")
+    build_project_service().create(project, "Busy verification")
+    initial, files, probe = media_service(project)
+    added = initial.add(project, [source])
+    files.hash_reads = 0
+    files.overrides[source.absolute()] = evidence(source, generation=2)
+    project_before = (project / "project.json").read_bytes()
+
+    def assert_hash_complete() -> None:
+        assert files.hash_reads == 1
+
+    locks = RecordingWriterLockFactory(busy=True, on_acquire=assert_hash_complete)
+    repository = LocalMediaRepository(
+        project_store=LocalProjectStore(), lock_factory=locks
+    )
+    service = MediaService(repository, files, probe)
+
+    with pytest.raises(ProjectWriterBusyError, match="writer is busy"):
+        service.verify(project)
+
+    assert locks.attempts == 1
+    assert locks.diagnostics == []
+    with closing(sqlite3.connect(project / "state.sqlite")) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM source_verifications").fetchone() == (0,)
+    assert (project / "project.json").read_bytes() == project_before
+    assert build_project_service().open(project).revision == added.project_revision
+
+
+def test_verification_rechecks_state_under_lock_before_diagnostics_or_insert(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    source = tmp_path / "photo.png"
+    source.write_bytes(b"content")
+    build_project_service().create(project, "Raced verification state")
+    initial, files, probe = media_service(project)
+    added = initial.add(project, [source])
+    project_before = (project / "project.json").read_bytes()
+
+    def publish_newer_state() -> None:
+        with closing(sqlite3.connect(project / "state.sqlite")) as connection, connection:
+            connection.execute(
+                "UPDATE metadata SET value='5' WHERE key='state_schema_version'"
+            )
+
+    locks = RecordingWriterLockFactory(on_acquire=publish_newer_state)
+    repository = LocalMediaRepository(
+        project_store=LocalProjectStore(), lock_factory=locks
+    )
+    service = MediaService(repository, files, probe)
+
+    with pytest.raises(ProjectError, match="Unsupported newer project versions.*state=5"):
+        service.verify(project)
+
+    assert locks.attempts == 1
+    assert locks.diagnostics == []
+    with closing(sqlite3.connect(project / "state.sqlite")) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM source_verifications").fetchone() == (0,)
+    assert (project / "project.json").read_bytes() == project_before
+    assert json.loads(project_before)["revision"] == added.project_revision
+
+
+def test_verification_uses_writer_diagnostics_and_preserves_project_document(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    source = tmp_path / "photo.png"
+    source.write_bytes(b"content")
+    build_project_service().create(project, "Owned verification")
+    initial, files, probe = media_service(project)
+    initial.add(project, [source])
+    project_before = (project / "project.json").read_bytes()
+    locks = RecordingWriterLockFactory()
+    repository = LocalMediaRepository(
+        project_store=LocalProjectStore(), lock_factory=locks
+    )
+
+    result = MediaService(repository, files, probe).verify(project)
+
+    assert len(result) == 1
+    assert locks.diagnostics == ["media-verification-state-write"]
+    with closing(sqlite3.connect(project / "state.sqlite")) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM source_verifications").fetchone() == (1,)
+    assert (project / "project.json").read_bytes() == project_before
 
 
 @pytest.mark.parametrize(
