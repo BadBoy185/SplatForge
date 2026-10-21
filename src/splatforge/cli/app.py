@@ -16,12 +16,18 @@ from splatforge.bootstrap import (
 )
 from splatforge.core import build_builtin_registry, recommended_flat_video_profile
 from splatforge.core.media import VerificationPolicyId
+from splatforge.core.quality import (
+    QualityAnalysisSettings,
+    SharpestIntervalSettings,
+    parse_non_negative_rational,
+)
 from splatforge.core.views import (
     CandidateEncodingSettings,
     CandidatePoolSettings,
     CandidateResourceLimits,
     FixedFpsSettings,
     ImageFormat,
+    RationalValue,
     parse_fps,
     parse_gib_bytes,
 )
@@ -33,7 +39,7 @@ run_app = typer.Typer(no_args_is_help=True, help="Run inspection and control")
 app.add_typer(run_app, name="run")
 media_app = typer.Typer(no_args_is_help=True, help="Read-only media registration")
 app.add_typer(media_app, name="media")
-views_app = typer.Typer(no_args_is_help=True, help="Candidate views and fixed-FPS selection")
+views_app = typer.Typer(no_args_is_help=True, help="Candidate views and frame selection")
 app.add_typer(views_app, name="views")
 
 
@@ -204,6 +210,7 @@ def relink_media(path: Path, source_id: UUID, new_path: Path) -> None:
 def prepare_views(
     path: Path,
     target_fps: Annotated[str, typer.Option("--target-fps")],
+    selection: Annotated[str, typer.Option("--selection")] = "fixed-fps",
     candidate_fps: Annotated[str | None, typer.Option("--candidate-fps")] = None,
     source_id: Annotated[list[UUID] | None, typer.Option("--source-id")] = None,
     verification: Annotated[str, typer.Option("--verification")] = "balanced",
@@ -213,21 +220,53 @@ def prepare_views(
     max_candidates: Annotated[int, typer.Option("--max-candidates")] = 10_000,
     max_disk_gib: Annotated[str, typer.Option("--max-disk-gib")] = "20",
     process_timeout: Annotated[int, typer.Option("--process-timeout")] = 3600,
+    quality_max_side: Annotated[int, typer.Option("--quality-max-side")] = 1024,
+    min_sharpness: Annotated[str | None, typer.Option("--min-sharpness")] = None,
+    duplicate_hamming_threshold: Annotated[int, typer.Option("--duplicate-hamming-threshold")] = 4,
+    duplicate_lookback: Annotated[int, typer.Option("--duplicate-lookback")] = 8,
+    allow_duplicates: Annotated[bool, typer.Option("--allow-duplicates")] = False,
 ) -> None:
     policies = {
         "balanced": VerificationPolicyId.BALANCED_LOCAL,
         "strict": VerificationPolicyId.STRICT,
     }
     formats = {"jpeg": ImageFormat.JPEG, "png": ImageFormat.PNG}
+    selections = {"fixed-fps", "sharpest-interval"}
     if verification not in policies:
         typer.echo("--verification must be 'balanced' or 'strict'", err=True)
         raise typer.Exit(code=1)
     if image_format not in formats:
         typer.echo("--image-format must be 'jpeg' or 'png'", err=True)
         raise typer.Exit(code=1)
+    if selection not in selections:
+        typer.echo("--selection must be 'fixed-fps' or 'sharpest-interval'", err=True)
+        raise typer.Exit(code=1)
     try:
         target = parse_fps(target_fps)
-        candidate = parse_fps(candidate_fps or target_fps)
+        if candidate_fps is None and selection == "sharpest-interval":
+            candidate = RationalValue.from_fraction(2 * target.as_fraction())
+        else:
+            candidate = parse_fps(candidate_fps or target_fps)
+        if selection == "sharpest-interval":
+            selection_settings: FixedFpsSettings | SharpestIntervalSettings = (
+                SharpestIntervalSettings(
+                    target_fps=target,
+                    min_sharpness=(
+                        parse_non_negative_rational(min_sharpness)
+                        if min_sharpness is not None
+                        else None
+                    ),
+                    reject_duplicates=not allow_duplicates,
+                    duplicate_hamming_threshold=duplicate_hamming_threshold,
+                    duplicate_lookback=duplicate_lookback,
+                )
+            )
+            quality_settings: QualityAnalysisSettings | None = QualityAnalysisSettings(
+                quality_max_side=quality_max_side
+            )
+        else:
+            selection_settings = FixedFpsSettings(target_fps=target)
+            quality_settings = None
         result = build_views_service(
             ffmpeg_path=str(ffmpeg.absolute()) if ffmpeg is not None else None
         ).prepare(
@@ -239,7 +278,8 @@ def prepare_views(
                     jpeg_qscale=jpeg_qscale,
                 ),
             ),
-            selection_settings=FixedFpsSettings(target_fps=target),
+            selection_settings=selection_settings,
+            quality_settings=quality_settings,
             resource_limits=CandidateResourceLimits(
                 max_candidates=max_candidates,
                 max_candidate_bytes=parse_gib_bytes(max_disk_gib),

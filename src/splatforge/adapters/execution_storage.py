@@ -1,4 +1,4 @@
-"""Local SQLite/filesystem execution state for fake and concrete M3 routes."""
+"""Local SQLite/filesystem execution state for fake and concrete view routes."""
 
 from __future__ import annotations
 
@@ -49,6 +49,7 @@ from splatforge.core.execution import (
     RunSnapshot,
     RunStatus,
     RunWarning,
+    SharpestViewPreparationRoute,
     ValidationResult,
     ViewPreparationRoute,
 )
@@ -61,6 +62,14 @@ from splatforge.core.fake_pipeline import (
 )
 from splatforge.core.media import SourceOccurrence, VerificationPolicyId
 from splatforge.core.project import ProjectDocument
+from splatforge.core.quality import (
+    QualityReport,
+    SharpestSelectedViewSet,
+    quality_recipe_key,
+    sharpest_selection_recipe_key,
+    validate_quality_against_candidate,
+    validate_sharpest_against_inputs,
+)
 from splatforge.core.views import (
     CandidateViewSet,
     SelectedViewSet,
@@ -498,9 +507,7 @@ class LocalExecutionRepository:
                     policy=verification_policy,
                 )
             except (ValueError, json.JSONDecodeError) as exc:
-                ineligible.append(
-                    CacheIneligible(artifact_id=handle.artifact_id, reason=str(exc))
-                )
+                ineligible.append(CacheIneligible(artifact_id=handle.artifact_id, reason=str(exc)))
                 continue
             try:
                 self._validate_indexed_artifact(root, handle)
@@ -609,8 +616,7 @@ class LocalExecutionRepository:
                         }
                     ).decode(),
                     canonical_json_bytes(
-                        source_verification
-                        or {"policy": "not_applicable", "evidence": []}
+                        source_verification or {"policy": "not_applicable", "evidence": []}
                     ).decode(),
                     retry_of_attempt_id,
                     now,
@@ -892,9 +898,7 @@ class LocalExecutionRepository:
         payload = artifact_directory / manifest.payloads[0].path
         return NumbersPayload.model_validate_json(payload.read_bytes())
 
-    def load_candidate_views(
-        self, root: Path, artifact: ArtifactHandle
-    ) -> CandidateViewSet:
+    def load_candidate_views(self, root: Path, artifact: ArtifactHandle) -> CandidateViewSet:
         manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
         validated = validate_published_artifact(artifact_directory, manifest)
         if not isinstance(validated.parsed, CandidateViewSet):
@@ -903,12 +907,23 @@ class LocalExecutionRepository:
 
     def load_selected_views(
         self, root: Path, artifact: ArtifactHandle
-    ) -> SelectedViewSet:
+    ) -> SelectedViewSet | SharpestSelectedViewSet:
         manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
         validated = validate_published_artifact(artifact_directory, manifest)
-        if not isinstance(validated.parsed, SelectedViewSet):
-            raise ValueError("Artifact is not a SelectedViewSet")
+        if not isinstance(validated.parsed, (SelectedViewSet, SharpestSelectedViewSet)):
+            raise ValueError("Artifact is not a supported SelectedViewSet")
         return validated.parsed
+
+    def load_quality_report(self, root: Path, artifact: ArtifactHandle) -> QualityReport:
+        manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
+        validated = validate_published_artifact(artifact_directory, manifest)
+        if not isinstance(validated.parsed, QualityReport):
+            raise ValueError("Artifact is not a QualityReport")
+        return validated.parsed
+
+    def artifact_directory(self, root: Path, artifact: ArtifactHandle) -> Path:
+        _, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
+        return artifact_directory
 
     def recover_run(self, root: Path, *, run_id: UUID) -> RecoveryResult:
         root = root.resolve()
@@ -939,7 +954,7 @@ class LocalExecutionRepository:
         if run["status"] in {"succeeded", "cancelled"}:
             return RecoveryResult(run_id=run_id, status=RunStatus(run["status"]))
         if (
-            isinstance(snapshot.route, ViewPreparationRoute)
+            isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute))
             and active
             and any(item["node_id"] == snapshot.route.candidate.node_id for item in active)
             and os.name != "nt"
@@ -1036,6 +1051,12 @@ class LocalExecutionRepository:
         outputs = self._load_valid_run_outputs(root, run_id)
         if isinstance(snapshot.route, FakeRoute):
             required = {snapshot.route.sequence.node_id, snapshot.route.scale.node_id}
+        elif isinstance(snapshot.route, SharpestViewPreparationRoute):
+            required = {
+                snapshot.route.candidate.node_id,
+                snapshot.route.quality.node_id,
+                snapshot.route.selection.node_id,
+            }
         else:
             required = {snapshot.route.candidate.node_id, snapshot.route.selection.node_id}
         if required.issubset(outputs):
@@ -1050,9 +1071,7 @@ class LocalExecutionRepository:
                     """,
                     (self._now(), str(run_id)),
                 )
-            status = (
-                RunStatus.INTERRUPTED if updated.rowcount == 1 else RunStatus(run["status"])
-            )
+            status = RunStatus.INTERRUPTED if updated.rowcount == 1 else RunStatus(run["status"])
         return RecoveryResult(
             run_id=run_id,
             status=status,
@@ -1068,7 +1087,7 @@ class LocalExecutionRepository:
         snapshot = self._load_run_snapshot(root, run_id)
         if not isinstance(snapshot.route, FakeRoute):
             raise RetryNotAllowedError(
-                "run retry supports only the historical fake route; restart M3 with "
+                "run retry supports only the historical fake route; restart views with "
                 "'splatforge views prepare' to reuse completed stages"
             )
         with self._read_connection(root) as connection:
@@ -1274,13 +1293,14 @@ class LocalExecutionRepository:
         route = snapshot.route
         expected_lineage: tuple[ArtifactInputLineage, ...]
         consumed_candidate: CandidateViewSet | None = None
+        consumed_quality: QualityReport | None = None
+        candidate_artifact: ArtifactHandle | None = None
+        quality_artifact: ArtifactHandle | None = None
         if isinstance(route, FakeRoute):
             if attempt["node_id"] == route.sequence.node_id:
                 node = route.sequence
                 output = node.output
-                expected_recipe_key = sequence_recipe_key(
-                    start=node.start, settings=node.settings
-                )
+                expected_recipe_key = sequence_recipe_key(start=node.start, settings=node.settings)
                 expected_lineage = ()
                 expected_literal_inputs = {"start": node.start}
             elif attempt["node_id"] == route.scale.node_id:
@@ -1325,35 +1345,104 @@ class LocalExecutionRepository:
                 sources=route.sources,
                 policy=route.verification_policy,
             )
-        elif attempt["node_id"] == route.selection.node_id:
+        elif (
+            isinstance(route, SharpestViewPreparationRoute)
+            and attempt["node_id"] == route.quality.node_id
+        ):
+            node = route.quality
+            output = node.output
+            inputs = self._load_valid_run_outputs(root, snapshot.run_id)
+            candidate_artifact = inputs.get(route.candidate.node_id)
+            if candidate_artifact is None:
+                raise ValueError("Orphan quality has no valid candidate run output")
+            consumed_candidate = self.load_candidate_views(root, candidate_artifact)
+            expected_recipe_key = quality_recipe_key(
+                candidate=consumed_candidate,
+                candidate_digest=candidate_artifact.semantic_digest,
+                settings=node.settings,
+                backend=route.quality_backend,
+            )
+            expected_lineage = (
+                ArtifactInputLineage(
+                    input_name="candidate_views",
+                    artifact_id=candidate_artifact.artifact_id,
+                    artifact_type=candidate_artifact.artifact_type,
+                    contract_version=candidate_artifact.contract_version,
+                    semantic_digest=candidate_artifact.semantic_digest,
+                    recipe_key=candidate_artifact.recipe_key,
+                ),
+            )
+            expected_literal_inputs = {"quality_settings": node.settings.model_dump(mode="json")}
+        elif (
+            isinstance(route, SharpestViewPreparationRoute)
+            and attempt["node_id"] == route.selection.node_id
+        ):
             node = route.selection
             output = node.output
             inputs = self._load_valid_run_outputs(root, snapshot.run_id)
-            input_artifact = inputs.get(route.candidate.node_id)
-            if input_artifact is None:
-                raise ValueError("Orphan selection has no valid candidate run output")
-            candidate = self.load_candidate_views(root, input_artifact)
-            consumed_candidate = candidate
-            expected_recipe_key = selection_recipe_key(
-                candidate=candidate,
-                candidate_digest=input_artifact.semantic_digest,
+            candidate_artifact = inputs.get(route.candidate.node_id)
+            quality_artifact = inputs.get(route.quality.node_id)
+            if candidate_artifact is None or quality_artifact is None:
+                raise ValueError(
+                    "Orphan sharpest selection has no valid candidate and quality outputs"
+                )
+            consumed_candidate = self.load_candidate_views(root, candidate_artifact)
+            consumed_quality = self.load_quality_report(root, quality_artifact)
+            expected_recipe_key = sharpest_selection_recipe_key(
+                candidate=consumed_candidate,
+                candidate_digest=candidate_artifact.semantic_digest,
+                quality=consumed_quality,
+                quality_digest=quality_artifact.semantic_digest,
                 settings=node.settings,
             )
             expected_lineage = (
                 ArtifactInputLineage(
                     input_name="candidate_views",
-                    artifact_id=input_artifact.artifact_id,
-                    artifact_type=input_artifact.artifact_type,
-                    contract_version=input_artifact.contract_version,
-                    semantic_digest=input_artifact.semantic_digest,
-                    recipe_key=input_artifact.recipe_key,
+                    artifact_id=candidate_artifact.artifact_id,
+                    artifact_type=candidate_artifact.artifact_type,
+                    contract_version=candidate_artifact.contract_version,
+                    semantic_digest=candidate_artifact.semantic_digest,
+                    recipe_key=candidate_artifact.recipe_key,
+                ),
+                ArtifactInputLineage(
+                    input_name="quality_report",
+                    artifact_id=quality_artifact.artifact_id,
+                    artifact_type=quality_artifact.artifact_type,
+                    contract_version=quality_artifact.contract_version,
+                    semantic_digest=quality_artifact.semantic_digest,
+                    recipe_key=quality_artifact.recipe_key,
                 ),
             )
-            expected_literal_inputs = {
-                "selection_settings": node.settings.model_dump(mode="json")
-            }
+            expected_literal_inputs = {"selection_settings": node.settings.model_dump(mode="json")}
+        elif (
+            isinstance(route, ViewPreparationRoute)
+            and attempt["node_id"] == route.selection.node_id
+        ):
+            node = route.selection
+            output = node.output
+            inputs = self._load_valid_run_outputs(root, snapshot.run_id)
+            candidate_artifact = inputs.get(route.candidate.node_id)
+            if candidate_artifact is None:
+                raise ValueError("Orphan selection has no valid candidate run output")
+            consumed_candidate = self.load_candidate_views(root, candidate_artifact)
+            expected_recipe_key = selection_recipe_key(
+                candidate=consumed_candidate,
+                candidate_digest=candidate_artifact.semantic_digest,
+                settings=node.settings,
+            )
+            expected_lineage = (
+                ArtifactInputLineage(
+                    input_name="candidate_views",
+                    artifact_id=candidate_artifact.artifact_id,
+                    artifact_type=candidate_artifact.artifact_type,
+                    contract_version=candidate_artifact.contract_version,
+                    semantic_digest=candidate_artifact.semantic_digest,
+                    recipe_key=candidate_artifact.recipe_key,
+                ),
+            )
+            expected_literal_inputs = {"selection_settings": node.settings.model_dump(mode="json")}
         else:
-            raise ValueError("Attempt node is not present in the frozen M3 route")
+            raise ValueError("Attempt node is not present in the frozen route")
         expected_inputs = tuple(
             UUID(value) for value in json.loads(attempt["input_artifacts_json"])
         )
@@ -1376,17 +1465,33 @@ class LocalExecutionRepository:
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if consumed_candidate is not None:
+        if isinstance(validated.parsed, QualityReport):
+            if consumed_candidate is None or candidate_artifact is None:
+                raise ValueError("Orphan quality payload has no consumed candidate")
+            validate_quality_against_candidate(validated.parsed, consumed_candidate)
+            if validated.parsed.candidate_artifact_id != candidate_artifact.artifact_id:
+                raise ValueError("Orphan quality references a different candidate artifact")
+        elif isinstance(validated.parsed, SharpestSelectedViewSet):
+            if (
+                consumed_candidate is None
+                or consumed_quality is None
+                or candidate_artifact is None
+                or quality_artifact is None
+            ):
+                raise ValueError("Orphan sharpest payload has incomplete upstream inputs")
+            validate_sharpest_against_inputs(
+                validated.parsed,
+                consumed_candidate,
+                consumed_quality,
+                candidate_artifact=candidate_artifact,
+                quality_artifact=quality_artifact,
+            )
+        elif consumed_candidate is not None:
             if not isinstance(validated.parsed, SelectedViewSet):
                 raise ValueError("Orphan selection payload has the wrong typed contract")
             validate_selected_against_candidate(validated.parsed, consumed_candidate)
-            if (
-                validated.parsed.candidate_semantic_digest
-                != expected_lineage[0].semantic_digest
-            ):
-                raise ValueError(
-                    "Orphan selection references different candidate semantics"
-                )
+            if validated.parsed.candidate_semantic_digest != expected_lineage[0].semantic_digest:
+                raise ValueError("Orphan selection references different candidate semantics")
         relative_manifest = manifest_path.relative_to(root).as_posix()
         now = self._now()
         with self._write_connection(root) as connection, connection:
@@ -1543,8 +1648,14 @@ class LocalExecutionRepository:
                 )
 
     def _validate_indexed_artifact(
-        self, root: Path, handle: ArtifactHandle
+        self,
+        root: Path,
+        handle: ArtifactHandle,
+        _seen: frozenset[UUID] = frozenset(),
     ) -> tuple[ArtifactManifest, Path]:
+        if handle.artifact_id in _seen:
+            raise ValueError("Artifact lineage contains a cycle")
+        seen = _seen | {handle.artifact_id}
         manifest_path = self._owned_path(root, handle.manifest_path)
         with self._read_connection(root) as connection:
             row = connection.execute(
@@ -1577,13 +1688,39 @@ class LocalExecutionRepository:
             or manifest.contract_version != handle.contract_version
             or manifest.recipe_key != handle.recipe_key
             or manifest.semantic_digest != handle.semantic_digest
-            or manifest.validation.validator_id
-            != f"{manifest.artifact_type}.integrity"
+            or manifest.validation.validator_id != f"{manifest.artifact_type}.integrity"
             or manifest.validation.validator_version != 1
         ):
             raise ValueError("Manifest identity or contract mismatch")
         artifact_directory = manifest_path.parent
         validate_published_artifact(artifact_directory, manifest)
+        for lineage in manifest.input_lineage:
+            with self._read_connection(root) as connection:
+                upstream = connection.execute(
+                    """
+                    SELECT manifest_path FROM artifacts
+                    WHERE artifact_id=? AND artifact_type=? AND contract_version=?
+                      AND recipe_key=? AND semantic_digest=?
+                    """,
+                    (
+                        str(lineage.artifact_id),
+                        lineage.artifact_type,
+                        lineage.contract_version,
+                        lineage.recipe_key,
+                        lineage.semantic_digest,
+                    ),
+                ).fetchone()
+            if upstream is None:
+                raise ValueError("Artifact lineage input is not indexed with exact identity")
+            upstream_handle = ArtifactHandle(
+                artifact_id=lineage.artifact_id,
+                artifact_type=lineage.artifact_type,
+                contract_version=lineage.contract_version,
+                recipe_key=lineage.recipe_key,
+                semantic_digest=lineage.semantic_digest,
+                manifest_path=upstream[0],
+            )
+            self._validate_indexed_artifact(root, upstream_handle, seen)
         return manifest, artifact_directory
 
     @staticmethod

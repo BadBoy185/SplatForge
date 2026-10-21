@@ -78,7 +78,7 @@ indexes and their relationships at M1b. Do not put descriptor arrays, media or r
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
 
-### Implemented project and state formats through M3
+### Implemented project and state formats through M4
 
 `project.json` uses `project_format_version: 1`, a UUID `project_id`, `revision`,
 `label`, UTC `created_at`/`updated_at`, nullable `inventory_reference`, nullable
@@ -127,18 +127,22 @@ New projects use `state_schema_version = "4"`. Alongside `metadata`, SQLite cont
 indexed but are not unique artifact identities. State v3 fields remain unchanged. State
 v4 adds only bounded source verification policy, evidence, digest, assurance, stability,
 outcome and diagnostics records indexed by source revision/content/check time. It stores
-neither media, full FFprobe JSON nor unbounded logs. M3 does not change this schema:
+neither media, full FFprobe JSON nor unbounded logs. M3 and M4 do not change this schema:
 attempt `environment_json` and `source_verification_json` store bounded FFmpeg and
-per-source consumption provenance already supported by v4.
+per-source consumption provenance already supported by v4; M4 quality and pure-Python
+selection provenance use those existing bounded attempt fields.
 
 Existing state v1/v2/v3 projects remain supported by open/show/save without implicit
 writes; historical runs remain inspectable. The fake M1b route works on v3 and v4; M2
-mutation/verification and M3 execution require v4. Historical fake snapshots remain
+mutation/verification and M3/M4 execution require v4. Historical fake snapshots remain
 valid because run snapshot schema 1 now discriminates the existing `fake.two_node`
-route from `views.prepare_fixed_fps`. The M3 snapshot freezes inventory identity,
+and `views.prepare_fixed_fps` routes from `views.prepare_sharpest_interval`. The M3
+snapshot freezes inventory identity,
 selected source records, exact candidate/target FPS settings, verification policy,
 resource limits and FFmpeg identity, but only typed future output references—not
-guessed artifact UUIDs. Explicit upgrade rechecks under the writer lock and
+guessed artifact UUIDs. The M4 snapshot additionally freezes Pillow/method identity,
+quality preprocessing and explicit sharpest-selection policy. Historical snapshots and
+artifacts are not rewritten. Explicit upgrade rechecks under the writer lock and
 publishes one validated backup. v1 creates the final execution plus verification schema,
 v2 adds M1b2 columns plus verification state, and v3 adds only verification state, each
 in one transaction. All become v4 without rewriting `project.json` or its revision.
@@ -362,6 +366,15 @@ semantic digest and validator all match under owned-path checks. Accepted cancel
 or a valid pending request forbids adoption; cancelled, corrupt or unexpected output is
 left unindexed and preserved for diagnosis. If all target bindings are valid, recovery
 may finalize the run; otherwise it leaves the run interrupted and never executes stages.
+
+For M4, `views.quality_report` contains only `quality_report.json`; its manifest has the
+exact CandidateViewSet lineage. A sharpest `views.selected_set` contains only
+`selected_views.json`; its manifest has exact CandidateViewSet and QualityReport lineage.
+Adoption revalidates the strict typed payload, semantic digest, recipe and those upstream
+bindings. A moved quality artifact with incomplete/wrong candidate coverage or lineage,
+and a moved selection artifact that differs from deterministic policy output, are not
+adopted. Unmoved partial workspaces remain diagnostic scratch. Valid candidate and
+quality publications stay reusable when a later stage is absent or cancelled.
 
 An accepted cancellation becomes terminal cancelled only after fake-stage execution has
 unwound and its handles are closed. If injected teardown confirmation fails, M1b2 keeps

@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from splatforge.adapters.artifact_validation import stream_sha256
 from splatforge.application.views_contracts import MaterializedFile
+from splatforge.core.quality import QualityReport, SharpestSelectedViewSet
 from splatforge.core.views import CandidateViewSet, SelectedViewSet
 
 
@@ -45,22 +46,23 @@ class LocalViewWorkspace:
         size, digest = stream_sha256(destination)
         return MaterializedFile(size=size, sha256=digest)
 
-    def write_candidate_metadata(
-        self, workspace: Path, candidate: CandidateViewSet
-    ) -> None:
+    def write_candidate_metadata(self, workspace: Path, candidate: CandidateViewSet) -> None:
         self._write_json_new(
             workspace.resolve() / "output" / "candidate_views.json",
             candidate.model_dump_json(indent=2),
         )
 
     def write_selected_metadata(
-        self, workspace: Path, selected: SelectedViewSet
+        self, workspace: Path, selected: SelectedViewSet | SharpestSelectedViewSet
     ) -> None:
         output = workspace.resolve() / "output"
         output.mkdir()
-        self._write_json_new(
-            output / "selected_views.json", selected.model_dump_json(indent=2)
-        )
+        self._write_json_new(output / "selected_views.json", selected.model_dump_json(indent=2))
+
+    def write_quality_metadata(self, workspace: Path, quality: QualityReport) -> None:
+        output = workspace.resolve() / "output"
+        output.mkdir()
+        self._write_json_new(output / "quality_report.json", quality.model_dump_json(indent=2))
 
     @staticmethod
     def _safe_relative(root: Path, relative: str) -> Path:

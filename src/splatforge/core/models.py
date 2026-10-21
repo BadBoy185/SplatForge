@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StageKind(StrEnum):
+    QUALITY_ASSESSMENT = "quality_assessment"
     FRAME_SELECTION = "frame_selection"
     MASKING = "masking"
     FEATURE_EXTRACTION = "feature_extraction"
@@ -56,7 +57,7 @@ class PipelineConfig(BaseModel):
     training: TrainingConfig = Field(default_factory=TrainingConfig)
 
     @model_validator(mode="after")
-    def schema_must_be_supported(self) -> "PipelineConfig":
+    def schema_must_be_supported(self) -> PipelineConfig:
         if self.schema_version != 1:
             raise ValueError(f"Unsupported config schema_version={self.schema_version}")
         return self

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -13,6 +14,13 @@ from splatforge.core.fake_pipeline import (
     NumbersPayload,
     ScaledNumbersPayload,
     semantic_digest,
+)
+from splatforge.core.quality import (
+    QUALITY_ARTIFACT_TYPE,
+    QualityReport,
+    SharpestSelectedViewSet,
+    quality_semantic_digest,
+    sharpest_selected_semantic_digest,
 )
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
@@ -34,7 +42,14 @@ MAX_PAYLOADS = MAX_VIEWS + 1
 class ValidatedArtifact:
     payloads: tuple[PayloadFile, ...]
     semantic_digest: str
-    parsed: NumbersPayload | ScaledNumbersPayload | CandidateViewSet | SelectedViewSet
+    parsed: (
+        NumbersPayload
+        | ScaledNumbersPayload
+        | CandidateViewSet
+        | QualityReport
+        | SelectedViewSet
+        | SharpestSelectedViewSet
+    )
 
 
 def stream_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> tuple[int, str]:
@@ -54,6 +69,8 @@ def validate_workspace_output(output: Path, artifact_type: str) -> ValidatedArti
         return _validate_fake(output, artifact_type)
     if artifact_type == CANDIDATE_ARTIFACT_TYPE:
         return _validate_candidate(output)
+    if artifact_type == QUALITY_ARTIFACT_TYPE:
+        return _validate_quality(output)
     if artifact_type == SELECTED_ARTIFACT_TYPE:
         return _validate_selected(output)
     raise ValueError(f"Unsupported artifact type: {artifact_type}")
@@ -79,6 +96,28 @@ def validate_published_artifact(
         raise ValueError("Published payload manifest differs from validated files")
     if validated.semantic_digest != manifest.semantic_digest:
         raise ValueError("Published semantic digest differs from validated content")
+    if isinstance(validated.parsed, QualityReport):
+        if len(manifest.input_lineage) != 1:
+            raise ValueError("QualityReport requires exactly one candidate lineage input")
+        candidate = manifest.input_lineage[0]
+        if (
+            candidate.input_name != "candidate_views"
+            or candidate.artifact_id != validated.parsed.candidate_artifact_id
+            or candidate.semantic_digest != validated.parsed.candidate_semantic_digest
+        ):
+            raise ValueError("QualityReport candidate provenance differs from lineage")
+    if isinstance(validated.parsed, SharpestSelectedViewSet):
+        lineage = {item.input_name: item for item in manifest.input_lineage}
+        if set(lineage) != {"candidate_views", "quality_report"}:
+            raise ValueError("Sharpest selection requires candidate and quality lineage")
+        if (
+            lineage["candidate_views"].artifact_id != validated.parsed.candidate_artifact_id
+            or lineage["candidate_views"].semantic_digest
+            != validated.parsed.candidate_semantic_digest
+            or lineage["quality_report"].artifact_id != validated.parsed.quality_artifact_id
+            or lineage["quality_report"].semantic_digest != validated.parsed.quality_semantic_digest
+        ):
+            raise ValueError("Sharpest selection provenance differs from lineage")
     return validated
 
 
@@ -135,15 +174,12 @@ def _validate_candidate(output: Path) -> ValidatedArtifact:
         missing = sorted(declared_paths - actual_paths)
         unexpected = sorted(actual_paths - declared_paths)
         raise ValueError(
-            f"Candidate image listing mismatch; missing={missing[:3]}, "
-            f"unexpected={unexpected[:3]}"
+            f"Candidate image listing mismatch; missing={missing[:3]}, unexpected={unexpected[:3]}"
         )
     payloads: list[PayloadFile] = []
     metadata_size, metadata_digest = stream_sha256(metadata)
     payloads.append(
-        PayloadFile(
-            path="candidate_views.json", size=metadata_size, sha256=metadata_digest
-        )
+        PayloadFile(path="candidate_views.json", size=metadata_size, sha256=metadata_digest)
     )
     for view in sorted(parsed.views, key=lambda item: item.image_path):
         image_path = safe_payload_path(output, view.image_path)
@@ -173,13 +209,41 @@ def _validate_selected(output: Path) -> ValidatedArtifact:
     metadata = output / "selected_views.json"
     if not _plain_file(metadata):
         raise ValueError("Selected output must contain selected_views.json")
-    parsed = SelectedViewSet.model_validate_json(
-        _read_bounded(metadata, MAX_METADATA_BYTES, "selected metadata")
-    )
+    data = _read_bounded(metadata, MAX_METADATA_BYTES, "selected metadata")
+    decoded = json.loads(data)
+    method_id = decoded.get("selection_method_id") if isinstance(decoded, dict) else None
+    parsed: SelectedViewSet | SharpestSelectedViewSet
+    if method_id == "frame_selection.sharpest_interval":
+        parsed = SharpestSelectedViewSet.model_validate_json(data)
+        semantic_digest = sharpest_selected_semantic_digest(parsed)
+    elif method_id == "frame_selection.fixed_fps":
+        parsed = SelectedViewSet.model_validate_json(data)
+        semantic_digest = selected_semantic_digest(parsed)
+    else:
+        raise ValueError(f"Unsupported selected-view method: {method_id!r}")
     size, digest = stream_sha256(metadata)
     return ValidatedArtifact(
         payloads=(PayloadFile(path="selected_views.json", size=size, sha256=digest),),
-        semantic_digest=selected_semantic_digest(parsed),
+        semantic_digest=semantic_digest,
+        parsed=parsed,
+    )
+
+
+def _validate_quality(output: Path) -> ValidatedArtifact:
+    entries = list(output.iterdir())
+    allowed = {"quality_report.json", "manifest.json"}
+    if {path.name for path in entries} - allowed:
+        raise ValueError("Quality output contains unexpected files")
+    metadata = output / "quality_report.json"
+    if not _plain_file(metadata):
+        raise ValueError("Quality output must contain quality_report.json")
+    parsed = QualityReport.model_validate_json(
+        _read_bounded(metadata, MAX_METADATA_BYTES, "quality metadata")
+    )
+    size, digest = stream_sha256(metadata)
+    return ValidatedArtifact(
+        payloads=(PayloadFile(path="quality_report.json", size=size, sha256=digest),),
+        semantic_digest=quality_semantic_digest(parsed),
         parsed=parsed,
     )
 

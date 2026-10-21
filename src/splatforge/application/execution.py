@@ -34,6 +34,7 @@ from splatforge.core.fake_pipeline import (
 )
 from splatforge.core.media import SourceOccurrence, VerificationPolicyId
 from splatforge.core.project import ProjectDocument
+from splatforge.core.quality import QualityReport, SharpestSelectedViewSet
 from splatforge.core.views import CandidateViewSet, SelectedViewSet
 
 
@@ -222,13 +223,15 @@ class ExecutionRepository(Protocol):
 
     def load_numbers(self, root: Path, artifact: ArtifactHandle) -> NumbersPayload: ...
 
-    def load_candidate_views(
-        self, root: Path, artifact: ArtifactHandle
-    ) -> CandidateViewSet: ...
+    def load_candidate_views(self, root: Path, artifact: ArtifactHandle) -> CandidateViewSet: ...
 
     def load_selected_views(
         self, root: Path, artifact: ArtifactHandle
-    ) -> SelectedViewSet: ...
+    ) -> SelectedViewSet | SharpestSelectedViewSet: ...
+
+    def load_quality_report(self, root: Path, artifact: ArtifactHandle) -> QualityReport: ...
+
+    def artifact_directory(self, root: Path, artifact: ArtifactHandle) -> Path: ...
 
     def show_run(self, root: Path, run_id: UUID) -> str: ...
 

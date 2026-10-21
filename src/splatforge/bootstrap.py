@@ -7,6 +7,7 @@ from splatforge.adapters.ffprobe import FFprobeAdapter
 from splatforge.adapters.media_storage import LocalMediaRepository
 from splatforge.adapters.project_backup import LocalMigrationBackupPreparer
 from splatforge.adapters.project_storage import LocalProjectStore
+from splatforge.adapters.quality import PillowQualityAdapter
 from splatforge.adapters.source_files import LocalSourceFiles
 from splatforge.adapters.state_schema import LocalStateSchemaUpgrader
 from splatforge.adapters.view_workspace import LocalViewWorkspace
@@ -53,4 +54,5 @@ def build_views_service(*, ffmpeg_path: str | None = None) -> ViewsService:
         LocalSourceFiles(),
         FFmpegAdapter(executable=ffmpeg_path),
         LocalViewWorkspace(),
+        PillowQualityAdapter(),
     )

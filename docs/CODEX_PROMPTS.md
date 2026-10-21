@@ -160,6 +160,12 @@ originals, cancellation/restart and reuse. No quality scoring, SfM or GUI.
 
 ## M4 Quality and frame selection
 
+Implemented by the concrete `views.prepare_sharpest_interval` route. Pillow measures
+exact edge-response variance and dHash64 from published candidate pixels; thresholds
+remain versioned selection policy so policy-only changes reuse QualityReport. The
+fixed-FPS route remains available without quality work. Adaptive/motion-aware sampling
+is still deferred.
+
 Additional reading: [PIPELINE: views](PIPELINE.md#view-and-camera-rules),
 [stage inputs](PIPELINE.md#stage-inputs-and-outputs) and
 [invalidation](PIPELINE.md#invalidation-examples).

@@ -53,6 +53,28 @@ publishes `views.selected_set` contract 1. It selects each photo once and applie
 independent exact-rational target grid to each clip, records target/actual time and
 error, never duplicates a candidate, and copies no pixels.
 
+M4 adds the explicit three-node `views.prepare_sharpest_interval` route without changing
+the M3 route. `quality_assessment.pillow_edge_dhash` reads one published candidate image
+at a time, verifies decoded dimensions, converts to 8-bit grayscale, optionally bounds
+the maximum side with fixed Lanczos resampling, and publishes metadata-only
+`views.quality_report` contract 1. `sharpness.edge_variance_8bit_v1` is the exact rational
+variance of an implementation-defined 8-bit edge response after removing the filter
+border; higher values mean more high-frequency content for this method, not a universal
+physical blur scale. `duplicate.dhash64_v1` is a fixed-width 64-bit horizontal difference
+hash measured from the same grayscale pixels. Unmeasurable views retain structured
+unavailable reasons; missing, changed or corrupt candidate payloads remain integrity
+failures rather than quality scores.
+
+Measurement is separate from policy. QualityReport contains neither target FPS nor
+sharpness/duplicate thresholds or selection decisions. `frame_selection.sharpest_interval`
+uses source-local timelines anchored at each clip's first actual presentation time and
+half-open intervals. It ranks by exact sharpness, earlier presentation time and stable
+view ID, then tries ranked alternatives when a preferred candidate duplicates one of the
+bounded recent accepted views from the same clip. Photos have no invented chronology and
+are not duplicate-suppressed. The selected payload remains metadata-only and records one
+typed decision per candidate plus empty/all-rejected interval diagnostics. Video routes
+require configured candidate FPS of at least twice target FPS; photo-only routes do not.
+
 Viewing is a consumer of artifacts, not an implicit processing stage. If generating
 previews changes data, implement a separately fingerprinted conversion. A dataset
 export is available without training; migrate the prototype `training.none` meaning
@@ -299,6 +321,10 @@ as a unit. Re-evaluate affected descendants only, and preserve unchanged branche
 | SfM mask | Features and consumers; mask-aware retrieval if declared | Decoded views and unrelated pair selection |
 | Training-only mask | DatasetPreparation/training according to declared use | SfM |
 | Selection threshold using existing scores | Selection and its dependent stages under the conservative stage cache | Candidate pixels and quality scores |
+| Sharpest target FPS with an explicitly unchanged candidate FPS | Sharpest selection and consumers | Candidate pixels and QualityReport |
+| Duplicate threshold/lookback or minimum sharpness | Sharpest selection and consumers | Candidate pixels and QualityReport |
+| Quality maximum side or quality method/backend version | QualityReport, sharpest selection and consumers | Candidate pixels |
+| Candidate FPS for a quality-aware route | CandidateViewSet, QualityReport, selection and consumers | Unrelated independently materialized sources |
 | Candidate sampling, crop, orientation or source content | Affected prepared views and descendants | Unrelated source branches when independently materialized |
 | Source relocation with identical verified content | Locator validation only | All compatible artifacts |
 | Stronger source verification policy, unchanged content | Verification/assurance gate; rebuild only provenance that cannot meet it | Compatible artifacts with sufficient source assurance |

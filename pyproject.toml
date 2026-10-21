@@ -9,6 +9,7 @@ description = "Extensible local-first pipeline for 3D Gaussian Splatting reconst
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "Pillow>=11,<13",
     "pydantic>=2.9,<3",
     "typer>=0.12,<1",
 ]

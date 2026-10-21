@@ -7,8 +7,16 @@ from pathlib import Path
 from typing import Protocol
 
 from splatforge.core.media import ExecutableIdentity, SourceOccurrence
+from splatforge.core.quality import (
+    QualityAnalysisSettings,
+    QualityBackendIdentity,
+    QualityReport,
+    SharpestSelectedViewSet,
+    ViewQualityMeasurement,
+)
 from splatforge.core.views import (
     CandidatePoolSettings,
+    CandidateView,
     CandidateViewSet,
     RationalValue,
     SelectedViewSet,
@@ -70,9 +78,7 @@ class CancellationSignal(Protocol):
 
 
 class CandidateMaterializer(Protocol):
-    def identity(
-        self, cancellation: CancellationSignal | None = None
-    ) -> ExecutableIdentity: ...
+    def identity(self, cancellation: CancellationSignal | None = None) -> ExecutableIdentity: ...
 
     def materialize(
         self,
@@ -87,6 +93,17 @@ class CandidateMaterializer(Protocol):
     ) -> tuple[MaterializedFrame, ...]: ...
 
 
+class QualityAssessor(Protocol):
+    def identity(self) -> QualityBackendIdentity: ...
+
+    def measure(
+        self,
+        image_path: Path,
+        view: CandidateView,
+        settings: QualityAnalysisSettings,
+    ) -> ViewQualityMeasurement: ...
+
+
 class ViewWorkspace(Protocol):
     def free_bytes(self, workspace: Path) -> int: ...
 
@@ -98,10 +115,10 @@ class ViewWorkspace(Protocol):
         self, workspace: Path, temporary_path: Path, relative_path: str
     ) -> MaterializedFile: ...
 
-    def write_candidate_metadata(
-        self, workspace: Path, candidate: CandidateViewSet
-    ) -> None: ...
+    def write_candidate_metadata(self, workspace: Path, candidate: CandidateViewSet) -> None: ...
 
     def write_selected_metadata(
-        self, workspace: Path, selected: SelectedViewSet
+        self, workspace: Path, selected: SelectedViewSet | SharpestSelectedViewSet
     ) -> None: ...
+
+    def write_quality_metadata(self, workspace: Path, quality: QualityReport) -> None: ...

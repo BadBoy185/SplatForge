@@ -15,13 +15,14 @@ inputs come later through preprocessing into perspective views.
 ## Current status
 
 The repository contains configuration models, a method catalog, safe local project
-persistence, the M1b2 fake-stage execution/recovery slice, M2 media ingest and the M3
-candidate-view/fixed-FPS route. The CLI
+persistence, the M1b2 fake-stage execution/recovery slice, M2 media ingest, the M3
+candidate-view/fixed-FPS route and M4 quality-aware selection. The CLI
 can create/show projects, upgrade historical state v1/v2/v3 to v4, register/list/verify/
 relink ordinary JPEG/PNG/MP4/MOV sources, and execute or inspect the deterministic fake
 route. `views prepare` materializes bounded JPEG/PNG candidate pixels from registered
-photos and independent video timelines, then publishes a metadata-only fixed-FPS
-selection. Saved intent lives in `project.json`; immutable input inventories live under
+photos and independent video timelines, then publishes either a metadata-only fixed-FPS
+selection or a Pillow-backed QualityReport followed by sharpest-per-interval selection.
+Saved intent lives in `project.json`; immutable input inventories live under
 `sources/`; state v4 stores execution history and durable source-verification evidence.
 
 Project saves and fake runs share one OS-held Windows writer lock. Fake outputs are
@@ -33,8 +34,11 @@ restarts as a new command and reuses only completed stage artifacts. M2 streams 
 hashes, normalizes FFprobe metadata and runs external processes with bounded output,
 timeouts, cancellation and Windows Job Object containment. M3 uses that boundary for
 FFmpeg, preserves selected input presentation timestamps, applies orientation explicitly,
-and validates every published image without modifying originals. Quality scoring,
-sharpest-per-interval selection, COLMAP, training and GUI remain planned.
+and validates every published image without modifying originals. M4 measures exact
+8-bit edge-response variance and dHash64 from candidate pixels, keeps thresholds out of
+the reusable report, records a typed decision for every candidate and compares video
+duplicates only against a bounded same-clip accepted history. COLMAP, training and GUI
+remain planned.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 These commands work in the foundation:
@@ -54,6 +58,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\splatforge.exe media verify "C:\SplatForge Projects\First scene" --policy strict
 .\.venv\Scripts\splatforge.exe media relink "C:\SplatForge Projects\First scene" <source-id> "E:\Moved\photo.jpg"
 .\.venv\Scripts\splatforge.exe views prepare "C:\SplatForge Projects\First scene" --target-fps 2 --candidate-fps 4 --ffmpeg "C:\ffmpeg\bin\ffmpeg.exe" --image-format jpeg --jpeg-qscale 2 --max-candidates 10000 --max-disk-gib 20
+.\.venv\Scripts\splatforge.exe views prepare "C:\SplatForge Projects\First scene" --selection sharpest-interval --target-fps 2 --candidate-fps 4 --quality-max-side 1024 --duplicate-hamming-threshold 4 --duplicate-lookback 8 --ffmpeg "C:\ffmpeg\bin\ffmpeg.exe"
 .\.venv\Scripts\splatforge.exe run fake "C:\SplatForge Projects\First scene" --start 0 --count 3 --factor 2
 .\.venv\Scripts\splatforge.exe run show "C:\SplatForge Projects\First scene" <run-id>
 .\.venv\Scripts\splatforge.exe run cancel "C:\SplatForge Projects\First scene" <run-id>
@@ -67,11 +72,16 @@ Creation requires a missing or empty directory. It creates `project.json`,
 `project.lock` and state schema v4 in `state.sqlite`; source and execution directories
 are created only by their operations. Existing state v1/v2/v3 projects remain
 open/show/save compatible. The M1b fake route remains usable on v3, while M2 mutation and
-verification and M3 execution require explicit upgrade to v4. `SPLATFORGE_FFPROBE`
+verification and M3/M4 execution require explicit upgrade to v4. `SPLATFORGE_FFPROBE`
 may provide the FFprobe path instead of `--ffprobe`; `SPLATFORGE_FFMPEG` similarly
 provides the FFmpeg path instead of `--ffmpeg`. M3's explicit command uses
 `frame_selection.fixed_fps` run settings and does not reinterpret or rewrite a
-project's saved `frame_selection.sharpest_interval` intent.
+project's saved `frame_selection.sharpest_interval` intent. The default
+`--selection fixed-fps` route performs no quality scoring. For
+`--selection sharpest-interval`, omitted candidate FPS resolves to exactly twice the
+target FPS; video requests below that density are refused. Changing target FPS,
+minimum sharpness or duplicate policy reuses candidate pixels and QualityReport, while
+changing `--quality-max-side` recomputes measurements and their selection consumer.
 
 For programmatic editing:
 

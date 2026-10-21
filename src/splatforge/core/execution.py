@@ -18,6 +18,13 @@ from pydantic import (
 
 from splatforge.core.media import ExecutableIdentity, SourceOccurrence, VerificationPolicyId
 from splatforge.core.project import ProjectDocument
+from splatforge.core.quality import (
+    QUALITY_ARTIFACT_CONTRACT_VERSION,
+    QUALITY_ARTIFACT_TYPE,
+    QualityAnalysisSettings,
+    QualityBackendIdentity,
+    SharpestIntervalSettings,
+)
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     SELECTED_ARTIFACT_TYPE,
@@ -108,16 +115,12 @@ class FakeRoute(FrozenModel):
     scale: ScaleNode
     target: OutputReference
     execution_policy: Literal["sequential_single_stage"] = "sequential_single_stage"
-    determinism_policy: Literal["deterministic_integer_json_v1"] = (
-        "deterministic_integer_json_v1"
-    )
+    determinism_policy: Literal["deterministic_integer_json_v1"] = "deterministic_integer_json_v1"
 
 
 class ViewPreparationNode(FrozenModel):
     node_id: Literal["candidate_views"] = "candidate_views"
-    method_id: Literal["view_preparation.ffmpeg_fixed_pool"] = (
-        "view_preparation.ffmpeg_fixed_pool"
-    )
+    method_id: Literal["view_preparation.ffmpeg_fixed_pool"] = "view_preparation.ffmpeg_fixed_pool"
     method_version: Literal[1] = 1
     settings_schema_version: Literal[1] = 1
     settings: CandidatePoolSettings
@@ -169,6 +172,77 @@ class ViewPreparationRoute(FrozenModel):
         return self
 
 
+class QualityAssessmentNode(FrozenModel):
+    node_id: Literal["quality_assessment"] = "quality_assessment"
+    method_id: Literal["quality_assessment.pillow_edge_dhash"] = (
+        "quality_assessment.pillow_edge_dhash"
+    )
+    method_version: Literal[1] = 1
+    settings_schema_version: Literal[1] = 1
+    settings: QualityAnalysisSettings
+    input: OutputReference
+    output: OutputReference
+
+
+class SharpestIntervalSelectionNode(FrozenModel):
+    node_id: Literal["selected_views"] = "selected_views"
+    method_id: Literal["frame_selection.sharpest_interval"] = "frame_selection.sharpest_interval"
+    method_version: Literal[1] = 1
+    settings_schema_version: Literal[1] = 1
+    settings: SharpestIntervalSettings
+    candidate_input: OutputReference
+    quality_input: OutputReference
+    output: OutputReference
+
+
+class SharpestViewPreparationRoute(FrozenModel):
+    route_id: Literal["views.prepare_sharpest_interval"] = "views.prepare_sharpest_interval"
+    route_version: Literal[1] = 1
+    inventory_reference: str = Field(min_length=1)
+    inventory_content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sources: tuple[SourceOccurrence, ...] = Field(min_length=1)
+    verification_policy: VerificationPolicyId
+    ffmpeg_backend: ExecutableIdentity
+    quality_backend: QualityBackendIdentity
+    resource_limits: CandidateResourceLimits
+    candidate: ViewPreparationNode
+    quality: QualityAssessmentNode
+    selection: SharpestIntervalSelectionNode
+    target: OutputReference
+    execution_policy: Literal["sequential_three_stage"] = "sequential_three_stage"
+    determinism_policy: Literal["deterministic_quality_views_v1"] = "deterministic_quality_views_v1"
+
+    @model_validator(mode="after")
+    def three_node_references_are_consistent(self) -> SharpestViewPreparationRoute:
+        if (
+            self.candidate.output.node_id != self.candidate.node_id
+            or self.candidate.output.artifact_type != CANDIDATE_ARTIFACT_TYPE
+            or self.candidate.output.contract_version != VIEW_ARTIFACT_CONTRACT_VERSION
+        ):
+            raise ValueError("candidate output reference does not match the M3 contract")
+        if self.quality.input != self.candidate.output:
+            raise ValueError("quality input must reference the candidate output")
+        if (
+            self.quality.output.node_id != self.quality.node_id
+            or self.quality.output.artifact_type != QUALITY_ARTIFACT_TYPE
+            or self.quality.output.contract_version != QUALITY_ARTIFACT_CONTRACT_VERSION
+        ):
+            raise ValueError("quality output reference does not match the M4 contract")
+        if (
+            self.selection.candidate_input != self.candidate.output
+            or self.selection.quality_input != self.quality.output
+        ):
+            raise ValueError("sharpest selection inputs must reference candidate and quality")
+        if (
+            self.selection.output.node_id != self.selection.node_id
+            or self.selection.output.artifact_type != SELECTED_ARTIFACT_TYPE
+            or self.selection.output.contract_version != VIEW_ARTIFACT_CONTRACT_VERSION
+            or self.target != self.selection.output
+        ):
+            raise ValueError("selection output/target reference does not match the M4 contract")
+        return self
+
+
 class RunSnapshot(FrozenModel):
     schema_version: Literal[1] = 1
     run_id: UUID
@@ -178,7 +252,7 @@ class RunSnapshot(FrozenModel):
     created_at: AwareDatetime
     project_intent: ProjectDocument
     route: Annotated[
-        FakeRoute | ViewPreparationRoute,
+        FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute,
         Field(discriminator="route_id"),
     ]
 
@@ -301,8 +375,13 @@ class ViewsRunResult(FrozenModel):
     run_id: UUID
     status: RunStatus
     candidate_artifact: ArtifactHandle | None
+    quality_artifact: ArtifactHandle | None = None
     selected_artifact: ArtifactHandle | None
     cache_hits: tuple[str, ...]
     candidate_count: int = Field(ge=0, strict=True)
+    quality_measured_count: int = Field(default=0, ge=0, strict=True)
+    quality_unavailable_count: int = Field(default=0, ge=0, strict=True)
     selected_count: int = Field(ge=0, strict=True)
+    rejected_count: int = Field(default=0, ge=0, strict=True)
+    unsatisfied_interval_count: int = Field(default=0, ge=0, strict=True)
     warnings: tuple[RunWarning, ...] = ()

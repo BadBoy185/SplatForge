@@ -69,6 +69,14 @@ VFR and explicit-rotation integration test. That test must skip with its exact r
 when unconfigured; a skip is not backend evidence. A future full media-add-to-M3 smoke
 test may additionally require `SPLATFORGE_TEST_FFPROBE` as a separate opt-in setting.
 
+M4 default tests generate tiny Pillow images locally: a high-frequency pattern, a
+blurred form, an exact duplicate and a controlled near-duplicate. They assert exact
+rational score persistence, sharp-over-blurred ordering, dHash distance, unchanged
+candidate bytes/dimensions and strict QualityReport validation. Synthetic contracts
+cover interval/tie decisions, photo behavior, bounded source-local duplicate history,
+cache invalidation, corruption, durable cancellation and orphan adoption. No downloaded
+fixture, FFmpeg rerun, NumPy/OpenCV or universal blur threshold is required.
+
 Source-verification tests distinguish Balanced/local and Strict: unchanged metadata
 must not read the entire source under Balanced; changed/unreliable indicators trigger
 rehash; Strict reads complete content. Cover metadata errors, network evidence gaps,

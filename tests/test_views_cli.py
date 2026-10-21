@@ -29,9 +29,7 @@ class RecordingService:
 
 def test_views_prepare_cli_parses_exact_settings(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     service = RecordingService()
-    monkeypatch.setattr(
-        "splatforge.cli.app.build_views_service", lambda ffmpeg_path=None: service
-    )
+    monkeypatch.setattr("splatforge.cli.app.build_views_service", lambda ffmpeg_path=None: service)
     source_id = uuid4()
 
     result = runner.invoke(
@@ -98,3 +96,68 @@ def test_views_prepare_requires_target_fps_and_rejects_undersampling(tmp_path: P
     )
     assert invalid.exit_code == 1
     assert "candidate FPS" in invalid.output
+
+
+def test_views_prepare_cli_parses_sharpest_settings_and_dense_default(
+    monkeypatch, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    service = RecordingService()
+    monkeypatch.setattr("splatforge.cli.app.build_views_service", lambda ffmpeg_path=None: service)
+    result = runner.invoke(
+        app,
+        [
+            "views",
+            "prepare",
+            str(tmp_path),
+            "--target-fps",
+            "3/2",
+            "--selection",
+            "sharpest-interval",
+            "--quality-max-side",
+            "512",
+            "--min-sharpness",
+            "7/3",
+            "--duplicate-hamming-threshold",
+            "6",
+            "--duplicate-lookback",
+            "5",
+            "--allow-duplicates",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    _, kwargs = service.calls[0]
+    assert kwargs["candidate_settings"].candidate_fps.model_dump() == {
+        "numerator": 3,
+        "denominator": 1,
+    }
+    assert kwargs["quality_settings"].quality_max_side == 512
+    settings = kwargs["selection_settings"]
+    assert settings.target_fps.model_dump() == {
+        "numerator": 3,
+        "denominator": 2,
+    }
+    assert settings.min_sharpness.model_dump() == {
+        "numerator": 7,
+        "denominator": 3,
+    }
+    assert settings.reject_duplicates is False
+    assert settings.duplicate_hamming_threshold == 6
+    assert settings.duplicate_lookback == 5
+
+
+def test_views_prepare_cli_rejects_unknown_selection(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "views",
+            "prepare",
+            str(tmp_path),
+            "--target-fps",
+            "1",
+            "--selection",
+            "adaptive",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "fixed-fps" in result.output
+    assert "sharpest-interval" in result.output

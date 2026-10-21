@@ -1,4 +1,4 @@
-"""Concrete M3 CandidateViewSet -> fixed-FPS SelectedViewSet orchestration."""
+"""Concrete candidate, quality, and frame-selection orchestration."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from splatforge.application.views_contracts import (
     FFmpegCancelledError,
     FFmpegTeardownError,
     MaterializedFrame,
+    QualityAssessor,
     ViewWorkspace,
 )
 from splatforge.core.execution import (
@@ -34,9 +35,12 @@ from splatforge.core.execution import (
     FailureCategory,
     FixedFpsSelectionNode,
     OutputReference,
+    QualityAssessmentNode,
     RunSnapshot,
     RunStatus,
     RunWarning,
+    SharpestIntervalSelectionNode,
+    SharpestViewPreparationRoute,
     ViewPreparationNode,
     ViewPreparationRoute,
     ViewsRunResult,
@@ -54,6 +58,22 @@ from splatforge.core.media import (
     VerificationResult,
 )
 from splatforge.core.project import ProjectDocument
+from splatforge.core.quality import (
+    QUALITY_ARTIFACT_CONTRACT_VERSION,
+    QUALITY_ARTIFACT_TYPE,
+    MeasurementAvailability,
+    QualityAnalysisSettings,
+    QualityBackendIdentity,
+    QualityReport,
+    SharpestIntervalSettings,
+    SharpestSelectedViewSet,
+    quality_recipe_key,
+    select_sharpest_interval,
+    sharpest_selection_recipe_key,
+    validate_quality_against_candidate,
+    validate_sharpest_against_inputs,
+    validate_sharpest_candidate_density,
+)
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     SELECTED_ARTIFACT_TYPE,
@@ -97,9 +117,7 @@ class MediaStateRepository(Protocol):
         content_sha256: str,
     ) -> SourceEvidence | None: ...
 
-    def record_verification_under_writer(
-        self, root: Path, result: VerificationResult
-    ) -> None: ...
+    def record_verification_under_writer(self, root: Path, result: VerificationResult) -> None: ...
 
 
 class _ExternalCancellation(Exception):
@@ -158,55 +176,81 @@ class ViewsService:
         source_files: SourceFiles,
         materializer: CandidateMaterializer,
         workspace: ViewWorkspace,
+        quality_assessor: QualityAssessor | None = None,
     ) -> None:
         self._execution = execution_repository
         self._media = media_repository
         self._sources = source_files
         self._materializer = materializer
         self._workspace = workspace
+        self._quality_assessor = quality_assessor
 
     def prepare(
         self,
         root: Path,
         *,
         candidate_settings: CandidatePoolSettings,
-        selection_settings: FixedFpsSettings,
+        selection_settings: FixedFpsSettings | SharpestIntervalSettings,
+        quality_settings: QualityAnalysisSettings | None = None,
         resource_limits: CandidateResourceLimits,
         verification_policy: VerificationPolicyId,
         source_ids: set[UUID] | None = None,
     ) -> ViewsRunResult:
-        validate_fps_density(candidate_settings, selection_settings)
+        if isinstance(selection_settings, FixedFpsSettings):
+            validate_fps_density(candidate_settings, selection_settings)
+            if quality_settings is not None:
+                raise ValueError("fixed-FPS selection does not accept quality settings")
+        elif quality_settings is None:
+            raise ValueError("sharpest-per-interval selection requires quality settings")
+        if isinstance(selection_settings, SharpestIntervalSettings) and (
+            self._quality_assessor is None
+        ):
+            raise ValueError("sharpest-per-interval quality adapter is unavailable")
         root = root.resolve()
         run_id = uuid4()
         owner_token = uuid4()
         warnings: list[RunWarning] = []
         cache_hits: list[str] = []
         candidate_handle: ArtifactHandle | None = None
+        quality_handle: ArtifactHandle | None = None
         selected_handle: ArtifactHandle | None = None
         candidate_count = 0
         selected_count = 0
+        quality_measured_count = 0
+        quality_unavailable_count = 0
+        rejected_count = 0
+        unsatisfied_interval_count = 0
         status = RunStatus.RUNNING
 
-        with self._execution.writer(
-            root, owner_token=owner_token, operation="views-prepare"
-        ):
+        with self._execution.writer(root, owner_token=owner_token, operation="views-prepare"):
             project = self._execution.inspect_project(root)
             if project.state_version != 4:
                 if project.state_version in {1, 2, 3}:
                     raise StateUpgradeRequiredError(
-                        "State upgrade required: run "
-                        "'splatforge project upgrade-state <project>'"
+                        "State upgrade required: run 'splatforge project upgrade-state <project>'"
                     )
                 raise ProjectError(f"Unsupported state schema version {project.state_version}")
             self._execution.ensure_no_unfinished_run(root)
-            project_copy = ProjectDocument.model_validate(
-                project.document.model_dump(mode="json")
-            )
+            project_copy = ProjectDocument.model_validate(project.document.model_dump(mode="json"))
             inventory = self._media.load_current_inventory(root, project_copy)
             if inventory is None or not inventory.sources:
                 raise ProjectError("Project has no registered media sources")
             selected_sources = self._select_sources(inventory, source_ids)
+            if isinstance(selection_settings, SharpestIntervalSettings):
+                validate_sharpest_candidate_density(
+                    candidate_settings,
+                    selection_settings,
+                    has_video=any(
+                        source.media_type == MediaType.VIDEO for source in selected_sources
+                    ),
+                )
             backend = self._materializer.identity()
+            quality_backend = (
+                self._quality_assessor.identity()
+                if isinstance(selection_settings, SharpestIntervalSettings)
+                and self._quality_assessor is not None
+                else None
+            )
             assert project_copy.inventory_reference is not None
             inventory_digest = self._media.inventory_content_digest(
                 root, project_copy.inventory_reference
@@ -219,6 +263,8 @@ class ViewsService:
                 backend=backend,
                 candidate_settings=candidate_settings,
                 selection_settings=selection_settings,
+                quality_settings=quality_settings,
+                quality_backend=quality_backend,
                 resource_limits=resource_limits,
             )
             snapshot = RunSnapshot(
@@ -239,15 +285,44 @@ class ViewsService:
                 )
                 candidate_count = len(candidate.views)
                 self._checkpoint(root, snapshot, None)
-                selected_handle, selected = self._run_selection(
-                    root,
-                    snapshot,
-                    candidate_handle,
-                    candidate,
-                    warnings,
-                    cache_hits,
-                )
-                selected_count = selected.total_selected_count
+                if isinstance(snapshot.route, SharpestViewPreparationRoute):
+                    quality_handle, quality = self._run_quality(
+                        root,
+                        snapshot,
+                        candidate_handle,
+                        candidate,
+                        warnings,
+                        cache_hits,
+                    )
+                    quality_measured_count = sum(
+                        item.sharpness.availability == MeasurementAvailability.AVAILABLE
+                        for item in quality.measurements
+                    )
+                    quality_unavailable_count = len(quality.measurements) - quality_measured_count
+                    self._checkpoint(root, snapshot, None)
+                    selected_handle, selected = self._run_sharpest_selection(
+                        root,
+                        snapshot,
+                        candidate_handle,
+                        candidate,
+                        quality_handle,
+                        quality,
+                        warnings,
+                        cache_hits,
+                    )
+                    selected_count = selected.total_selected_count
+                    rejected_count = selected.total_rejected_count
+                    unsatisfied_interval_count = len(selected.unsatisfied_intervals)
+                else:
+                    selected_handle, selected = self._run_selection(
+                        root,
+                        snapshot,
+                        candidate_handle,
+                        candidate,
+                        warnings,
+                        cache_hits,
+                    )
+                    selected_count = selected.total_selected_count
                 self._checkpoint(root, snapshot, None)
                 self._execution.mark_run_succeeded(root, run_id=run_id)
                 status = RunStatus.SUCCEEDED
@@ -259,6 +334,10 @@ class ViewsService:
                     details={
                         "candidate_count": candidate_count,
                         "selected_count": selected_count,
+                        "quality_measured_count": quality_measured_count,
+                        "quality_unavailable_count": quality_unavailable_count,
+                        "rejected_count": rejected_count,
+                        "unsatisfied_interval_count": unsatisfied_interval_count,
                     },
                 )
             except ExecutionCancelledError as exc:
@@ -286,11 +365,7 @@ class ViewsService:
                     warnings,
                     root,
                     run_id,
-                    code=(
-                        "run.cancelled"
-                        if status == RunStatus.CANCELLED
-                        else "run.interrupted"
-                    ),
+                    code=("run.cancelled" if status == RunStatus.CANCELLED else "run.interrupted"),
                     attempt_id=exc.attempt_id,
                 )
             except _ExternalUnresolved:
@@ -313,10 +388,15 @@ class ViewsService:
             run_id=run_id,
             status=status,
             candidate_artifact=candidate_handle,
+            quality_artifact=quality_handle,
             selected_artifact=selected_handle,
             cache_hits=tuple(cache_hits),
             candidate_count=candidate_count,
+            quality_measured_count=quality_measured_count,
+            quality_unavailable_count=quality_unavailable_count,
             selected_count=selected_count,
+            rejected_count=rejected_count,
+            unsatisfied_interval_count=unsatisfied_interval_count,
             warnings=tuple(warnings),
         )
 
@@ -455,9 +535,7 @@ class ViewsService:
                 raise ProjectError(
                     "FFmpeg reported cancellation without durable owner acceptance"
                 ) from exc
-            raise _ExternalCancellation(
-                attempt.attempt_id, exc.teardown_confirmed
-            ) from exc
+            raise _ExternalCancellation(attempt.attempt_id, exc.teardown_confirmed) from exc
         except FFmpegTeardownError as exc:
             self._execution.mark_external_interrupted(
                 root,
@@ -521,9 +599,7 @@ class ViewsService:
                     "total_sources": len(route.sources),
                 },
             )
-            source_output = self._workspace.source_output_directory(
-                workspace, source_index
-            )
+            source_output = self._workspace.source_output_directory(workspace, source_index)
             frames = self._consume_verified_source(
                 root,
                 snapshot,
@@ -564,8 +640,7 @@ class ViewsService:
                     )
                     timestamp = FrameTimestamp(pts=frame.pts, time_base=frame.time_base)
                     frame_identity = (
-                        f"pts:{frame.pts}@{frame.time_base.numerator}/"
-                        f"{frame.time_base.denominator}"
+                        f"pts:{frame.pts}@{frame.time_base.numerator}/{frame.time_base.denominator}"
                     )
                 suffix = (
                     ".jpg"
@@ -606,9 +681,7 @@ class ViewsService:
                         source_group_id=source.source_group_id,
                         camera_group_id=source.camera_group_id,
                         media_type=source.media_type,
-                        selected_visual_stream_index=(
-                            source.probe.selected_visual_stream_index
-                        ),
+                        selected_visual_stream_index=(source.probe.selected_visual_stream_index),
                         frame_identity=frame_identity,
                         occurrence_index=occurrence,
                         presentation_timestamp=timestamp,
@@ -695,9 +768,7 @@ class ViewsService:
                         f"Source identity changed while acquiring decode lease: {path}"
                     )
                 full_hash = strict or not (
-                    baseline.trusted_local
-                    and path_before.trusted_local
-                    and baseline == path_before
+                    baseline.trusted_local and path_before.trusted_local and baseline == path_before
                 )
                 observed_digest: str | None = None
                 rehash_reason: RehashReason | None = None
@@ -835,9 +906,7 @@ class ViewsService:
             raise
         except SourceUnavailableError as exc:
             outcome = (
-                VerificationOutcome.MISSING
-                if exc.missing
-                else VerificationOutcome.UNAVAILABLE
+                VerificationOutcome.MISSING if exc.missing else VerificationOutcome.UNAVAILABLE
             )
             unavailable = self._unavailable_verification(
                 source,
@@ -861,7 +930,7 @@ class ViewsService:
         self,
         root: Path,
         attempt_id: UUID,
-        route: ViewPreparationRoute,
+        route: ViewPreparationRoute | SharpestViewPreparationRoute,
         entries: list[dict[str, object]],
         result: VerificationResult,
         *,
@@ -900,6 +969,321 @@ class ViewsService:
             },
         )
 
+    def _run_quality(
+        self,
+        root: Path,
+        snapshot: RunSnapshot,
+        candidate_artifact: ArtifactHandle,
+        candidate: CandidateViewSet,
+        warnings: list[RunWarning],
+        cache_hits: list[str],
+    ) -> tuple[ArtifactHandle, QualityReport]:
+        route = snapshot.route
+        if not isinstance(route, SharpestViewPreparationRoute):
+            raise ProjectError("Quality assessment requires the M4 view route")
+        node = route.quality
+        key = quality_recipe_key(
+            candidate=candidate,
+            candidate_digest=candidate_artifact.semantic_digest,
+            settings=node.settings,
+            backend=route.quality_backend,
+        )
+        cached = self._execution.find_cache(
+            root,
+            recipe_key=key,
+            artifact_type=node.output.artifact_type,
+            contract_version=node.output.contract_version,
+        )
+        if cached.artifact is not None:
+            quality = self._execution.load_quality_report(root, cached.artifact)
+            validate_quality_against_candidate(quality, candidate)
+            if quality.candidate_semantic_digest != candidate_artifact.semantic_digest:
+                raise ValueError("Cached QualityReport references different candidate semantics")
+            self._execution.bind_cached_output(
+                root,
+                run_id=snapshot.run_id,
+                node_id=node.node_id,
+                output_name=node.output.output_name,
+                artifact_id=cached.artifact.artifact_id,
+            )
+            cache_hits.append(node.node_id)
+            self._event(
+                warnings,
+                root,
+                snapshot.run_id,
+                code="quality.stage.cache_hit",
+                node_id=node.node_id,
+                details={"artifact_id": str(cached.artifact.artifact_id)},
+            )
+            return cached.artifact, quality
+
+        self._event(
+            warnings,
+            root,
+            snapshot.run_id,
+            code="quality.stage.started",
+            node_id=node.node_id,
+            details={"total_count": len(candidate.views)},
+        )
+        attempt = self._execution.begin_attempt(
+            root,
+            run_id=snapshot.run_id,
+            node_id=node.node_id,
+            output_name=node.output.output_name,
+            recipe_key=key,
+            input_artifact_ids=(candidate_artifact.artifact_id,),
+            literal_inputs={"quality_settings": node.settings.model_dump(mode="json")},
+            environment=route.quality_backend.model_dump(mode="json"),
+            source_verification={
+                "policy": "artifact_backed",
+                "artifact_backed": True,
+                "fresh_source_verification": False,
+                "evidence": [],
+            },
+        )
+        lineage = (
+            ArtifactInputLineage(
+                input_name="candidate_views",
+                artifact_id=candidate_artifact.artifact_id,
+                artifact_type=candidate_artifact.artifact_type,
+                contract_version=candidate_artifact.contract_version,
+                semantic_digest=candidate_artifact.semantic_digest,
+                recipe_key=candidate_artifact.recipe_key,
+            ),
+        )
+        if self._quality_assessor is None:
+            raise AssertionError("M4 route was built without a quality assessor")
+        candidate_directory = self._execution.artifact_directory(root, candidate_artifact)
+        measurements = []
+        unavailable = 0
+        try:
+            for index, view in enumerate(candidate.views):
+                self._checkpoint(root, snapshot, attempt.attempt_id)
+                measurement = self._quality_assessor.measure(
+                    candidate_directory / view.image_path,
+                    view,
+                    node.settings,
+                )
+                measurements.append(measurement)
+                if measurement.sharpness.availability == MeasurementAvailability.UNAVAILABLE:
+                    unavailable += 1
+                completed = index + 1
+                if completed == len(candidate.views) or completed % 50 == 0:
+                    self._event(
+                        warnings,
+                        root,
+                        snapshot.run_id,
+                        code="quality.progress",
+                        node_id=node.node_id,
+                        attempt_id=attempt.attempt_id,
+                        details={
+                            "completed_count": completed,
+                            "total_count": len(candidate.views),
+                            "unavailable_count": unavailable,
+                        },
+                    )
+            quality = QualityReport(
+                candidate_artifact_id=candidate_artifact.artifact_id,
+                candidate_semantic_digest=candidate_artifact.semantic_digest,
+                pillow_version=route.quality_backend.pillow_version,
+                python_version=route.quality_backend.python_version,
+                settings=node.settings,
+                measurements=tuple(measurements),
+            )
+            validate_quality_against_candidate(quality, candidate)
+            self._workspace.write_quality_metadata(Path(attempt.workspace), quality)
+            self._checkpoint(root, snapshot, attempt.attempt_id)
+            artifact = self._execution.publish_attempt(
+                root,
+                run_id=snapshot.run_id,
+                node_id=node.node_id,
+                output_name=node.output.output_name,
+                artifact_type=node.output.artifact_type,
+                contract_version=node.output.contract_version,
+                recipe_key=key,
+                attempt=attempt,
+                input_lineage=lineage,
+            )
+        except (ExecutionCancelledError, PublicationUnresolvedError):
+            raise
+        except Exception as exc:
+            self._execution.mark_attempt_failed(
+                root,
+                attempt_id=attempt.attempt_id,
+                message=str(exc),
+                category=self._non_retryable(),
+            )
+            raise
+        self._event(
+            warnings,
+            root,
+            snapshot.run_id,
+            code="quality.stage.published",
+            node_id=node.node_id,
+            attempt_id=attempt.attempt_id,
+            details={
+                "artifact_id": str(artifact.artifact_id),
+                "measured_count": len(quality.measurements) - unavailable,
+                "unavailable_count": unavailable,
+            },
+        )
+        return artifact, quality
+
+    def _run_sharpest_selection(
+        self,
+        root: Path,
+        snapshot: RunSnapshot,
+        candidate_artifact: ArtifactHandle,
+        candidate: CandidateViewSet,
+        quality_artifact: ArtifactHandle,
+        quality: QualityReport,
+        warnings: list[RunWarning],
+        cache_hits: list[str],
+    ) -> tuple[ArtifactHandle, SharpestSelectedViewSet]:
+        route = snapshot.route
+        if not isinstance(route, SharpestViewPreparationRoute):
+            raise ProjectError("Sharpest selection requires the M4 view route")
+        node = route.selection
+        key = sharpest_selection_recipe_key(
+            candidate=candidate,
+            candidate_digest=candidate_artifact.semantic_digest,
+            quality=quality,
+            quality_digest=quality_artifact.semantic_digest,
+            settings=node.settings,
+        )
+        cached = self._execution.find_cache(
+            root,
+            recipe_key=key,
+            artifact_type=node.output.artifact_type,
+            contract_version=node.output.contract_version,
+        )
+        if cached.artifact is not None:
+            selected = self._execution.load_selected_views(root, cached.artifact)
+            if not isinstance(selected, SharpestSelectedViewSet):
+                raise ValueError("Cached selected artifact has the wrong M4 payload")
+            validate_sharpest_against_inputs(
+                selected,
+                candidate,
+                quality,
+                candidate_artifact=candidate_artifact,
+                quality_artifact=quality_artifact,
+            )
+            self._execution.bind_cached_output(
+                root,
+                run_id=snapshot.run_id,
+                node_id=node.node_id,
+                output_name=node.output.output_name,
+                artifact_id=cached.artifact.artifact_id,
+            )
+            cache_hits.append(node.node_id)
+            self._event(
+                warnings,
+                root,
+                snapshot.run_id,
+                code="sharpest.selection.cache_hit",
+                node_id=node.node_id,
+                details={"artifact_id": str(cached.artifact.artifact_id)},
+            )
+            return cached.artifact, selected
+
+        self._event(
+            warnings,
+            root,
+            snapshot.run_id,
+            code="sharpest.selection.started",
+            node_id=node.node_id,
+        )
+        attempt = self._execution.begin_attempt(
+            root,
+            run_id=snapshot.run_id,
+            node_id=node.node_id,
+            output_name=node.output.output_name,
+            recipe_key=key,
+            input_artifact_ids=(
+                candidate_artifact.artifact_id,
+                quality_artifact.artifact_id,
+            ),
+            literal_inputs={"selection_settings": node.settings.model_dump(mode="json")},
+            environment={
+                "adapter_id": "splatforge.sharpest_interval_python",
+                "adapter_version": 1,
+            },
+            source_verification={"policy": "not_applicable", "evidence": []},
+        )
+        lineage = (
+            ArtifactInputLineage(
+                input_name="candidate_views",
+                artifact_id=candidate_artifact.artifact_id,
+                artifact_type=candidate_artifact.artifact_type,
+                contract_version=candidate_artifact.contract_version,
+                semantic_digest=candidate_artifact.semantic_digest,
+                recipe_key=candidate_artifact.recipe_key,
+            ),
+            ArtifactInputLineage(
+                input_name="quality_report",
+                artifact_id=quality_artifact.artifact_id,
+                artifact_type=quality_artifact.artifact_type,
+                contract_version=quality_artifact.contract_version,
+                semantic_digest=quality_artifact.semantic_digest,
+                recipe_key=quality_artifact.recipe_key,
+            ),
+        )
+        try:
+            selected = select_sharpest_interval(
+                candidate,
+                quality,
+                candidate_artifact=candidate_artifact,
+                quality_artifact=quality_artifact,
+                settings=node.settings,
+                checkpoint=lambda: self._checkpoint(root, snapshot, attempt.attempt_id),
+            )
+            self._workspace.write_selected_metadata(Path(attempt.workspace), selected)
+            self._checkpoint(root, snapshot, attempt.attempt_id)
+            artifact = self._execution.publish_attempt(
+                root,
+                run_id=snapshot.run_id,
+                node_id=node.node_id,
+                output_name=node.output.output_name,
+                artifact_type=node.output.artifact_type,
+                contract_version=node.output.contract_version,
+                recipe_key=key,
+                attempt=attempt,
+                input_lineage=lineage,
+            )
+        except (ExecutionCancelledError, PublicationUnresolvedError):
+            raise
+        except Exception as exc:
+            self._execution.mark_attempt_failed(
+                root,
+                attempt_id=attempt.attempt_id,
+                message=str(exc),
+                category=self._non_retryable(),
+            )
+            raise
+        self._event(
+            warnings,
+            root,
+            snapshot.run_id,
+            code="sharpest.selection.completed",
+            node_id=node.node_id,
+            attempt_id=attempt.attempt_id,
+            details={
+                "selected_count": selected.total_selected_count,
+                "rejected_count": selected.total_rejected_count,
+                "unsatisfied_interval_count": len(selected.unsatisfied_intervals),
+            },
+        )
+        self._event(
+            warnings,
+            root,
+            snapshot.run_id,
+            code="sharpest.selection.published",
+            node_id=node.node_id,
+            attempt_id=attempt.attempt_id,
+            details={"artifact_id": str(artifact.artifact_id)},
+        )
+        return artifact, selected
+
     def _run_selection(
         self,
         root: Path,
@@ -933,9 +1317,7 @@ class ViewsService:
             selected = self._execution.load_selected_views(root, cached.artifact)
             validate_selected_against_candidate(selected, candidate)
             if selected.candidate_semantic_digest != candidate_artifact.semantic_digest:
-                raise ValueError(
-                    "Cached SelectedViewSet references different candidate semantics"
-                )
+                raise ValueError("Cached SelectedViewSet references different candidate semantics")
             cache_hits.append(node.node_id)
             self._event(
                 warnings,
@@ -960,9 +1342,7 @@ class ViewsService:
             output_name=node.output.output_name,
             recipe_key=key,
             input_artifact_ids=(candidate_artifact.artifact_id,),
-            literal_inputs={
-                "selection_settings": node.settings.model_dump(mode="json")
-            },
+            literal_inputs={"selection_settings": node.settings.model_dump(mode="json")},
             environment={
                 "adapter_id": "splatforge.fixed_fps_python",
                 "adapter_version": 1,
@@ -1022,12 +1402,8 @@ class ViewsService:
         )
         return artifact, selected
 
-    def _checkpoint(
-        self, root: Path, snapshot: RunSnapshot, attempt_id: UUID | None
-    ) -> None:
-        if self._execution.accept_cancellation(
-            root, run_id=snapshot.run_id, attempt_id=attempt_id
-        ):
+    def _checkpoint(self, root: Path, snapshot: RunSnapshot, attempt_id: UUID | None) -> None:
+        if self._execution.accept_cancellation(root, run_id=snapshot.run_id, attempt_id=attempt_id):
             self._execution.append_event(
                 root,
                 snapshot.run_id,
@@ -1045,9 +1421,11 @@ class ViewsService:
         verification_policy: VerificationPolicyId,
         backend: ExecutableIdentity,
         candidate_settings: CandidatePoolSettings,
-        selection_settings: FixedFpsSettings,
+        selection_settings: FixedFpsSettings | SharpestIntervalSettings,
+        quality_settings: QualityAnalysisSettings | None,
+        quality_backend: QualityBackendIdentity | None,
         resource_limits: CandidateResourceLimits,
-    ) -> ViewPreparationRoute:
+    ) -> ViewPreparationRoute | SharpestViewPreparationRoute:
         candidate_output = OutputReference(
             node_id="candidate_views",
             output_name="candidate_set",
@@ -1060,6 +1438,40 @@ class ViewsService:
             artifact_type=SELECTED_ARTIFACT_TYPE,
             contract_version=VIEW_ARTIFACT_CONTRACT_VERSION,
         )
+        if isinstance(selection_settings, SharpestIntervalSettings):
+            if quality_settings is None or quality_backend is None:
+                raise ValueError("M4 route requires resolved quality settings and backend")
+            quality_output = OutputReference(
+                node_id="quality_assessment",
+                output_name="quality_report",
+                artifact_type=QUALITY_ARTIFACT_TYPE,
+                contract_version=QUALITY_ARTIFACT_CONTRACT_VERSION,
+            )
+            return SharpestViewPreparationRoute(
+                inventory_reference=inventory_reference,
+                inventory_content_digest=inventory_digest,
+                sources=sources,
+                verification_policy=verification_policy,
+                ffmpeg_backend=backend,
+                quality_backend=quality_backend,
+                resource_limits=resource_limits,
+                candidate=ViewPreparationNode(
+                    settings=candidate_settings,
+                    output=candidate_output,
+                ),
+                quality=QualityAssessmentNode(
+                    settings=quality_settings,
+                    input=candidate_output,
+                    output=quality_output,
+                ),
+                selection=SharpestIntervalSelectionNode(
+                    settings=selection_settings,
+                    candidate_input=candidate_output,
+                    quality_input=quality_output,
+                    output=selected_output,
+                ),
+                target=selected_output,
+            )
         return ViewPreparationRoute(
             inventory_reference=inventory_reference,
             inventory_content_digest=inventory_digest,
@@ -1087,14 +1499,10 @@ class ViewsService:
             known = {source.source_id for source in inventory.sources}
             unknown = source_ids - known
             if unknown:
-                raise ProjectError(
-                    "Unknown source IDs: " + ", ".join(sorted(map(str, unknown)))
-                )
+                raise ProjectError("Unknown source IDs: " + ", ".join(sorted(map(str, unknown))))
             if not source_ids:
                 raise ProjectError("At least one source ID is required")
-            selected = [
-                source for source in inventory.sources if source.source_id in source_ids
-            ]
+            selected = [source for source in inventory.sources if source.source_id in source_ids]
         else:
             selected = list(inventory.sources)
         return tuple(
@@ -1102,13 +1510,17 @@ class ViewsService:
         )
 
     @staticmethod
-    def _view_route(snapshot: RunSnapshot) -> ViewPreparationRoute:
-        if not isinstance(snapshot.route, ViewPreparationRoute):
-            raise ProjectError("Run snapshot does not contain the M3 view route")
+    def _view_route(
+        snapshot: RunSnapshot,
+    ) -> ViewPreparationRoute | SharpestViewPreparationRoute:
+        if not isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute)):
+            raise ProjectError("Run snapshot does not contain a concrete view route")
         return snapshot.route
 
     @staticmethod
-    def _ffmpeg_environment(route: ViewPreparationRoute) -> dict[str, object]:
+    def _ffmpeg_environment(
+        route: ViewPreparationRoute | SharpestViewPreparationRoute,
+    ) -> dict[str, object]:
         return {
             "adapter_id": "splatforge.ffmpeg",
             "adapter_version": 1,
@@ -1144,9 +1556,7 @@ class ViewsService:
         )
 
     @staticmethod
-    def _rehash_reason(
-        baseline: SourceEvidence, current: SourceEvidence
-    ) -> RehashReason:
+    def _rehash_reason(baseline: SourceEvidence, current: SourceEvidence) -> RehashReason:
         if current.storage_kind.value != "local_fixed":
             return RehashReason.UNTRUSTED_STORAGE
         if not baseline.trusted_local or not current.trusted_local:

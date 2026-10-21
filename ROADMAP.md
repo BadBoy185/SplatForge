@@ -121,9 +121,12 @@ video loading and shell command construction are forbidden.
 
 ## M4 — frame quality and selection
 
-Separate blur/quality and duplicate measurements from selection thresholds. Add
-sharpest-per-interval selection, reasoned rejection metadata and deterministic ties.
-Reject insufficient candidate density or require an explicit extraction-plan change.
+**Implemented.** `quality_assessment.pillow_edge_dhash` publishes a metadata-only,
+candidate-pixel-bound QualityReport with exact edge-response variance and dHash64.
+`frame_selection.sharpest_interval` applies explicit sharpness/duplicate policy per
+source-local half-open interval, records deterministic typed decisions for every
+candidate and refuses video candidate pools below twice the target FPS. The historical
+fixed-FPS route remains independent of quality scoring.
 
 Acceptance: a generated sequence with known blur/duplicates yields expected choices;
 threshold changes reuse pixels and measurements; changing a scoring method recomputes
