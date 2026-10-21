@@ -50,7 +50,9 @@ class ProcessRequest:
 
 class ExecutableResolver:
     def __init__(self) -> None:
-        self._identity_cache: dict[tuple[str, int, int], ExecutableIdentity] = {}
+        self._identity_cache: dict[
+            tuple[str, int, int, int, int, int], ExecutableIdentity
+        ] = {}
 
     def resolve(self, requested: str) -> ExecutableIdentity:
         candidate = Path(requested)
@@ -61,23 +63,41 @@ class ExecutableResolver:
         if not path.is_file():
             raise ExecutableNotFoundError(f"Executable not found: {requested}")
         path = path.resolve(strict=True)
-        stat = path.stat()
-        key = (str(path), stat.st_size, stat.st_mtime_ns)
-        cached = self._identity_cache.get(key)
-        if cached is not None:
-            return cached
-        digest = hashlib.sha256()
-        with path.open("rb") as stream:
-            while chunk := stream.read(1024 * 1024):
-                digest.update(chunk)
-        identity = ExecutableIdentity(
-            resolved_path=str(path),
-            size=stat.st_size,
-            last_write_ns=stat.st_mtime_ns,
-            sha256=digest.hexdigest(),
+        for _attempt in range(2):
+            before = path.stat()
+            key = self._cache_key(path, before)
+            cached = self._identity_cache.get(key)
+            if cached is not None:
+                return cached
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+            after = path.stat()
+            if self._cache_key(path, after) != key:
+                continue
+            identity = ExecutableIdentity(
+                resolved_path=str(path),
+                size=after.st_size,
+                last_write_ns=after.st_mtime_ns,
+                sha256=digest.hexdigest(),
+            )
+            self._identity_cache[key] = identity
+            return identity
+        raise ProcessBoundaryError(
+            f"Executable changed while establishing its identity: {path}"
         )
-        self._identity_cache[key] = identity
-        return identity
+
+    @staticmethod
+    def _cache_key(path: Path, stat: os.stat_result) -> tuple[str, int, int, int, int, int]:
+        return (
+            str(path),
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        )
 
     @staticmethod
     def _search_path(name: str) -> Path:
@@ -306,6 +326,7 @@ class LocalProcessRunner:
         timed_out = False
         cancelled = False
         teardown_confirmed = False
+        forced_tree_termination = False
         exit_code: int | None = None
         try:
             if job is not None:
@@ -320,19 +341,22 @@ class LocalProcessRunner:
             while process.poll() is None:
                 if cancellation is not None and cancellation.is_cancelled():
                     cancelled = True
+                    forced_tree_termination = True
                     self._terminate(process, job)
                     break
                 if time.monotonic() >= deadline:
                     timed_out = True
+                    forced_tree_termination = True
                     self._terminate(process, job)
                     break
                 time.sleep(0.02)
             process.wait(timeout=request.teardown_timeout_seconds)
             if not timed_out and not cancelled:
                 exit_code = process.returncode
-            teardown_confirmed = self._wait_tree_empty(
+            teardown_confirmed, cleanup_forced = self._wait_tree_empty(
                 process, job, request.teardown_timeout_seconds
             )
+            forced_tree_termination = forced_tree_termination or cleanup_forced
         except BaseException:
             self._terminate(process, job)
             self._wait_tree_empty(process, job, request.teardown_timeout_seconds)
@@ -357,6 +381,7 @@ class LocalProcessRunner:
             timed_out=timed_out,
             cancelled=cancelled,
             teardown_confirmed=teardown_confirmed,
+            forced_tree_termination=forced_tree_termination,
         )
 
     @staticmethod
@@ -370,24 +395,24 @@ class LocalProcessRunner:
     @staticmethod
     def _wait_tree_empty(
         process: subprocess.Popen[bytes], job: _WindowsJob | None, timeout: float
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         deadline = time.monotonic() + timeout
         if job is None:
             try:
                 process.wait(timeout=max(0.0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
-                return False
-            return True
+                return False, False
+            return True, False
         while time.monotonic() < deadline:
             if job.active_processes() == 0:
-                return True
+                return True, False
             time.sleep(0.02)
         try:
             job.terminate()
         except ProcessBoundaryError:
-            return False
+            return False, True
         while time.monotonic() < deadline + timeout:
             if job.active_processes() == 0:
-                return True
+                return True, True
             time.sleep(0.02)
-        return False
+        return False, True

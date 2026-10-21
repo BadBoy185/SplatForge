@@ -22,6 +22,7 @@ class ProcessResult(BaseModel):
     timed_out: bool
     cancelled: bool
     teardown_confirmed: bool
+    forced_tree_termination: bool
 
     def stdout_text(self) -> str:
         return self.stdout.decode("utf-8", errors="replace")

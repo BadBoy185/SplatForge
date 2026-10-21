@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from splatforge.adapters.process_runner import (
+    ExecutableNotFoundError,
     LocalProcessRunner,
+    ProcessBoundaryError,
     ProcessCancellation,
     ProcessRequest,
 )
@@ -50,25 +52,38 @@ class FFprobeAdapter:
     ) -> NormalizedProbe:
         absolute = path.absolute()
         backend = self._backend_identity(cancellation)
-        result = self._runner.run(
-            ProcessRequest(
-                executable=backend.resolved_path,
-                argv=(
-                    "-v",
-                    "error",
-                    "-print_format",
-                    "json",
-                    "-show_streams",
-                    "-show_format",
-                    str(absolute),
+        try:
+            result = self._runner.run(
+                ProcessRequest(
+                    executable=backend.resolved_path,
+                    argv=(
+                        "-v",
+                        "error",
+                        "-print_format",
+                        "json",
+                        "-show_streams",
+                        "-show_format",
+                        str(absolute),
+                    ),
+                    working_directory=Path(sys.executable).resolve().parent,
+                    environment={},
+                    timeout_seconds=self._timeout_seconds,
                 ),
-                working_directory=Path(sys.executable).resolve().parent,
-                environment={},
-                timeout_seconds=self._timeout_seconds,
-            ),
-            cancellation=cancellation,
-        )
+                cancellation=cancellation,
+            )
+        except ExecutableNotFoundError as exc:
+            raise ProbeMissingError(
+                "FFprobe is unavailable; configure --ffprobe or SPLATFORGE_FFPROBE"
+            ) from exc
+        except (ProcessBoundaryError, OSError) as exc:
+            raise ProbeBackendError(f"FFprobe process boundary failed: {exc}") from exc
         self._require_success(result)
+        if not self._same_binary(backend, result.executable):
+            backend = self._refresh_backend_identity(
+                cancellation,
+                executable=result.executable.resolved_path,
+                expected=result.executable,
+            )
         if result.stdout_truncated:
             raise ProbeOutputError("FFprobe JSON exceeded the bounded stdout capture")
         try:
@@ -88,10 +103,23 @@ class FFprobeAdapter:
     def _backend_identity(self, cancellation: ProcessCancellation | None) -> ExecutableIdentity:
         if self._backend is not None:
             return self._backend
+        return self._refresh_backend_identity(
+            cancellation,
+            executable=self._executable,
+            expected=None,
+        )
+
+    def _refresh_backend_identity(
+        self,
+        cancellation: ProcessCancellation | None,
+        *,
+        executable: str,
+        expected: ExecutableIdentity | None,
+    ) -> ExecutableIdentity:
         try:
             result = self._runner.run(
                 ProcessRequest(
-                    executable=self._executable,
+                    executable=executable,
                     argv=("-version",),
                     working_directory=Path(sys.executable).resolve().parent,
                     environment={},
@@ -101,16 +129,28 @@ class FFprobeAdapter:
                 ),
                 cancellation=cancellation,
             )
-        except ValueError as exc:
+        except ExecutableNotFoundError as exc:
             raise ProbeMissingError(
                 "FFprobe is unavailable; configure --ffprobe or SPLATFORGE_FFPROBE"
             ) from exc
+        except (ProcessBoundaryError, OSError) as exc:
+            raise ProbeBackendError(f"FFprobe process boundary failed: {exc}") from exc
         self._require_success(result)
+        if expected is not None and not self._same_binary(expected, result.executable):
+            raise ProbeBackendError(
+                "FFprobe executable changed while refreshing version provenance"
+            )
         first_line = result.stdout_text().splitlines()
         if result.stdout_truncated or not first_line:
             raise ProbeOutputError("FFprobe version output is unavailable or truncated")
         self._backend = result.executable.model_copy(update={"version_line": first_line[0][:1024]})
         return self._backend
+
+    @staticmethod
+    def _same_binary(left: ExecutableIdentity, right: ExecutableIdentity) -> bool:
+        return left.model_copy(update={"version_line": None}) == right.model_copy(
+            update={"version_line": None}
+        )
 
     @staticmethod
     def _require_success(result: Any) -> None:
@@ -120,6 +160,10 @@ class FFprobeAdapter:
             raise ProbeTimeoutError("FFprobe timed out after contained tree teardown")
         if not result.teardown_confirmed:
             raise ProbeBackendError("FFprobe process-tree teardown could not be confirmed")
+        if result.forced_tree_termination:
+            raise ProbeBackendError(
+                "FFprobe left surviving descendants that required forced tree termination"
+            )
         if result.exit_code != 0:
             detail = result.stderr_text().strip()[:1024]
             raise ProbeBackendError(

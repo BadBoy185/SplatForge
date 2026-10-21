@@ -6,9 +6,14 @@ from pathlib import Path
 import pytest
 
 from splatforge.adapters.ffprobe import FFprobeAdapter, normalize_ffprobe
+from splatforge.adapters.process_runner import (
+    ExecutableNotFoundError,
+    ProcessBoundaryError,
+)
 from splatforge.application.media_contracts import (
     ProbeBackendError,
     ProbeCancelledError,
+    ProbeMissingError,
     ProbeOutputError,
     ProbeTimeoutError,
     ProbeUnsupportedError,
@@ -173,9 +178,11 @@ def process_result(
     timed_out: bool = False,
     cancelled: bool = False,
     teardown_confirmed: bool = True,
+    forced_tree_termination: bool = False,
+    executable: ExecutableIdentity = BACKEND,
 ) -> ProcessResult:
     return ProcessResult(
-        executable=BACKEND.model_copy(update={"version_line": None}),
+        executable=executable.model_copy(update={"version_line": None}),
         argv=(),
         working_directory="C:/work",
         exit_code=exit_code,
@@ -187,6 +194,7 @@ def process_result(
         timed_out=timed_out,
         cancelled=cancelled,
         teardown_confirmed=teardown_confirmed,
+        forced_tree_termination=forced_tree_termination,
     )
 
 
@@ -199,6 +207,7 @@ def process_result(
         (process_result(exit_code=None, timed_out=True), ProbeTimeoutError),
         (process_result(exit_code=None, cancelled=True), ProbeCancelledError),
         (process_result(exit_code=0, teardown_confirmed=False), ProbeBackendError),
+        (process_result(exit_code=0, forced_tree_termination=True), ProbeBackendError),
     ],
 )
 def test_probe_process_failures_are_structured(
@@ -240,6 +249,119 @@ def test_probe_uses_absolute_source_argument_and_json_contract(tmp_path: Path) -
     )
     assert Path(request.argv[-1]).is_absolute()
     assert probe.orientation is None
+
+
+def probe_json() -> bytes:
+    return json.dumps(
+        {
+            "streams": [
+                {
+                    "index": 0,
+                    "codec_type": "video",
+                    "codec_name": "png",
+                    "width": 1,
+                    "height": 1,
+                }
+            ]
+        }
+    ).encode()
+
+
+class SequencedRunner:
+    def __init__(self, results: list[ProcessResult | Exception]) -> None:
+        self.results = results
+        self.requests = []
+
+    def run(self, request, *, cancellation=None):  # type: ignore[no-untyped-def]
+        self.requests.append(request)
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def test_unchanged_ffprobe_identity_reuses_cached_version(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    source.write_bytes(b"fake")
+    runner = SequencedRunner(
+        [
+            process_result(stdout=b"ffprobe version stable\n"),
+            process_result(stdout=probe_json()),
+            process_result(stdout=probe_json()),
+        ]
+    )
+    adapter = FFprobeAdapter(runner=runner, executable="fake")
+
+    first = adapter.probe(source, MediaType.PHOTO)
+    second = adapter.probe(source, MediaType.PHOTO)
+
+    assert first.backend == second.backend
+    assert first.backend.sha256 == BACKEND.sha256
+    assert first.backend.version_line == "ffprobe version stable"
+    assert [request.argv for request in runner.requests].count(("-version",)) == 1
+
+
+def test_changed_ffprobe_identity_refreshes_matching_version_provenance(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.png"
+    source.write_bytes(b"fake")
+    changed = BACKEND.model_copy(
+        update={"size": 321, "last_write_ns": 654, "sha256": "c" * 64}
+    )
+    runner = SequencedRunner(
+        [
+            process_result(stdout=b"ffprobe version old\n"),
+            process_result(stdout=probe_json()),
+            process_result(stdout=probe_json(), executable=changed),
+            process_result(stdout=b"ffprobe version changed\n", executable=changed),
+        ]
+    )
+    adapter = FFprobeAdapter(runner=runner, executable="fake")
+
+    old_probe = adapter.probe(source, MediaType.PHOTO)
+    changed_probe = adapter.probe(source, MediaType.PHOTO)
+
+    assert old_probe.backend.sha256 == BACKEND.sha256
+    assert changed_probe.backend.sha256 == changed.sha256
+    assert changed_probe.backend.version_line == "ffprobe version changed"
+    assert [request.argv for request in runner.requests].count(("-version",)) == 2
+
+
+def test_identity_change_during_version_refresh_is_actionable(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    source.write_bytes(b"fake")
+    metadata_binary = BACKEND.model_copy(update={"sha256": "c" * 64})
+    version_binary = BACKEND.model_copy(update={"sha256": "d" * 64})
+    runner = SequencedRunner(
+        [
+            process_result(stdout=b"ffprobe version old\n"),
+            process_result(stdout=probe_json(), executable=metadata_binary),
+            process_result(stdout=b"ffprobe version newer\n", executable=version_binary),
+        ]
+    )
+
+    with pytest.raises(ProbeBackendError, match="changed while refreshing"):
+        FFprobeAdapter(runner=runner, executable="fake").probe(source, MediaType.PHOTO)
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (ExecutableNotFoundError("not found"), ProbeMissingError),
+        (ProcessBoundaryError("job assignment failed"), ProbeBackendError),
+    ],
+)
+def test_only_executable_not_found_is_classified_as_ffprobe_missing(
+    tmp_path: Path, failure: Exception, expected: type[ValueError]
+) -> None:
+    source = tmp_path / "source.png"
+    source.write_bytes(b"fake")
+
+    with pytest.raises(expected):
+        FFprobeAdapter(
+            runner=SequencedRunner([failure]), executable="fake"
+        ).probe(source, MediaType.PHOTO)
 
 
 @pytest.mark.skipif(
