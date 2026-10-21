@@ -14,6 +14,7 @@ from splatforge.adapters.process_runner import (
     ExecutableResolver,
     LocalProcessRunner,
     ProcessBoundaryError,
+    ProcessCleanupError,
     ProcessRequest,
 )
 
@@ -37,6 +38,170 @@ def request(
         max_stderr_bytes=stderr_limit,
         teardown_timeout_seconds=teardown_timeout,
     )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native entrypoint policy")
+@pytest.mark.parametrize("suffix", [".bat", ".cmd", ".ps1", ".vbs", ".js", ".py", ".com"])
+def test_scripts_refused_before_launch_and_injection_marker_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str,
+) -> None:
+    entrypoint = tmp_path / f"backend{suffix}"
+    entrypoint.write_text("@echo %*\n", encoding="ascii")
+    marker = tmp_path / "injected.marker"
+
+    def must_not_launch(*args, **kwargs):  # type: ignore[no-untyped-def]
+        pytest.fail("script entrypoint reached backend launch")
+
+    monkeypatch.setattr(subprocess, "Popen", must_not_launch)
+    with pytest.raises(ProcessBoundaryError, match="native .exe"):
+        LocalProcessRunner().run(ProcessRequest(
+            executable=str(entrypoint), argv=(f"x & echo injected > {marker} & rem",),
+            working_directory=tmp_path, environment={}, timeout_seconds=10,
+        ))
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PATHEXT")
+def test_pathext_skips_scripts_even_when_they_precede_native_binary(tmp_path: Path) -> None:
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    for suffix in (".bat", ".cmd"):
+        (directory / f"backend{suffix}").write_text("@echo unsafe\n")
+    environment = {"PATH": str(directory), "PATHEXT": ".BAT;.CMD;.EXE"}
+    resolver = ExecutableResolver()
+    with pytest.raises(ProcessBoundaryError):
+        resolver.resolve("backend", environment=environment)
+    (directory / "backend.exe").write_bytes(Path(sys.executable).read_bytes())
+    assert Path(resolver.resolve("backend", environment=environment).resolved_path).suffix == ".exe"
+
+
+def test_native_argv_ampersand_is_literal(tmp_path: Path) -> None:
+    marker = tmp_path / "not-created.marker"
+    argument = f"literal & echo injection > {marker} & value"
+    result = LocalProcessRunner().run(request(
+        tmp_path, "-c", "import sys;print(sys.argv[1])", argument,
+    ))
+    assert result.exit_code == 0
+    assert result.stdout_text().strip() == argument
+    assert not marker.exists()
+
+
+def test_frozen_binary_replacement_is_refused_before_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = tmp_path / "backend.exe"
+    executable.write_bytes(b"backend A")
+    expected = ExecutableResolver().resolve(str(executable))
+    executable.write_bytes(b"backend B")
+    monkeypatch.setattr(
+        subprocess, "Popen", lambda *a, **kw: pytest.fail("replaced binary launched"),
+    )
+    with pytest.raises(ProcessBoundaryError, match="identity was frozen"):
+        LocalProcessRunner().run(ProcessRequest(
+            executable=str(executable), argv=(), working_directory=tmp_path,
+            environment={}, timeout_seconds=5, expected_executable=expected,
+        ))
+
+
+def test_post_execution_identity_check_cannot_hide_unconfirmed_teardown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolver = ExecutableResolver()
+    identity = resolver.resolve(sys.executable)
+    runner = LocalProcessRunner(resolver)
+    monkeypatch.setattr(resolver, "verify_expected_identity", lambda expected: False)
+    monkeypatch.setattr(runner, "_wait_tree_empty", lambda *args: (False, False))
+    result = runner.run(ProcessRequest(
+        executable=sys.executable, argv=("-c", "print('finished')"),
+        working_directory=tmp_path, environment={}, timeout_seconds=10,
+        expected_executable=identity,
+    ))
+    assert result.exit_code == 0
+    assert result.teardown_confirmed is False
+
+
+def test_collector_initialization_failure_reaps_worker_without_losing_original(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = RuntimeError("collector initialization sentinel")
+    workers = []
+    popen = subprocess.Popen
+
+    def record(*args, **kwargs):  # type: ignore[no-untyped-def]
+        process = popen(*args, **kwargs)
+        workers.append(process)
+        return process
+
+    def fail(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise original
+
+    monkeypatch.setattr(subprocess, "Popen", record)
+    monkeypatch.setattr(process_runner_module, "_BoundedCollector", fail)
+    with pytest.raises(ProcessCleanupError) as caught:
+        LocalProcessRunner().run(request(tmp_path, "-c", "print('must not launch')"))
+    assert caught.value.original_error is original
+    assert caught.value.teardown_confirmed
+    assert caught.value.forced_tree_termination
+    assert len(workers) == 1 and workers[0].poll() is not None
+
+
+@pytest.mark.parametrize(
+    "termination_raises,confirmation,join_raises",
+    [(False, "confirmed", False), (False, "unconfirmed", False),
+     (True, "confirmed", False), (True, "raises", False), (False, "confirmed", True)],
+)
+def test_exceptional_live_process_cleanup_preserves_original_and_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    termination_raises: bool, confirmation: str, join_raises: bool,
+) -> None:
+    marker = tmp_path / "backend-live.marker"
+    runner = LocalProcessRunner()
+    original_terminate = runner._terminate
+    original_wait = runner._wait_tree_empty
+    original = RuntimeError("cancellation callback sentinel")
+
+    class RaisingCancellation:
+        def is_cancelled(self) -> bool:
+            deadline = time.monotonic() + 10
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert marker.exists(), "backend never became live"
+            raise original
+
+    def terminate(process, job):  # type: ignore[no-untyped-def]
+        original_terminate(process, job)
+        if termination_raises:
+            raise OSError("termination sentinel")
+
+    def confirm(process, job, timeout):  # type: ignore[no-untyped-def]
+        assert original_wait(process, job, timeout)[0]
+        if confirmation == "raises":
+            raise OSError("confirmation sentinel")
+        return confirmation == "confirmed", False
+
+    monkeypatch.setattr(runner, "_terminate", terminate)
+    monkeypatch.setattr(runner, "_wait_tree_empty", confirm)
+    if join_raises:
+        thread = process_runner_module.threading.Thread
+        original_join = thread.join
+
+        def fail_join(self, timeout=None):  # type: ignore[no-untyped-def]
+            original_join(self, timeout)
+            raise RuntimeError("thread join sentinel")
+
+        monkeypatch.setattr(thread, "join", fail_join)
+    code = "from pathlib import Path;import time,sys;Path(sys.argv[1]).touch();time.sleep(60)"
+    with pytest.raises(ProcessCleanupError, match="cancellation callback sentinel") as caught:
+        runner.run(request(tmp_path, "-c", code, str(marker)), cancellation=RaisingCancellation())
+    error = caught.value
+    assert error.original_error is original
+    assert error.__cause__ is original
+    assert error.teardown_confirmed == (confirmation == "confirmed")
+    assert error.forced_tree_termination
+    if termination_raises:
+        assert any("termination sentinel" in item for item in error.cleanup_errors)
+    if join_raises:
+        assert any("thread join sentinel" in item for item in error.cleanup_errors)
 
 
 def test_success_exact_unicode_argv_cwd_scoped_env_and_shell_false(

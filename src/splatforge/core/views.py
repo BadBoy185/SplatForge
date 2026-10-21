@@ -28,7 +28,7 @@ SELECTION_METHOD_ID = "frame_selection.fixed_fps"
 CANDIDATE_METHOD_VERSION = 1
 SELECTION_METHOD_VERSION = 1
 FFMPEG_ADAPTER_ID = "splatforge.ffmpeg"
-FFMPEG_ADAPTER_VERSION = 1
+FFMPEG_ADAPTER_VERSION = 2
 MAX_RATIONAL_COMPONENT = 1_000_000_000
 MAX_EXACT_COMPONENT = 9_000_000_000_000_000_000
 MAX_VIEWS = 100_000
@@ -160,12 +160,13 @@ def photo_orientation_operation(value: int | None) -> OrientationOperation:
 
 
 def video_orientation_operation(value: int | None) -> OrientationOperation:
+    """FFprobe display-matrix degrees are CCW; apply that pixel rotation explicitly."""
     normalized = 0 if value is None else value % 360
     mapping = {
         0: OrientationOperation.IDENTITY,
-        90: OrientationOperation.ROTATE_90_CW,
+        90: OrientationOperation.ROTATE_90_CCW,
         180: OrientationOperation.ROTATE_180,
-        270: OrientationOperation.ROTATE_90_CCW,
+        270: OrientationOperation.ROTATE_90_CW,
     }
     try:
         return mapping[normalized]
@@ -439,7 +440,7 @@ class CandidateViewSet(FrozenModel):
     method_id: Literal["view_preparation.ffmpeg_fixed_pool"] = CANDIDATE_METHOD_ID
     method_version: Literal[1] = CANDIDATE_METHOD_VERSION
     adapter_id: Literal["splatforge.ffmpeg"] = FFMPEG_ADAPTER_ID
-    adapter_version: Literal[1] = FFMPEG_ADAPTER_VERSION
+    adapter_version: Literal[1, 2] = FFMPEG_ADAPTER_VERSION
     backend: ExecutableIdentity
     settings: CandidatePoolSettings
     views: Annotated[tuple[CandidateView, ...], Field(min_length=1, max_length=MAX_VIEWS)]

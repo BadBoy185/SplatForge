@@ -222,6 +222,7 @@ class LocalStateSchemaUpgrader:
                 with closing(sqlite3.connect(root / "state.sqlite")) as connection:
                     connection.execute("PRAGMA foreign_keys = ON")
                     with connection:
+                        connection.execute("BEGIN IMMEDIATE")
                         if previous_version == 1:
                             create_execution_tables(connection)
                             create_source_verification_tables(connection)

@@ -25,6 +25,63 @@ from splatforge.bootstrap import build_execution_service, build_project_service
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows local-file semantics")
 
 
+@pytest.mark.parametrize("alias", ["symlink", "hardlink", "directory", "junction"])
+def test_lock_refuses_redirected_or_aliased_object_without_writing(
+    tmp_path: Path, alias: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    target = tmp_path / "external user data.txt"
+    original = b"external bytes\x00must never be truncated\xff"
+    target.write_bytes(original)
+    lock = project / "project.lock"
+    if alias == "symlink":
+        try:
+            lock.symlink_to(target)
+        except OSError as exc:
+            pytest.skip(f"File symlinks unavailable: {exc}")
+    elif alias == "hardlink":
+        try:
+            lock.hardlink_to(target)
+        except OSError as exc:
+            pytest.skip(f"Hard links unavailable: {exc}")
+        assert target.stat().st_nlink > 1
+    elif alias == "junction":
+        subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(lock), str(tmp_path)],
+            cwd=project, check=True, capture_output=True,
+        )
+    else:
+        lock.mkdir()
+    with pytest.raises(ProjectError), WindowsProjectWriterLock(lock) as lease:
+        lease.write_diagnostics(operation="must-not-write", owner_token=uuid4())
+    assert target.read_bytes() == original
+
+
+def test_lock_safe_existing_file_and_release_error_do_not_fail_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import splatforge.adapters.project_lock as locks
+
+    lock = tmp_path / "project.lock"
+    lock.write_bytes(b"previous diagnostics")
+    original_locking = locks.msvcrt.locking
+
+    def fail_unlock(fd: int, mode: int, count: int) -> None:
+        if mode == locks.msvcrt.LK_UNLCK:
+            raise OSError("injected unlock failure")
+        original_locking(fd, mode, count)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(locks.msvcrt, "locking", fail_unlock)
+        with WindowsProjectWriterLock(lock) as lease:
+            assert not lease.created
+            lease.write_diagnostics(operation="committed", owner_token=uuid4())
+    assert json.loads(lock.read_text())["operation"] == "committed"
+    with WindowsProjectWriterLock(lock):
+        pass
+
+
 def test_windows_writer_lock_refuses_second_same_process_handle(tmp_path: Path) -> None:
     lock_path = tmp_path / "project.lock"
 

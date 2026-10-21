@@ -130,7 +130,12 @@ timeout, owner-death descendant cleanup and local fixed-volume read leases that 
 write/delete while allowing readers. Default tests require no FFmpeg installation; set
 `SPLATFORGE_TEST_FFPROBE` for the generated-PNG real FFprobe test and
 `SPLATFORGE_TEST_FFMPEG` to an FFmpeg executable (or `1` for configured PATH lookup)
-for the generated VFR/rotation candidate-view integration test. Set
+and `SPLATFORGE_TEST_FFPROBE` together for VFR source-origin, asymmetric display-matrix
+rotation and PNG EXIF pixel integration tests. PNG inventories with historical unknown
+orientation require `media add` followed by selection of the new `--source-id` for
+view preparation. Candidate images must fully
+decode within the documented resource bounds; old corrupt publications are ineligible.
+New plans re-observe FFmpeg, then pin its concrete binary identity. Set
 `SPLATFORGE_TEST_COLMAP` to an absolute executable, or `1` for
 `SPLATFORGE_COLMAP`/safe-PATH resolution, to opt into real M5 identity, command and
 native-database checks. `SPLATFORGE_TEST_COLMAP_DEEP=1` also enables disposable CPU/GPU

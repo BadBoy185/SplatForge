@@ -85,6 +85,51 @@ def downgrade_to_real_state_v3(root: Path) -> None:
         connection.execute("UPDATE metadata SET value='3' WHERE key='state_schema_version'")
 
 
+@pytest.mark.parametrize("version,fail_at", [(1, 2), (1, 5), (2, 2), (2, 7), (3, 2)])
+def test_migration_ddl_fault_rolls_back_schema_and_version_then_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int, fail_at: int,
+) -> None:
+    service = build_project_service()
+    service.create(tmp_path, "Atomic upgrade")
+    {1: downgrade_to_real_state_v1, 2: downgrade_to_real_state_v2,
+     3: downgrade_to_real_state_v3}[version](tmp_path)
+
+    def schema() -> list[tuple]:
+        with closing(sqlite3.connect(tmp_path / "state.sqlite")) as connection:
+            return connection.execute(
+                "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+            ).fetchall()
+
+    before_schema = schema()
+    before_version = read_metadata(tmp_path)
+    connect = sqlite3.connect
+
+    class FaultConnection(sqlite3.Connection):
+        mutations = 0
+
+        def execute(self, sql, parameters=()):  # type: ignore[no-untyped-def]
+            if sql.strip().upper().startswith(("CREATE ", "ALTER ")):
+                assert self.in_transaction, "DDL must begin inside an explicit transaction"
+                self.mutations += 1
+                if self.mutations == fail_at:
+                    raise sqlite3.OperationalError("injected intermediate DDL fault")
+            return super().execute(sql, parameters)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sqlite3, "connect", lambda *a, **kw: connect(
+            *a, **kw, factory=FaultConnection
+        ))
+        with pytest.raises(ProjectError, match="injected intermediate DDL fault"):
+            service.upgrade_state(tmp_path)
+    assert schema() == before_schema
+    assert read_metadata(tmp_path) == before_version
+    backups = list((tmp_path / "backups").iterdir())
+    assert len(backups) == 1
+    assert read_metadata(backups[0])["state_schema_version"] == str(version)
+    assert service.upgrade_state(tmp_path).upgraded
+    assert read_metadata(tmp_path)["state_schema_version"] == "4"
+
+
 def test_state_v1_open_show_save_without_implicit_upgrade(tmp_path: Path) -> None:
     service = build_project_service()
     created = service.create(tmp_path, "State v1")

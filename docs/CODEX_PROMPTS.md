@@ -7,6 +7,13 @@ documents only when a concrete dependency requires them. Review the diff after e
 task. Do not commit or push unless explicitly requested. Future command names are
 proposed until implemented.
 
+The post-M5/pre-M6 foundation repair is bounded to lock object/alias safety, native
+Windows entrypoints, full candidate decode integrity, atomic state v1/v2/v3 upgrades,
+orientation/source-PTS semantics, fresh FFmpeg plan identity and exceptional teardown
+quarantine. Preserve these regressions in later milestones. Adapter version 2 changes
+candidate recipes; state v4 and candidate contract 1 stay unchanged. M6/PairSet and
+the pre-M7 scalability/operability work are separate tasks.
+
 ## Common instructions for every task
 
 Prepend this to the selected task:

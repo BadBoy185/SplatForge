@@ -4,11 +4,13 @@ import os
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from splatforge.adapters.ffprobe import FFprobeAdapter, normalize_ffprobe
 from splatforge.adapters.process_runner import (
     ExecutableNotFoundError,
     ProcessBoundaryError,
+    ProcessCleanupError,
 )
 from splatforge.application.media_contracts import (
     ProbeBackendError,
@@ -222,7 +224,7 @@ def test_probe_process_failures_are_structured(
 
 def test_probe_uses_absolute_source_argument_and_json_contract(tmp_path: Path) -> None:
     source = tmp_path / "space žluťoučký.png"
-    source.write_bytes(b"fake")
+    Image.new("RGB", (1, 1)).save(source)
     payload = {
         "streams": [
             {
@@ -248,7 +250,7 @@ def test_probe_uses_absolute_source_argument_and_json_contract(tmp_path: Path) -
         "-show_format",
     )
     assert Path(request.argv[-1]).is_absolute()
-    assert probe.orientation is None
+    assert probe.orientation == 1
 
 
 def probe_json() -> bytes:
@@ -282,7 +284,7 @@ class SequencedRunner:
 
 def test_unchanged_ffprobe_identity_reuses_cached_version(tmp_path: Path) -> None:
     source = tmp_path / "source.png"
-    source.write_bytes(b"fake")
+    Image.new("RGB", (1, 1)).save(source)
     runner = SequencedRunner(
         [
             process_result(stdout=b"ffprobe version stable\n"),
@@ -305,7 +307,7 @@ def test_changed_ffprobe_identity_refreshes_matching_version_provenance(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "source.png"
-    source.write_bytes(b"fake")
+    Image.new("RGB", (1, 1)).save(source)
     changed = BACKEND.model_copy(
         update={"size": 321, "last_write_ns": 654, "sha256": "c" * 64}
     )
@@ -330,7 +332,7 @@ def test_changed_ffprobe_identity_refreshes_matching_version_provenance(
 
 def test_identity_change_during_version_refresh_is_actionable(tmp_path: Path) -> None:
     source = tmp_path / "source.png"
-    source.write_bytes(b"fake")
+    Image.new("RGB", (1, 1)).save(source)
     metadata_binary = BACKEND.model_copy(update={"sha256": "c" * 64})
     version_binary = BACKEND.model_copy(update={"sha256": "d" * 64})
     runner = SequencedRunner(
@@ -356,7 +358,7 @@ def test_only_executable_not_found_is_classified_as_ffprobe_missing(
     tmp_path: Path, failure: Exception, expected: type[ValueError]
 ) -> None:
     source = tmp_path / "source.png"
-    source.write_bytes(b"fake")
+    Image.new("RGB", (1, 1)).save(source)
 
     with pytest.raises(expected):
         FFprobeAdapter(
@@ -383,3 +385,65 @@ def test_real_ffprobe_generated_png(tmp_path: Path) -> None:
     assert (result.width, result.height) == (1, 1)
     assert result.codec_name == "png"
     assert result.backend.version_line is not None
+
+
+@pytest.mark.parametrize("angle", [90.5, "-90.5", "nan", "45", "infinity"])
+@pytest.mark.parametrize("kind", ["matrix", "tag"])
+def test_fractional_or_arbitrary_video_rotation_is_never_truncated(angle, kind) -> None:
+    stream = {"index": 0, "codec_type": "video", "width": 4, "height": 2}
+    if kind == "matrix":
+        stream["side_data_list"] = [{"rotation": angle}]
+    else:
+        stream["tags"] = {"rotate": angle}
+    with pytest.raises(ProbeUnsupportedError, match="rotation"):
+        normalize_ffprobe({"streams": [stream]}, media_type=MediaType.VIDEO, backend=BACKEND)
+
+
+@pytest.mark.parametrize("angle", ["0.0", "90.0", "-90.0", "180.0", "270.0"])
+def test_exact_decimal_right_angle_preserves_matrix_convention(angle: str) -> None:
+    stream = {"index": 0, "codec_type": "video", "width": 4, "height": 2,
+              "side_data_list": [{"rotation": angle}]}
+    result = normalize_ffprobe(
+        {"streams": [stream]}, media_type=MediaType.VIDEO, backend=BACKEND,
+    )
+    assert result.rotation_degrees == int(angle.split(".")[0])
+
+
+@pytest.mark.parametrize("orientation", range(1, 9))
+def test_png_exif_probe_is_metadata_only_and_preserves_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, orientation: int,
+) -> None:
+    path = tmp_path / "oriented.png"
+    exif = Image.Exif()
+    exif[274] = orientation
+    with Image.new("RGB", (4, 2)) as image:
+        image.save(path, exif=exif)
+    before = path.read_bytes()
+    runner = SequencedRunner([
+        process_result(stdout=b"ffprobe version test\n"), process_result(stdout=probe_json()),
+    ])
+    monkeypatch.setattr(Image, "open", lambda *a, **kw: pytest.fail("must not decode source"))
+    probe = FFprobeAdapter(runner=runner, executable="fake").probe(path, MediaType.PHOTO)
+    assert probe.orientation == orientation
+    assert path.read_bytes() == before
+
+
+def test_png_exif_metadata_resource_bound(tmp_path: Path) -> None:
+    from splatforge.adapters.ffprobe import read_png_exif_orientation
+
+    path = tmp_path / "huge-metadata.png"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + (2**31).to_bytes(4, "big") + b"eXIf")
+    with pytest.raises(ProbeUnsupportedError, match="byte bound"):
+        read_png_exif_orientation(path)
+
+
+def test_exceptional_probe_cleanup_diagnostics_keep_original_and_teardown(tmp_path: Path) -> None:
+    cause = ProcessCleanupError(
+        RuntimeError("probe callback sentinel"), teardown_confirmed=False,
+        forced_tree_termination=True,
+    )
+    adapter = FFprobeAdapter(runner=SequencedRunner([cause]), executable="fake")
+    with pytest.raises(
+        ProbeBackendError, match="probe callback sentinel.*teardown_confirmed=False",
+    ):
+        adapter.probe(tmp_path / "source.png", MediaType.PHOTO)

@@ -94,10 +94,15 @@ VFR timestamp mapping, all EXIF orientations, right-angle video rotations, prede
 count/disk/free-space refusal, Balanced/Strict consumption continuity, two-stage cache
 invalidation, streamed multi-file validation, durable cancellation, unresolved teardown
 and crash boundaries. No default test requires FFmpeg. Set `SPLATFORGE_TEST_FFMPEG` to
-an executable path (or `1` to use configured PATH lookup) for the generated tiny MPEG-4
-VFR and explicit-rotation integration test. That test must skip with its exact reason
-when unconfigured; a skip is not backend evidence. A future full media-add-to-M3 smoke
-test may additionally require `SPLATFORGE_TEST_FFPROBE` as a separate opt-in setting.
+an executable path (or `1` to use configured PATH lookup) and
+`SPLATFORGE_TEST_FFPROBE` to a concrete FFprobe executable for the real media tests.
+They compare uneven VFR timestamps beginning at source time 5 seconds against an
+independent FFprobe frame oracle, real display matrices against asymmetric expected
+pixels and FFmpeg autorotation, and PNG EXIF 1..8 against independent pixel transforms.
+Original bytes must remain unchanged. Tests skip when unconfigured; configured fixture
+failures fail the test. A skip is not backend evidence. Negative PTS and duplicate PTS
+are covered by exact metadata tests; the tested MOV muxer rebases/drops negative-origin
+frames, so these fixtures do not claim real negative-origin integration coverage.
 
 M4 default tests generate tiny Pillow images locally: a high-frequency pattern, a
 blurred form, an exact duplicate and a controlled near-duplicate. They assert exact
@@ -141,6 +146,14 @@ not inherited. The worker then launches exactly one backend with `shell=False`; 
 parent concurrently drains bounded stdout/stderr and confirms the contained tree is gone
 before returning. POSIX process-group behavior is a testable fallback, not a claim of the
 Windows support baseline.
+On Windows the generic resolver and worker accept only native `.exe` entrypoints.
+Explicit scripts and script PATHEXT matches are refused before launch, including
+`.bat`/`.cmd`; literal ampersands remain argv data for native binaries. `COLMAP.bat`
+is accepted only by the COLMAP locator, which resolves native `colmap.exe` first.
+Exceptional cleanup returns structured process-level evidence through
+`ProcessCleanupError`, preserving the original cause even if termination, confirmation
+or reader joining fails. Unconfirmed FFmpeg teardown quarantines the attempt; Doctor
+retains unresolved COLMAP workspaces. These errors never return process success.
 
 The process adapter owns executable resolution, argument arrays, working directory,
 scoped environment, lifecycle and streamed stdout/stderr. No shell interpolation or

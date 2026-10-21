@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import sqlite3
@@ -12,6 +13,7 @@ from types import TracebackType
 from uuid import UUID
 
 import pytest
+from PIL import Image
 
 from splatforge.adapters.execution_storage import ExecutionFaultHooks, LocalExecutionRepository
 from splatforge.adapters.fake_stages import LocalFakeStages
@@ -172,9 +174,10 @@ class FakeMaterializer:
         self.calls: list[Path] = []
         self.mode = "success"
         self.on_call = None
+        self.backend = BACKEND
 
     def identity(self, cancellation=None) -> ExecutableIdentity:  # type: ignore[no-untyped-def]
-        return BACKEND
+        return self.backend
 
     def materialize(
         self,
@@ -189,7 +192,7 @@ class FakeMaterializer:
     ) -> tuple[MaterializedFrame, ...]:
         absolute = source_path.absolute()
         assert absolute in self.source_files.active
-        assert expected_backend == BACKEND
+        assert expected_backend == self.backend
         self.calls.append(absolute)
         output_directory.mkdir(parents=True)
         if self.on_call is not None:
@@ -221,13 +224,10 @@ class FakeMaterializer:
 
 
 def png(width: int, height: int) -> bytes:
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + (13).to_bytes(4, "big")
-        + b"IHDR"
-        + width.to_bytes(4, "big")
-        + height.to_bytes(4, "big")
-    )
+    with io.BytesIO() as stream:
+        with Image.new("RGB", (width, height), (20, 40, 60)) as image:
+            image.save(stream, format="PNG")
+        return stream.getvalue()
 
 
 def query(root: Path, statement: str, parameters: tuple[object, ...] = ()) -> list[tuple]:
@@ -349,6 +349,131 @@ def test_concrete_route_publishes_multifile_artifacts_and_reuses_both(tmp_path: 
         "SELECT count(*) FROM attempts WHERE run_id=?",
         (str(second.run_id),),
     ) == [(0,)]
+
+
+def test_same_service_reobserves_ffmpeg_before_cache_lookup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from splatforge.adapters.ffmpeg import FFmpegAdapter
+    from splatforge.core.process import ProcessResult
+
+    value = harness(tmp_path, mixed=False)
+    probes = []
+
+    class VersionRunner:
+        def run(self, request, *, cancellation=None):  # type: ignore[no-untyped-def]
+            identity = value.materializer.backend
+            probes.append(identity)
+            return ProcessResult(
+                executable=identity.model_copy(update={"version_line": None}),
+                argv=request.argv, working_directory=str(request.working_directory),
+                exit_code=0, elapsed_seconds=0.01,
+                stdout=identity.version_line.encode() + b"\n", stderr=b"",
+                stdout_truncated=False, stderr_truncated=False, timed_out=False,
+                cancelled=False, teardown_confirmed=True, forced_tree_termination=False,
+            )
+
+    adapter = FFmpegAdapter(runner=VersionRunner(), executable=BACKEND.resolved_path)
+    monkeypatch.setattr(value.materializer, "identity", adapter.identity)
+    first = prepare(value)
+    value.materializer.backend = BACKEND.model_copy(update={"sha256": "b" * 64})
+    original_find = value.execution.find_cache
+
+    def assert_refreshed(*args, **kwargs):  # type: ignore[no-untyped-def]
+        assert probes[-1] == value.materializer.backend
+        assert len(probes) >= 2
+        return original_find(*args, **kwargs)
+
+    monkeypatch.setattr(value.execution, "find_cache", assert_refreshed)
+    second = prepare(value)
+    assert "candidate_views" not in second.cache_hits
+    assert first.candidate_artifact.recipe_key != second.candidate_artifact.recipe_key
+    assert len(value.materializer.calls) == 2
+    third = prepare(value)
+    assert third.cache_hits == ("candidate_views", "selected_views")
+    assert third.candidate_artifact.recipe_key == second.candidate_artifact.recipe_key
+    assert len(value.materializer.calls) == 2
+    assert len(probes) == 3
+
+
+def test_old_candidate_adapter_recipe_is_not_reused_and_remains_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import splatforge.core.views as contracts
+
+    value = harness(tmp_path, mixed=False)
+    with monkeypatch.context() as patch:
+        patch.setattr(contracts, "FFMPEG_ADAPTER_VERSION", 1)
+        first = prepare(value)
+    metadata = value.root / first.candidate_artifact.manifest_path
+    payload = json.loads((metadata.parent / "candidate_views.json").read_text())
+    payload["adapter_version"] = 1
+    assert contracts.CandidateViewSet.model_validate(payload).adapter_version == 1
+    second = prepare(value)
+    assert first.candidate_artifact.recipe_key != second.candidate_artifact.recipe_key
+    assert "candidate_views" not in second.cache_hits
+
+
+def test_historical_png_unknown_orientation_is_refused_before_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from splatforge.application.projects import ProjectError
+
+    value = harness(tmp_path)
+    load = value.media.load_current_inventory
+    historical_id = value.source_ids[1]
+
+    def historical(*args):  # type: ignore[no-untyped-def]
+        inventory = load(*args)
+        sources = tuple(source.model_copy(update={"probe": source.probe.model_copy(
+            update={"orientation": None}
+        )}) if source.source_id == historical_id else source for source in inventory.sources)
+        return inventory.model_copy(update={"sources": sources})
+
+    monkeypatch.setattr(value.media, "load_current_inventory", historical)
+    with pytest.raises(ProjectError, match="ambiguous historical orientation.*re-ingest"):
+        prepare(value)
+    assert value.materializer.calls == []
+    assert query(value.root, "SELECT count(*) FROM runs") == [(0,)]
+    added = MediaService(value.media, value.sources, FakeProbe()).add(
+        value.root, [value.source_paths[1]],
+    )
+    fresh_id = added.added_sources[0].source_id
+    result = value.service.prepare(
+        value.root, source_ids={fresh_id}, candidate_settings=candidate_settings(),
+        selection_settings=FixedFpsSettings(target_fps=parse_fps("1")),
+        resource_limits=limits(), verification_policy=VerificationPolicyId.BALANCED_LOCAL,
+    )
+    assert result.status == "succeeded" and result.candidate_count == 1
+    document = LocalProjectStore().inspect(value.root).document
+    records = value.media.load_current_inventory(value.root, document).sources
+    historical_source = next(source for source in records if source.source_id == historical_id)
+    assert historical_source.probe.orientation is None
+
+
+def test_exceptional_ffmpeg_teardown_quarantines_attempt_and_blocks_next_processing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from splatforge.adapters.ffmpeg import FFmpegAdapter
+    from splatforge.adapters.process_runner import ProcessCleanupError
+
+    value = harness(tmp_path, mixed=False)
+
+    class FailingRunner:
+        def run(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            cause = RuntimeError("live callback failed")
+            raise ProcessCleanupError(
+                cause, teardown_confirmed=False, forced_tree_termination=True,
+            ) from cause
+
+    adapter = FFmpegAdapter(runner=FailingRunner())
+    monkeypatch.setattr(value.materializer, "materialize", adapter.materialize)
+    result = prepare(value)
+    assert result.status == "interrupted"
+    assert query(value.root, "SELECT teardown_state FROM attempts") == [("unresolved",)]
+    assert "live callback failed" in query(value.root, "SELECT failure_json FROM attempts")[0][0]
+    with pytest.raises(UnresolvedExecutionError, match="teardown"):
+        prepare(value)
 
 
 def test_target_and_candidate_fps_invalidate_only_actual_consumers(tmp_path: Path) -> None:

@@ -48,6 +48,22 @@ sample from each video. Video records carry the actual selected FFmpeg `showinfo
 and filter-link time base; image sequence numbers are not timestamps. View IDs derive
 from source/revision/stream/frame identity, while semantic identity additionally covers
 source content, transforms, dimensions and streamed image SHA-256 values.
+The filter path uses `-copyts -noautorotate`: integer PTS and rational time bases
+refer to the source presentation timeline, including a non-zero origin, not a rebased
+processing clock. FFprobe display-matrix rotation is counter-clockwise; +90 applies
+`rotate_90_ccw`, -90/270 applies `rotate_90_cw`. Legacy clockwise `rotate` tags are
+normalized to this convention. Exact decimal right angles are accepted; arbitrary
+angles are refused without rounding. JPEG and PNG EXIF orientations 1..8 include mirrors.
+
+Candidate validation verifies format/dimensions, container integrity and full pixel
+decode, one image at a time, before streamed digest comparison. The adapter supports
+at most 64,000,000 pixels, 256 MiB encoded bytes and 256 MiB of decoded image storage
+per candidate; the encoded bound also limits container-chunk allocation. Validation does
+not copy or re-encode images. Header-only/truncated images fail workspace publication,
+cache reuse and orphan adoption even if their recorded digests match. Adapter version 2
+invalidates recipes from the former rotation/timestamp semantics; contract 1 and valid
+historical artifacts remain readable. Each new plan re-observes FFmpeg identity/version
+before cache lookup, then pins it and refuses executable changes during materialization.
 `frame_selection.fixed_fps` consumes candidate metadata without running FFmpeg and
 publishes `views.selected_set` contract 1. It selects each photo once and applies an
 independent exact-rational target grid to each clip, records target/actual time and

@@ -9,7 +9,11 @@ from uuid import uuid4
 import pytest
 
 from splatforge.adapters.ffmpeg import FFmpegAdapter, orientation_filter, parse_showinfo
-from splatforge.adapters.process_runner import ExecutableNotFoundError, ProcessRequest
+from splatforge.adapters.process_runner import (
+    ExecutableNotFoundError,
+    ProcessCleanupError,
+    ProcessRequest,
+)
 from splatforge.application.views_contracts import (
     FFmpegBackendError,
     FFmpegCancelledError,
@@ -186,6 +190,7 @@ def test_exact_argv_preserves_unicode_stream_mapping_and_vfr_semantics(tmp_path:
     )
     assert request.argv[request.argv.index("-map") + 1] == "0:3"
     assert "-noautorotate" in request.argv
+    assert "-copyts" in request.argv
     assert all(option in request.argv for option in ("-an", "-sn", "-dn"))
     filter_value = request.argv[request.argv.index("-vf") + 1]
     assert "select=" in filter_value
@@ -195,6 +200,38 @@ def test_exact_argv_preserves_unicode_stream_mapping_and_vfr_semantics(tmp_path:
     assert request.argv[request.argv.index("-fps_mode") + 1] == "passthrough"
     assert [frame.pts for frame in frames] == [0, 417]
     assert frames[1].time_base.as_fraction() == Fraction(1, 1000)
+
+
+@pytest.mark.parametrize("confirmed", [True, False])
+def test_exceptional_cleanup_is_translated_without_losing_original_cause(
+    tmp_path: Path, confirmed: bool,
+) -> None:
+    original = RuntimeError("callback failed while live")
+    boundary = ProcessCleanupError(
+        original, teardown_confirmed=confirmed, forced_tree_termination=True,
+    )
+
+    def fail(request: ProcessRequest, index: int) -> ProcessResult:
+        if index == 0:
+            return result(request, stdout=b"ffmpeg version fake\n")
+        raise boundary from original
+
+    error = FFmpegBackendError if confirmed else FFmpegTeardownError
+    with pytest.raises(error, match="callback failed while live") as caught:
+        materialize(tmp_path, FakeRunner(fail))
+    assert caught.value.__cause__ is boundary
+    assert boundary.original_error is original
+
+
+def test_negative_pts_and_duplicate_pts_remain_exact() -> None:
+    metadata = parse_showinfo(
+        "config in time_base: 1/90000\n"
+        "n: 0 pts: -9000 pts_time:-0.1\n"
+        "n: 1 pts: -9000 pts_time:-0.1\n"
+        "n: 2 pts: 1001 pts_time:0.0111222\n"
+    )
+    assert [frame[1] for frame in metadata] == [-9000, -9000, 1001]
+    assert metadata[0][1] * metadata[0][2].as_fraction() == Fraction(-1, 10)
 
 
 @pytest.mark.parametrize(
@@ -218,10 +255,10 @@ def test_all_exif_orientations_are_explicit(orientation: int, expected: str) -> 
     ("rotation", "expected"),
     [
         (0, "null"),
-        (90, "transpose=clock"),
+        (90, "transpose=cclock"),
         (180, "hflip,vflip"),
-        (270, "transpose=cclock"),
-        (-90, "transpose=cclock"),
+        (270, "transpose=clock"),
+        (-90, "transpose=clock"),
     ],
 )
 def test_video_right_angle_rotations_are_explicit(rotation: int, expected: str) -> None:

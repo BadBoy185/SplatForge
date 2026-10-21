@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from PIL import Image
+
 from splatforge.core.execution import ArtifactManifest, PayloadFile
 from splatforge.core.fake_pipeline import (
     NUMBERS_ARTIFACT_TYPE,
@@ -36,6 +38,9 @@ from splatforge.core.views import (
 MAX_METADATA_BYTES = 64 * 1024 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
 MAX_PAYLOADS = MAX_VIEWS + 1
+MAX_DECODE_PIXELS = 64_000_000
+MAX_DECODE_BYTES = 256 * 1024 * 1024
+MAX_ENCODED_IMAGE_BYTES = 256 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -188,6 +193,7 @@ def _validate_candidate(output: Path) -> ValidatedArtifact:
             raise ValueError(f"Candidate image dimensions disagree for {view.view_id}")
         if image_format != parsed.settings.encoding.image_format:
             raise ValueError(f"Candidate image encoding disagrees for {view.view_id}")
+        validate_decodable_image(image_path, width, height, image_format)
         size, digest = stream_sha256(image_path)
         if digest != view.image_sha256:
             raise ValueError(f"Candidate image digest disagrees for {view.view_id}")
@@ -338,6 +344,31 @@ def image_dimensions(path: Path) -> tuple[int, int, ImageFormat]:
             stream.seek(length - 2, 1)
             consumed += length - 2
     raise ValueError(f"JPEG dimensions are unavailable within the header bound: {path.name}")
+
+
+def validate_decodable_image(
+    path: Path, width: int, height: int, image_format: ImageFormat,
+) -> None:
+    """Verify and decode one bounded image; no decoded pixels escape this call."""
+    if width * height > MAX_DECODE_PIXELS or width * height * 4 > MAX_DECODE_BYTES:
+        raise ValueError(f"Candidate image exceeds supported decode resource bound: {path.name}")
+    if path.stat().st_size > MAX_ENCODED_IMAGE_BYTES:
+        raise ValueError(f"Candidate image exceeds encoded byte resource bound: {path.name}")
+    expected_format = "JPEG" if image_format == ImageFormat.JPEG else "PNG"
+    try:
+        with Image.open(path) as image:
+            if image.size != (width, height) or image.format != expected_format:
+                raise ValueError("Decoded image dimensions or format disagree")
+            if image.width * image.height * max(4, len(image.getbands())) > MAX_DECODE_BYTES:
+                raise ValueError("Candidate image exceeds decoded byte bound")
+            image.verify()
+        # verify() checks container integrity; load() also validates compressed pixels.
+        with Image.open(path) as image:
+            if image.size != (width, height) or image.format != expected_format:
+                raise ValueError("Decoded image dimensions or format changed")
+            image.load()
+    except (OSError, SyntaxError, EOFError, Image.DecompressionBombError) as exc:
+        raise ValueError(f"Candidate image is not fully decodable: {path.name}: {exc}") from exc
 
 
 def _read_bounded(path: Path, limit: int, label: str) -> bytes:

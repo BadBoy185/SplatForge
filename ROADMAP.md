@@ -11,6 +11,14 @@ pairing arrives in M7c before the complete multi-video CLI; GPS/spatial pairing 
 advanced retrieval optimization remain later. GUI follows CLI and the first training
 integration. Do not implement all future method placeholders.
 
+The bounded post-M5/pre-M6 foundation repair hardens lock-file object/alias safety,
+native-only Windows process execution, candidate decode integrity, atomic historical
+DDL upgrades, photo/video orientation, source PTS origin, per-plan FFmpeg observation
+and exceptional teardown quarantine. It changes FFmpeg adapter recipe identity to 2,
+without changing project/state/artifact JSON versions. M6 and PairSet remain planned.
+Fixed-FPS scalability, shared-lineage validation memoization, verification provenance
+scaling and durable invocation logging remain deferred to the pre-M7 pass.
+
 ## M0 — existing foundation and architecture review
 
 Available: configuration models, catalog, preset and `version`, `methods`,

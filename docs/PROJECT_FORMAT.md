@@ -146,11 +146,19 @@ artifacts are not rewritten. Explicit upgrade rechecks under the writer lock and
 publishes one validated backup. v1 creates the final execution plus verification schema,
 v2 adds M1b2 columns plus verification state, and v3 adds only verification state, each
 in one transaction. All become v4 without rewriting `project.json` or its revision.
+After backup and `PRAGMA foreign_keys=ON`, an explicit `BEGIN IMMEDIATE` precedes
+the first CREATE/ALTER. DDL and the version update commit together; a failure rolls
+both back and leaves the backup available for inspection and a clean upgrade retry.
 Calling upgrade on v4 is a read-only no-op; unsupported newer versions remain untouched.
 
 Creation accepts a missing or empty destination and creates `project.json`,
 `project.lock` and `state.sqlite`. The destination is checked again after acquiring
 the OS-held lock; lock-file existence or contents do not establish ownership.
+The Windows lock opens without truncation or following a reparse point, validates
+the actual handle as a disk file at the owned lock path with exactly one hard link,
+and refuses directories, links and redirected/aliased objects before diagnostics.
+Delete sharing is denied while held; byte-range ownership stays non-blocking.
+Diagnostic writes recheck that handle. Release errors cannot falsify a committed save.
 Saving flushes, closes and validates a temporary sibling before same-volume replacement.
 `os.replace` is the project-document commit point: a failed pre-commit step retains
 the previous document, while reopen after a completed replacement observes the new
@@ -189,6 +197,13 @@ independent source and camera group IDs, calibration policy and normalized probe
 Probe data preserves backend identity, selected stream, codec/dimensions/orientation and
 nullable rational video timing/rotation fields. Revisions publish new files; old files
 are never rewritten. External originals are neither copied nor made project-owned.
+New PNG probes read bounded eXIf chunk metadata without pixel decode and record
+orientation 1 when EXIF is absent. Historical PNG records with `orientation=null`
+remain inspectable but cannot prepare views: use `media add` to re-ingest, then
+`views prepare --source-id` to select the new occurrence with orientation evidence.
+No inventory/state migration or implicit metadata reinterpretation
+occurs. Historical candidate contract 1 remains readable, subject to decode integrity;
+corrected FFmpeg adapter version 2 uses a different recipe from version 1.
 
 ## Source verification policies
 
@@ -381,6 +396,11 @@ unwound and its handles are closed. If injected teardown confirmation fails, M1b
 the run interrupted with unresolved teardown and blocks retry, adoption and publication;
 it does not fabricate cancellation success. Real workers require owned process-tree
 termination and bounded waits; M2 implements and proves those process guarantees.
+Exceptional process failures also preserve the original cause, forced-termination
+evidence and confirmed/unconfirmed tree teardown. FFmpeg maps unconfirmed cleanup to
+an interrupted external attempt with unresolved teardown; the existing guard blocks
+new processing and publication. A subsequent cleanup error cannot replace the cause
+or fabricate confirmation. Doctor likewise retains an unresolved COLMAP workspace.
 
 Retry transient I/O/process failures with bounded policy. Invalid settings, unsupported
 capabilities and resource exhaustion require an actionable decision rather than an

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +44,8 @@ def main() -> int:
         )
     ):
         return _fail("invalid launch value types")
+    if os.name == "nt" and Path(executable).suffix.lower() != ".exe":
+        return _fail("Windows backend must be a native .exe entrypoint")
     try:
         process = subprocess.Popen(
             [executable, *argv],

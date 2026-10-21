@@ -76,6 +76,7 @@ from splatforge.core.quality import (
 )
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
+    FFMPEG_ADAPTER_VERSION,
     SELECTED_ARTIFACT_TYPE,
     VIEW_ARTIFACT_CONTRACT_VERSION,
     CandidateBudgetEstimate,
@@ -236,6 +237,13 @@ class ViewsService:
             if inventory is None or not inventory.sources:
                 raise ProjectError("Project has no registered media sources")
             selected_sources = self._select_sources(inventory, source_ids)
+            for source in selected_sources:
+                if source.extension == ".png" and source.probe.orientation is None:
+                    raise ProjectError(
+                        f"PNG source {source.source_id} has ambiguous historical orientation "
+                        "metadata; re-ingest it with 'media add', then prepare with --source-id "
+                        "for the newly added source"
+                    )
             if isinstance(selection_settings, SharpestIntervalSettings):
                 validate_sharpest_candidate_density(
                     candidate_settings,
@@ -1523,7 +1531,7 @@ class ViewsService:
     ) -> dict[str, object]:
         return {
             "adapter_id": "splatforge.ffmpeg",
-            "adapter_version": 1,
+            "adapter_version": FFMPEG_ADAPTER_VERSION,
             "executable": route.ffmpeg_backend.model_dump(mode="json"),
         }
 

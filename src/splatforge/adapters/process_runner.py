@@ -95,6 +95,25 @@ class ExecutableNotFoundError(ProcessBoundaryError):
     """An explicitly configured or PATH-resolved executable was not found."""
 
 
+class ProcessCleanupError(ProcessBoundaryError):
+    """Original process failure plus evidence from exceptional containment teardown."""
+
+    def __init__(
+        self, original_error: BaseException, *, teardown_confirmed: bool,
+        forced_tree_termination: bool, cleanup_errors: tuple[str, ...] = (),
+    ) -> None:
+        self.original_error = original_error
+        self.teardown_confirmed = teardown_confirmed
+        self.forced_tree_termination = forced_tree_termination
+        self.cleanup_errors = cleanup_errors
+        super().__init__(
+            f"{type(original_error).__name__}: {original_error}; "
+            f"teardown_confirmed={teardown_confirmed}; "
+            f"forced_tree_termination={forced_tree_termination}"
+            + (f"; cleanup errors: {'; '.join(cleanup_errors)}" if cleanup_errors else "")
+        )
+
+
 class ProcessCancellation(Protocol):
     def is_cancelled(self) -> bool: ...
 
@@ -109,6 +128,7 @@ class ProcessRequest:
     max_stdout_bytes: int = 4 * 1024 * 1024
     max_stderr_bytes: int = 1024 * 1024
     teardown_timeout_seconds: float = 5.0
+    expected_executable: ExecutableIdentity | None = None
 
 
 class ExecutableResolver:
@@ -128,9 +148,11 @@ class ExecutableResolver:
             path = candidate.absolute()
         else:
             path = self._search_path(requested, environment=environment)
+        self._require_native(path)
         if not path.is_file():
             raise ExecutableNotFoundError(f"Executable not found: {requested}")
         path = path.resolve(strict=True)
+        self._require_native(path)
         for _attempt in range(2):
             with path.open("rb") as stream:
                 before = os.fstat(stream.fileno())
@@ -204,6 +226,13 @@ class ExecutableResolver:
         )
 
     @staticmethod
+    def _require_native(path: Path) -> None:
+        if os.name == "nt" and path.suffix.lower() != ".exe":
+            raise ProcessBoundaryError(
+                f"Windows process execution requires a native .exe entrypoint: {path}"
+            )
+
+    @staticmethod
     def _search_path(
         name: str,
         *,
@@ -214,6 +243,7 @@ class ExecutableResolver:
         if os.name == "nt" and not Path(name).suffix:
             suffixes = [
                 item.lower() for item in values.get("PATHEXT", ".EXE").split(os.pathsep)
+                if item.lower() == ".exe"
             ]
         for entry in values.get("PATH", "").split(os.pathsep):
             if not entry:
@@ -394,6 +424,10 @@ class LocalProcessRunner:
         if request.max_stdout_bytes < 0 or request.max_stderr_bytes < 0:
             raise ValueError("Process output limits must be non-negative")
         identity = self._resolver.resolve(request.executable)
+        if request.expected_executable is not None and identity != (
+            request.expected_executable.model_copy(update={"version_line": None})
+        ):
+            raise ProcessBoundaryError("Executable changed after its identity was frozen")
         cwd = request.working_directory.absolute()
         if not cwd.is_dir():
             raise ProcessBoundaryError(f"Process working directory does not exist: {cwd}")
@@ -435,21 +469,34 @@ class LocalProcessRunner:
             )
         except BaseException:
             if job is not None:
-                job.close()
-            raise
-        stdout = _BoundedCollector(process.stdout, request.max_stdout_bytes)
-        stderr = _BoundedCollector(process.stderr, request.max_stderr_bytes)
-        if job is not None:
-            try:
-                job.assign(process)
-            except BaseException:
                 with suppress(Exception):
-                    self._stop_uncontained_worker(
-                        process, request.teardown_timeout_seconds
-                    )
-                self._close_process_pipes(process)
-                job.close()
-                raise
+                    job.close()
+            raise
+        try:
+            stdout = _BoundedCollector(process.stdout, request.max_stdout_bytes)
+            stderr = _BoundedCollector(process.stderr, request.max_stderr_bytes)
+            if job is not None:
+                job.assign(process)
+        except BaseException as exc:
+            errors: list[str] = []
+            confirmed = False
+            try:
+                self._stop_uncontained_worker(process, request.teardown_timeout_seconds)
+                confirmed = True
+            except BaseException as cleanup_exc:
+                errors.append(repr(cleanup_exc))
+            actions = [lambda: self._close_process_pipes(process)]
+            if job is not None:
+                actions.append(job.close)
+            for action in actions:
+                try:
+                    action()
+                except BaseException as cleanup_exc:
+                    errors.append(repr(cleanup_exc))
+            raise ProcessCleanupError(
+                exc, teardown_confirmed=confirmed, forced_tree_termination=True,
+                cleanup_errors=tuple(errors),
+            ) from exc
         timed_out = False
         cancelled = False
         teardown_confirmed = False
@@ -457,6 +504,8 @@ class LocalProcessRunner:
         exit_code: int | None = None
         stdout_started = False
         stderr_started = False
+        original_error: BaseException | None = None
+        cleanup_errors: list[str] = []
         try:
             stdout.thread.start()
             stdout_started = True
@@ -486,23 +535,65 @@ class LocalProcessRunner:
                 process, job, request.teardown_timeout_seconds
             )
             forced_tree_termination = forced_tree_termination or cleanup_forced
-        except BaseException:
-            self._terminate(process, job)
-            self._wait_tree_empty(process, job, request.teardown_timeout_seconds)
-            raise
+        except BaseException as exc:
+            original_error = exc
+            forced_tree_termination = True
+            try:
+                self._terminate(process, job)
+            except BaseException as cleanup_exc:
+                cleanup_errors.append(repr(cleanup_exc))
+            # Confirmation must still run when termination itself failed.
+            try:
+                teardown_confirmed, _ = self._wait_tree_empty(
+                    process, job, request.teardown_timeout_seconds
+                )
+                if teardown_confirmed:
+                    process.wait(timeout=request.teardown_timeout_seconds)
+            except BaseException as cleanup_exc:
+                teardown_confirmed = False
+                cleanup_errors.append(repr(cleanup_exc))
         finally:
-            if process.stdin is not None and not process.stdin.closed:
-                process.stdin.close()
-            if stdout_started:
-                stdout.thread.join(timeout=request.teardown_timeout_seconds)
-            if stderr_started:
-                stderr.thread.join(timeout=request.teardown_timeout_seconds)
-            for stream in (process.stdout, process.stderr):
-                if stream is not None and not stream.closed:
-                    with suppress(OSError):
-                        stream.close()
+            # A close/join failure must never mask the original exception or
+            # erase the independently observed tree-empty result.
+            actions = []
+            # Closing the job is a final kill-on-close fallback, before touching
+            # pipes whose readers may still be blocked in an unresolved child.
             if job is not None:
-                job.close()
+                actions.append(job.close)
+            if stdout_started:
+                actions.append(lambda: stdout.thread.join(
+                    timeout=request.teardown_timeout_seconds
+                ))
+            if stderr_started:
+                actions.append(lambda: stderr.thread.join(
+                    timeout=request.teardown_timeout_seconds
+                ))
+            actions.append(lambda: self._close_process_pipes(
+                process,
+                skip_stdout=stdout_started and stdout.thread.is_alive(),
+                skip_stderr=stderr_started and stderr.thread.is_alive(),
+            ))
+            for action in actions:
+                try:
+                    action()
+                except BaseException as cleanup_exc:
+                    if original_error is None:
+                        original_error = cleanup_exc
+                    else:
+                        cleanup_errors.append(repr(cleanup_exc))
+        if original_error is not None:
+            raise ProcessCleanupError(
+                original_error, teardown_confirmed=teardown_confirmed,
+                forced_tree_termination=forced_tree_termination,
+                cleanup_errors=tuple(cleanup_errors),
+            ) from original_error
+        if (
+            request.expected_executable is not None
+            and teardown_confirmed
+            and not forced_tree_termination
+            and not self._resolver.verify_expected_identity(request.expected_executable)
+        ):
+            raise ProcessBoundaryError("Executable changed during execution")
         return ProcessResult(
             executable=identity,
             argv=request.argv,
@@ -534,8 +625,13 @@ class LocalProcessRunner:
         process.wait(timeout=timeout)
 
     @staticmethod
-    def _close_process_pipes(process: subprocess.Popen[bytes]) -> None:
-        for stream in (process.stdin, process.stdout, process.stderr):
+    def _close_process_pipes(
+        process: subprocess.Popen[bytes], *, skip_stdout: bool = False, skip_stderr: bool = False,
+    ) -> None:
+        for stream in (
+            process.stdin, None if skip_stdout else process.stdout,
+            None if skip_stderr else process.stderr,
+        ):
             if stream is not None and not stream.closed:
                 with suppress(OSError):
                     stream.close()

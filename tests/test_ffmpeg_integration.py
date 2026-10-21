@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from collections import defaultdict
@@ -47,6 +48,13 @@ def configured_ffmpeg() -> str:
     return configured
 
 
+def configured_ffprobe() -> str:
+    configured = os.environ.get("SPLATFORGE_TEST_FFPROBE")
+    if not configured:
+        pytest.skip("SPLATFORGE_TEST_FFPROBE is not configured")
+    return configured
+
+
 def ppm(path: Path, rgb: tuple[int, int, int]) -> None:
     path.write_bytes(b"P6\n4 2\n255\n" + bytes(rgb) * 8)
 
@@ -55,6 +63,7 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
     tmp_path: Path,
 ) -> None:
     executable = configured_ffmpeg()
+    ffprobe = configured_ffprobe()
     frames = []
     for index, color in enumerate(((255, 0, 0), (0, 255, 0), (0, 0, 255))):
         path = tmp_path / f"source-{index}.ppm"
@@ -89,6 +98,8 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
             "mpeg4",
             "-q:v",
             "2",
+            "-output_ts_offset",
+            "5",
             str(video),
         ],
         cwd=tmp_path,
@@ -98,11 +109,20 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
         timeout=30,
     )
     if generated.returncode != 0:
-        pytest.skip(
+        pytest.fail(
             "configured FFmpeg cannot generate the tiny MPEG-4 VFR fixture: "
             + generated.stderr.decode("utf-8", errors="replace")[:300]
         )
     original = video.read_bytes()
+    oracle_result = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_frames",
+         "-show_streams", "-of", "json", str(video)],
+        cwd=tmp_path, shell=False, capture_output=True, check=True, timeout=30,
+    )
+    oracle = json.loads(oracle_result.stdout)
+    source_time_base = Fraction(oracle["streams"][0]["time_base"])
+    source_times = [int(frame["pts"]) * source_time_base for frame in oracle["frames"]]
+    assert source_times[0] >= 5
     digest = hashlib.sha256(original).hexdigest()
     stat = video.stat()
     evidence = SourceEvidence(
@@ -165,6 +185,8 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
     )
     assert len(materialized) >= 3
     actual_times = [frame.pts * frame.time_base.as_fraction() for frame in materialized]
+    assert actual_times == source_times
+    assert actual_times[0] != 0
     intervals = [
         right - left
         for left, right in zip(actual_times, actual_times[1:], strict=False)
@@ -216,7 +238,7 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
                 transform=PixelTransform(
                     source_width=4,
                     source_height=2,
-                    orientation_operation="rotate_90_cw",
+                    orientation_operation="rotate_90_ccw",
                     output_width=2,
                     output_height=4,
                 ),

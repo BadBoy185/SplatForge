@@ -21,6 +21,7 @@ from splatforge.adapters.process_runner import (
     ExecutableNotFoundError,
     ExecutableResolver,
     ProcessBoundaryError,
+    ProcessCleanupError,
     ProcessRequest,
 )
 from splatforge.application.doctor_contracts import DoctorTeardownError
@@ -29,6 +30,26 @@ from splatforge.core.media import ExecutableIdentity
 from splatforge.core.process import ProcessResult
 
 NOW = datetime(2026, 10, 21, 12, tzinfo=UTC)
+
+
+def test_exceptional_unconfirmed_teardown_quarantines_doctor_workspace() -> None:
+    workspaces = []
+
+    def fail(request: ProcessRequest) -> ProcessResult:
+        workspaces.append(request.working_directory)
+        raise ProcessCleanupError(
+            RuntimeError("original live failure"), teardown_confirmed=False,
+            forced_tree_termination=True,
+        )
+
+    adapter = ColmapCapabilityAdapter(runner=FakeRunner(fail))
+    try:
+        with pytest.raises(DoctorTeardownError, match="original live failure.*quarantine"):
+            adapter._run("C:/colmap.exe", ("help",), 1, environment={})
+        assert workspaces[0].is_dir()
+    finally:
+        for path in workspaces:
+            adapter._cleanup_workspace(path)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows portable runtime layout")

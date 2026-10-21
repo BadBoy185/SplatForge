@@ -35,6 +35,7 @@ from splatforge.adapters.process_runner import (
     ExecutableResolver,
     LocalProcessRunner,
     ProcessBoundaryError,
+    ProcessCleanupError,
     ProcessRequest,
 )
 from splatforge.application.doctor_contracts import (
@@ -1318,6 +1319,12 @@ class ColmapCapabilityAdapter:
                     f"colmap.probe_teardown_failed: contained tree is unresolved; "
                     f"stop Doctor and quarantine workspace {cwd}"
                 )
+        except ProcessCleanupError as exc:
+            if not exc.teardown_confirmed:
+                raise DoctorTeardownError(
+                    f"colmap.probe_teardown_failed: {exc}; quarantine workspace {cwd}"
+                ) from exc
+            raise
         finally:
             if workspace is not None and not isinstance(sys.exception(), DoctorTeardownError):
                 self._cleanup_workspace(workspace, workspace_identity)

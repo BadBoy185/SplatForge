@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from splatforge.adapters.gpu_capabilities import NvidiaSmiCapabilityAdapter
-from splatforge.adapters.process_runner import ExecutableNotFoundError, ProcessRequest
+from splatforge.adapters.process_runner import (
+    ExecutableNotFoundError,
+    ProcessCleanupError,
+    ProcessRequest,
+)
 from splatforge.core.capabilities import CapabilityStatus, FreshnessPolicy
 from splatforge.core.media import ExecutableIdentity
 from splatforge.core.process import ProcessResult
@@ -16,6 +20,22 @@ IDENTITY = ExecutableIdentity(
     last_write_ns=200,
     sha256="b" * 64,
 )
+
+
+def test_exceptional_gpu_cleanup_diagnostics_preserve_teardown_evidence() -> None:
+    class FailingRunner:
+        def run(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise ProcessCleanupError(
+                RuntimeError("gpu callback sentinel"), teardown_confirmed=False,
+                forced_tree_termination=True,
+            )
+
+    report = NvidiaSmiCapabilityAdapter(
+        runner=FailingRunner(), resolver=Resolver(), environment={},
+    ).probe(observed_at=NOW, freshness=FreshnessPolicy())
+    assert report.evidence.status == CapabilityStatus.UNKNOWN
+    assert "gpu callback sentinel" in report.evidence.message
+    assert "teardown_confirmed=False" in report.evidence.message
 
 
 class Resolver:

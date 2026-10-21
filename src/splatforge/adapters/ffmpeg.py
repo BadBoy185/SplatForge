@@ -7,12 +7,14 @@ import re
 import sys
 from fractions import Fraction
 from pathlib import Path
+from typing import Never
 
 from splatforge.adapters.process_runner import (
     ExecutableNotFoundError,
     LocalProcessRunner,
     ProcessBoundaryError,
     ProcessCancellation,
+    ProcessCleanupError,
     ProcessRequest,
 )
 from splatforge.application.views_contracts import (
@@ -72,8 +74,8 @@ class FFmpegAdapter:
     def identity(
         self, cancellation: ProcessCancellation | None = None
     ) -> ExecutableIdentity:
-        if self._backend is not None:
-            return self._backend
+        # A new plan must re-observe the configured executable. Frozen runs use
+        # expected_backend directly and never consult this mutable observation.
         try:
             result = self._runner.run(
                 ProcessRequest(
@@ -91,6 +93,8 @@ class FFmpegAdapter:
             raise FFmpegMissingError(
                 "FFmpeg is unavailable; configure --ffmpeg or SPLATFORGE_FFMPEG"
             ) from exc
+        except ProcessCleanupError as exc:
+            self._raise_cleanup_error(exc)
         except (ProcessBoundaryError, OSError) as exc:
             raise FFmpegBackendError(f"FFmpeg process boundary failed: {exc}") from exc
         self._require_success(result, version_probe=True)
@@ -132,6 +136,7 @@ class FFmpegAdapter:
             "-nostdin",
             "-loglevel",
             "info",
+            "-copyts",
             "-noautorotate",
             "-i",
             str(absolute),
@@ -180,6 +185,7 @@ class FFmpegAdapter:
                     timeout_seconds=timeout_seconds,
                     max_stdout_bytes=64 * 1024,
                     max_stderr_bytes=self._max_metadata_bytes,
+                    expected_executable=expected_backend,
                 ),
                 cancellation=cancellation,
             )
@@ -187,6 +193,8 @@ class FFmpegAdapter:
             raise FFmpegMissingError(
                 "The frozen FFmpeg executable is no longer available"
             ) from exc
+        except ProcessCleanupError as exc:
+            self._raise_cleanup_error(exc)
         except (ProcessBoundaryError, OSError) as exc:
             raise FFmpegBackendError(f"FFmpeg process boundary failed: {exc}") from exc
         self._require_success(result, version_probe=False)
@@ -236,6 +244,12 @@ class FFmpegAdapter:
                 )
             )
         return tuple(frames)
+
+    @staticmethod
+    def _raise_cleanup_error(exc: ProcessCleanupError) -> Never:
+        if not exc.teardown_confirmed:
+            raise FFmpegTeardownError(f"FFmpeg process boundary failed: {exc}") from exc
+        raise FFmpegBackendError(f"FFmpeg process boundary failed: {exc}") from exc
 
     @staticmethod
     def _same_binary(left: ExecutableIdentity, right: ExecutableIdentity) -> bool:
