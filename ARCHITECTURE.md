@@ -2,15 +2,20 @@
 
 ## Status and product boundary
 
-This document describes the target architecture. The current code is a configuration
-and CLI foundation, not an implementation of these contracts. The [review](docs/ARCHITECTURE_REVIEW.md)
-records what must change; the [roadmap](ROADMAP.md) stages adoption.
+This document describes the target architecture and the boundaries that implemented
+milestones must preserve. M0-M6 provide the current local persistence, media, execution,
+view/quality selection, capability-diagnostic and PairSet foundations; later contracts
+remain staged by the [roadmap](ROADMAP.md). The historical
+[review](docs/ARCHITECTURE_REVIEW.md) records the reasoning behind the foundation and
+intentionally deferred choices.
 
 SplatForge owns project intent, orchestration, provenance, diagnostics and a convenient
 local workflow. It delegates media processing, SfM and Gaussian optimization to
 replaceable methods. The long-term product spans import, quality control,
 reconstruction, training and viewing; the first deliverable stops at a validated
-training dataset. No cloud service or account is required for ordinary local runs.
+training dataset. Windows-first, local-first desktop use remains the primary product
+and implementation path. No cloud service or account is required for ordinary local
+runs; future remote execution must remain optional rather than becoming a prerequisite.
 
 Phase 1 supports perspective photos and videos from multiple devices and clips.
 Camera calibration, distortion, image orientation and source chronology are explicit.
@@ -20,9 +25,9 @@ alignment; GPS presence alone does not establish accuracy or metric scale.
 ## Dependency direction
 
 ```text
-CLI / future PySide6 GUI
-          |
-          v
+CLI / future Desktop GUI / future API or SDK clients
+                         |
+                         v
 Application services -----> Core domain and contracts
           ^                         ^
           | injected implementations|
@@ -34,15 +39,54 @@ Composition root constructs services and adapters.
 | Boundary | Owns | Must not own |
 | --- | --- | --- |
 | Core | Typed configurations, IDs, artifact metadata, compatibility rules, dependency/fingerprint rules | UI, filesystem I/O, database connections, subprocesses, heavy backend imports |
-| Application | Create/open/plan/run/cancel/retry/diagnose use cases, orchestration, publication policy | Widget state or vendor command syntax |
+| Application | Create/open/plan/run/cancel/retry/diagnose use cases, orchestration, publication policy | Widget state, transport-specific presentation or vendor command syntax |
 | Adapters | Storage, discovery, process management, FFmpeg, COLMAP, learned libraries, trainers, format conversion | Product defaults or silent fallback decisions |
-| CLI/GUI | Input presentation, user choices, event rendering | Processing, cache decisions, direct backend invocation |
+| Clients (CLI/GUI; future API/SDK) | Input presentation, user choices, event rendering or transport mapping | Processing, cache decisions, direct backend invocation |
 | Composition root | Explicit dependency wiring and built-in method factories | Business rules or mutable global registry |
 
-Introduce `application/` and `adapters/` when their first use cases arrive. Do not
-create a package for every noun now. Core may use Pydantic and `Path` values without
+Introduce packages and abstractions only when their first concrete use cases arrive. Do
+not create a package for every noun. Core may use Pydantic and `Path` values without
 performing I/O. Storage interfaces belong to the application; artifact and method
 contracts belong to core. Concrete adapters depend inward, never the reverse.
+
+## Deployment, client and storage neutrality
+
+The current implementation is intentionally a local Windows application with local
+project storage, one project writer and locally owned worker processes. Those are the
+first concrete adapters and operating constraints, not permanent assumptions of every
+Core or Application contract.
+
+Preserve these future options without implementing them now:
+
+- Application use cases and typed domain contracts must not require the caller to be a
+  PySide6 widget or even a desktop process. CLI and the future desktop GUI are clients of
+  the same services; a later REST/API server, Python SDK, Unreal integration or other
+  production tool may map its requests to those services instead of automating UI state.
+- Processing locality is an adapter/composition decision. The supported path today is
+  `this computer`; a later concrete deployment may route work to a company GPU server,
+  remote worker or cloud-hosted worker while preserving the same project intent,
+  artifact lineage, cancellation semantics and typed processing results where those
+  contracts still apply. Do not add a distributed scheduler or remote protocol before a
+  real deployment requires one.
+- Execution events, progress, status, warnings and cancellation belong to the
+  application/execution model, not to a progress bar. A CLI renderer, desktop UI,
+  future HTTP/WebSocket endpoint or other client decides how to present the same
+  committed state and structured events.
+- Data identity is separate from physical location. `ProjectId`, `SourceId`, view IDs,
+  artifact IDs, semantic digests and lineage do not derive identity from an absolute
+  `C:\...` path. Local/UNC paths are concrete locators today; NAS, managed copies,
+  object storage or remote artifact stores require concrete future adapters and
+  consistency rules rather than a speculative generic storage framework now.
+- A future remote deployment may need different ownership, lease, transport and storage
+  mechanisms than the current `project.lock` and local filesystem. Preserve the
+  semantic guarantees—single authoritative publication decisions, immutable artifacts,
+  explicit cancellation and reproducible lineage—without treating the current local
+  lock/file implementation as a universal distributed protocol.
+
+This neutrality does not make cloud, server, REST, SDK, S3, mobile, multi-worker or
+hosted-scene functionality part of M1-M12. The rule is **preserve the option, do not
+implement the option**. Add a new transport/storage/execution abstraction only when a
+concrete second deployment demonstrates a missing boundary in the current contracts.
 
 ## Domain vocabulary
 
@@ -223,12 +267,14 @@ seeds, device/runtime information, input/output lineage and exact invocation met
 Reproducibility means an inspectable, repeatable recipe with declared numerical
 limitations; GPU/SfM/training results are not promised to be bit-for-bit deterministic.
 
-Start with one writer and one active stage per project. The owner holds the project
-lock; other clients can inspect committed status and request cancellation without
-writing SQLite. Settings saves while a run is active return busy in the initial
-implementation. Use a synchronous application runner off the GUI thread, with owned
-worker processes for native/GPU work. This does not require a service, distributed
-scheduler, event-sourcing platform or cross-project cache.
+For the current local project implementation, start with one writer and one active stage
+per project. The owner holds the project lock; other clients can inspect committed
+status and request cancellation without writing SQLite. Settings saves while a run is
+active return busy in the initial implementation. Use a synchronous application runner
+off the GUI thread, with owned worker processes for native/GPU work. These are local
+execution mechanics, not requirements that every future deployment share a filesystem,
+process or lock implementation. No service, distributed scheduler, event-sourcing
+platform or cross-project cache is required now.
 Stage-boundary restart is required from the first processing milestone. Backend
 checkpoint resume is an additional capability, not a universal promise.
 
@@ -261,5 +307,13 @@ and transform provenance when present. LiDAR is a geometry/prior input, not a fa
 image source. Only a backend declaring support may consume such constraints; unknown
 models/constraints must not be silently ignored. Projection is the first 360 route,
 not a promise that every future spherical or sensor-fusion method fits preprocessing.
+
+A future spatial route may also begin from an existing point cloud, trajectory or
+multi-sensor reconstruction and publish the typed reconstruction/alignment result needed
+by downstream validation, dataset preparation, training or export. Do not force such a
+route through Photo/Video -> FeatureSet -> PairSet -> COLMAP when those intermediates do
+not exist. Add point-cloud, LiDAR, IMU, GNSS/RTK or SLAM contracts only with a concrete
+consumer/backend and explicit frames, units, uncertainty and transform provenance; do
+not create a generic sensor framework in anticipation of one.
 
 Deferred implementation choices and non-goals are listed in the [review](docs/ARCHITECTURE_REVIEW.md#intentionally-deferred).
