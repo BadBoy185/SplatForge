@@ -15,7 +15,7 @@ The bounded post-M5/pre-M6 foundation repair hardens lock-file object/alias safe
 native-only Windows process execution, candidate decode integrity, atomic historical
 DDL upgrades, photo/video orientation, source PTS origin, per-plan FFmpeg observation
 and exceptional teardown quarantine. It changes FFmpeg adapter recipe identity to 2,
-without changing project/state/artifact JSON versions. M6 and PairSet remain planned.
+without changing project/state/artifact JSON versions. M6 PairSet is implemented below.
 Fixed-FPS scalability, shared-lineage validation memoization, verification provenance
 scaling and durable invocation logging remain deferred to the pre-M7 pass.
 
@@ -161,15 +161,18 @@ required merely to list methods or open a project. Risky probes use disposable w
 probe availability/resource evidence has a freshness limit, while resolved execution
 identity is pinned and checked again before launch.
 
-## M6 — minimal pair selection
+## M6 — minimal pair selection (implemented)
 
-Implement typed PairSet, Sequential within clips and budgeted Exhaustive across
-selected views. Allow an explicit cross-group pair list for controlled mixed-source
-tests. Keep practical retrieval for M7c and spatial pairing for M13a; no fake methods.
+Implemented `pairs build --views-run` with PairSet v1, a versioned selected-view
+projection, source/revision/stream-local Sequential, budgeted Exhaustive and explicit
+edges for videos/photos. Graph identity is independent of recipe/provenance; coverage
+reports components, isolation and source/group edges. Uses existing attempts, cache,
+durable cancellation and publication recovery, with no COLMAP/CUDA or image decoding.
 
-Acceptance: stable pair output with no self/duplicate pairs, deterministic chronology,
-quadratic-budget refusal and coverage diagnostics for two clips plus unordered photos.
-PairSet production needs no COLMAP/CUDA and can run independently of local features.
+Acceptance is covered by deterministic core, projection/key, coverage, CLI, cache,
+corruption, cancellation/recovery and upstream M3/M4 regression tests. PairSet production
+is independent of local features. Retrieval remains M7c; spatial pairing remains M13a.
+The pre-M7 scalability/operability pass remains separate.
 
 ## M7 — features, matching and geometric verification
 
@@ -191,6 +194,12 @@ If a local learned route is unavailable, report the missing capability and valid
 on a designated test machine before claiming the milestone's integration complete.
 
 ## M7c — practical cross-clip retrieval and hybrid pairing
+
+Benchmark modern retrieval/hybrid candidates on representative drone/phone video,
+mixed clips, unordered photos and difficult indoor/outdoor overlap/texture/viewpoint
+cases. Compare verified useful pairs, graph/registration coverage, runtime, VRAM/RAM,
+index size and pair count alongside Recall@K and commercial redistribution/licensing.
+Vocabulary Tree is a catalog option, not a selected final backend. M6 selects no model.
 
 Implement one verified retrieval representation/index route, independent of the local
 ALIKED/SIFT descriptor choice unless an explicit compatible aggregation is implemented.

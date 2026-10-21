@@ -9,6 +9,7 @@ from splatforge.adapters.ffmpeg import FFmpegAdapter
 from splatforge.adapters.ffprobe import FFprobeAdapter
 from splatforge.adapters.gpu_capabilities import NvidiaSmiCapabilityAdapter
 from splatforge.adapters.media_storage import LocalMediaRepository
+from splatforge.adapters.pair_workspace import LocalPairWorkspace
 from splatforge.adapters.process_runner import ExecutableResolver, LocalProcessRunner
 from splatforge.adapters.project_backup import LocalMigrationBackupPreparer
 from splatforge.adapters.project_storage import LocalProjectStore
@@ -19,6 +20,7 @@ from splatforge.adapters.view_workspace import LocalViewWorkspace
 from splatforge.application.doctor import DoctorService
 from splatforge.application.execution import FakeExecutionService
 from splatforge.application.media import MediaService
+from splatforge.application.pairs import PairsService
 from splatforge.application.projects import ProjectService
 from splatforge.application.views import ViewsService
 from splatforge.core.builtin_methods import build_builtin_registry
@@ -77,4 +79,10 @@ def build_views_service(*, ffmpeg_path: str | None = None) -> ViewsService:
         FFmpegAdapter(executable=ffmpeg_path),
         LocalViewWorkspace(),
         PillowQualityAdapter(),
+    )
+
+
+def build_pairs_service() -> PairsService:
+    return PairsService(
+        LocalExecutionRepository(project_store=LocalProjectStore()), LocalPairWorkspace()
     )

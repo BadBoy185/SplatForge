@@ -190,16 +190,87 @@ alone do not establish compatibility. Report all actionable plan errors before w
 
 ## Pair selection and native execution
 
-Sequential pairing operates within a source group by timestamp or explicit order.
+M6 implements `pair_selection.sequential` and `pair_selection.exhaustive` version 1.
+Both consume a published CandidateViewSet and either Fixed-FPS or Sharpest SelectedViewSet
+from an explicitly requested successful views run. They read metadata and validate
+published byte integrity without decoding candidate pixels, rereading originals, running
+FFmpeg/COLMAP or requiring local features, retrieval embeddings or a GPU.
+
+Sequential uses independent video timelines identified by
+`(source_id, source_revision, selected_visual_stream_index)`. A source group may contain
+several clips and is never a chronology. Sort by exact presentation time, occurrence
+index, then unsigned 128-bit UUID integer. Equal timestamps retain distinct observations.
+For each observation visit the next `forward_neighbors` observations (default 5, range
+1..1000), optionally excluding deltas above exact non-negative `max_time_gap` seconds.
+Complexity is sorting plus O(N * forward_neighbors). Photos have no chronology and stay
+isolated unless explicitly connected. A graph with zero edges is refused with guidance
+to use Exhaustive or explicit pairs. The default window is a development choice.
+
 Exhaustive pairing estimates `N * (N - 1) / 2` pairs before materialization and enforces
-a configured budget. M6 uses budgeted exhaustive/manual cross-group pairs for early
-fixtures. M7c adds practical cross-clip retrieval/hybrid pairing and is required for
+a configured budget before constructing any edges. It treats all selected photos/videos
+uniformly without a dense matrix, truncation or sampling. Both methods merge explicit
+unordered selected-view pairs, including cross-source/group edges. Reversed duplicates
+canonicalize; self-pairs, unknown IDs and malformed inputs fail. Explicit pairs count
+towards the same total budget. `max_pairs` defaults to 100,000 for development; a cached
+result must also fit the requested budget.
+
+`pairs.pair_set` contract 1 publishes only `pair_set.json` and `manifest.json`. Its v1
+immutable PairingViewUniverse contains only selected view IDs, media/source/revision/
+stream/group/camera identities, occurrence indices and exact PTS/time bases (absent for
+photos). It validates each selected observation against CandidateViewSet. Projection
+identity excludes image bytes/digests, paths, source locators, quality scores, rejection
+records, thresholds and project/run/publication bookkeeping. Selection policy changes
+with identical selected membership and chronology preserve this pairing input identity.
+
+Endpoints use `left_view_id.int < right_view_id.int` (unsigned UUID integer order).
+Pair identity v1 is UUIDv5 in namespace `35a55597-1ab8-5bd4-9a56-82075e175da3` of
+`1:<left-uuid>:<right-uuid>` using lowercase hyphenated UUIDs. It excludes method/reasons.
+Pairs sort by endpoints. Typed reason records sort by unique kind: sequential timeline,
+neighbor offset and exact time delta; exhaustive enumeration; explicit supplied pair.
+Deduplication preserves all applicable reasons. There are no retrieval score placeholders.
+
+PairSet semantic identity v1 hashes the canonical universe digest and ordered pair IDs
+with the semantic/contract versions. Settings, reasons, coverage, warnings, artifact UUIDs
+and timestamps do not affect downstream graph compatibility. The full payload retains
+exact CandidateViewSet and SelectedViewSet IDs/digests, selected method, universe digest,
+resolved settings and reasons. The manifest binds both exact upstream handles.
+
+Separate Sequential/Exhaustive recipe helpers include fingerprint version 1, PairSet
+contract 1, method/settings versions, resolved settings, universe digest and canonical
+explicit pairs. They exclude `max_pairs` (an eligibility gate) and irrelevant upstream
+policy. A hit retains its original producer lineage; the new immutable run route freezes
+its own exact upstream handles. Equal graphs from different recipes can have equal
+semantic digests while their recipe keys differ.
+
+Structural bounds are 100,000 selected views, 1,000,000 sparse pairs, three reasons per
+pair, 100,000 entries per coverage collection, three warning codes and 768 MiB of compact
+UTF-8 PairSet metadata. This accommodates roughly 20k views with tens of neighbors;
+it is a bounded JSON contract, not a production memory/performance guarantee. The
+application default is substantially lower. Validation recomputes IDs, canonical order,
+universe/graph digests, reason chronology and all coverage counts.
+
+Coverage records selected/paired/isolated observations, components and descending
+component sizes, within-source/cross-source/cross-group pair totals and per-source/group
+selected/paired/internal/cross counts. Cross counts are incident counts in each group;
+each cross edge contributes once to each endpoint group. Deterministic diagnostics flag
+isolated photos, disconnected candidate graphs and video timelines without a direct
+cross-timeline edge. These are candidate-graph observations, not reconstruction results.
+
+M7c adds practical cross-clip retrieval/hybrid pairing and is required for
 the complete multi-video CLI: Sequential within clips plus bounded retrieved neighbors
 across clips. Manual pairs and exhaustive matching remain optional diagnostic tools.
-Warn or block when a requested whole-scene plan has no cross-group candidate edges;
+Warn when a requested whole-scene graph has isolated clips or photos;
 never promise that candidate connectivity guarantees reconstruction connectivity.
 
-Retrieval has an explicit representation contract: embedding/aggregation method and
+M7c will benchmark modern retrieval/hybrid options rather than treating Vocabulary Tree
+as a final solution. No final neural model is selected in M6. Evaluate real drone/phone
+video, mixed clips, unordered photos, indoor/outdoor, repeated texture, weak overlap and
+large viewpoint changes. Compare useful geometrically verified pairs, graph coverage,
+registration coverage, runtime, VRAM/RAM, descriptor/index size and pair count as well as
+Recall@K. Weight/model licensing and commercial redistribution feasibility are selection
+criteria alongside quality. M6 adds no ML dependency or model weights.
+
+Future retrieval has an explicit representation contract: embedding/aggregation method and
 version, weights digest, image preprocessing, descriptor dimensions/normalization,
 indexed view IDs and corpus digest, distance metric, index format/version/settings,
 query limits and deterministic tie handling. The corpus identity covers actual view
@@ -336,7 +407,7 @@ as a unit. Re-evaluate affected descendants only, and preserve unchanged branche
 | Feature extractor/model/settings | Features, matching and consumers; retrieval only if it consumes these features | Views and feature-independent PairSets |
 | SfM mask | Features and consumers; mask-aware retrieval if declared | Decoded views and unrelated pair selection |
 | Training-only mask | DatasetPreparation/training according to declared use | SfM |
-| Selection threshold using existing scores | Selection and its dependent stages under the conservative stage cache | Candidate pixels and quality scores |
+| Selection threshold using existing scores | Selection; PairSelection only if its selected-view projection changes | Candidate pixels, quality scores and PairSets with identical pairing universes |
 | Sharpest target FPS with an explicitly unchanged candidate FPS | Sharpest selection and consumers | Candidate pixels and QualityReport |
 | Duplicate threshold/lookback or minimum sharpness | Sharpest selection and consumers | Candidate pixels and QualityReport |
 | Quality maximum side or quality method/backend version | QualityReport, sharpest selection and consumers | Candidate pixels |
@@ -345,7 +416,7 @@ as a unit. Re-evaluate affected descendants only, and preserve unchanged branche
 | Source relocation with identical verified content | Locator validation only | All compatible artifacts |
 | Stronger source verification policy, unchanged content | Verification/assurance gate; rebuild only provenance that cannot meet it | Compatible artifacts with sufficient source assurance |
 | Camera calibration/prior or GPS update | Actual metadata consumers, downstream native-database assembly and descendants | Truly pixel-only features and unrelated pairing; rebuild current native camera records |
-| Capture timestamps, time base or source-group ordering | Selection/pairing/synchronization consumers | Unaffected pixels and descriptors |
+| Capture timestamps, time base or source/revision/stream timeline identity | Selection/pairing/synchronization consumers | Unaffected pixels and descriptors |
 | UI preferences, project label or log verbosity | No numerical stage | All numerical artifacts |
 
 A validation report is both evidence and a gate. Changing its policy re-evaluates

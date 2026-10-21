@@ -11,8 +11,8 @@ The post-M5/pre-M6 foundation repair is bounded to lock object/alias safety, nat
 Windows entrypoints, full candidate decode integrity, atomic state v1/v2/v3 upgrades,
 orientation/source-PTS semantics, fresh FFmpeg plan identity and exceptional teardown
 quarantine. Preserve these regressions in later milestones. Adapter version 2 changes
-candidate recipes; state v4 and candidate contract 1 stay unchanged. M6/PairSet and
-the pre-M7 scalability/operability work are separate tasks.
+candidate recipes; state v4 and candidate contract 1 stay unchanged. M6/PairSet is
+implemented; the pre-M7 scalability/operability work remains a separate task.
 
 ## Common instructions for every task
 
@@ -209,17 +209,19 @@ CPU-only support and CUDA/DLL failures. No heavy imports in core/UI for method l
 version-string-only compatibility claims or implicit component downloads.
 ```
 
-## M6 Minimal pair selection
+## M6 Minimal pair selection (implemented)
 
 Additional reading: [PIPELINE: pair selection](PIPELINE.md#pair-selection-and-native-execution)
-and [PIPELINE: invalidation](PIPELINE.md#invalidation-examples).
+and [PROJECT_FORMAT: recovery](PROJECT_FORMAT.md#attempts-publication-and-recovery).
 
-```text
-Implement typed PairSet, Sequential and budgeted Exhaustive selectors, plus explicit
-cross-group pairs for fixtures. Test chronology, ordering, duplicates/self-pairs,
-quadratic-budget refusal and per-group coverage. Use source groups, not filenames.
-Practical retrieval follows in M7c; spatial pairing in M13a. No fake implementations.
-```
+Implemented independently of branch name: `pairs build --views-run` resolves an exact
+successful M3/M4 views run, freezes its selected-view projection and publishes PairSet v1.
+Sequential timelines use source/revision/stream identity, never source groups or photo
+filenames. Budgeted Exhaustive and explicit selected-view edges share a bounded budget.
+Tests cover deterministic IDs/reasons, graph semantic versus recipe identity, coverage,
+cache/invalidation, upstream integrity, cancellation and orphan recovery. No project/state
+schema bump, image decode, native execution, local features or GPU work.
+Practical modern retrieval/hybrid benchmarking remains M7c; spatial pairing remains M13a.
 
 ## M7a Features
 
@@ -263,6 +265,9 @@ Additional reading: [PIPELINE: pair selection](PIPELINE.md#pair-selection-and-na
 [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
 
 ```text
+Evaluate modern retrieval/hybrid candidates using representative SplatForge datasets
+and both useful verified/reconstructed coverage and commercial redistribution constraints.
+Vocabulary Tree is not the final selected solution; no model is selected in M6.
 Implement one practical retrieval representation/index plus Sequential-within-clip
 and retrieval-across-clips hybrid pairing. Keep embedding/aggregation, weights,
 preprocessing, normalization/dimension, corpus, metric and index/query settings explicit.

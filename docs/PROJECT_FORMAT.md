@@ -391,6 +391,24 @@ and a moved selection artifact that differs from deterministic policy output, ar
 adopted. Unmoved partial workspaces remain diagnostic scratch. Valid candidate and
 quality publications stay reusable when a later stage is absent or cancelled.
 
+M6 adds the backwards-compatible `pairs.build` run route and `pairs.pair_set` contract 1
+without changing project/state schema versions. The route freezes exact candidate and
+selected handles from a successful explicit views run, their validated PairingViewUniverse,
+resolved pair settings, canonical explicit edges, resource limits and one future output
+reference. A cache hit creates no attempt and retains producer lineage; the new run
+snapshot records its own exact current inputs. Recipe identity uses the pairing projection,
+not upstream artifact UUIDs or complete selection policies.
+
+A PairSet attempt binds `candidate_views` and `selected_views`, writes only
+`pair_set.json`, and uses the existing expected-ID/manifest-digest-before-move protocol.
+Orphan adoption validates exact frozen lineage, full typed graph/digests/coverage and
+deterministic recipe output, with no accepted or pending cancellation. An indexed valid
+PairSet can finalize an unfinished run. Partial workspaces are never adopted. Cancellation
+checkpoints occur before generation, per timeline, every bounded candidate/record batch
+and before publication. Stage restart uses a new command; generic retry remains fake-only.
+No native worker teardown is required. Upstream byte integrity is checked without image
+decode or original-source verification for this metadata-only consumer.
+
 An accepted cancellation becomes terminal cancelled only after fake-stage execution has
 unwound and its handles are closed. If injected teardown confirmation fails, M1b2 keeps
 the run interrupted with unresolved teardown and blocks retry, adoption and publication;

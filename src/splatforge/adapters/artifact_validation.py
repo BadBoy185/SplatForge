@@ -1,4 +1,4 @@
-"""Bounded typed validation for the three currently published artifact families."""
+"""Bounded typed validation for published artifact families."""
 
 from __future__ import annotations
 
@@ -16,6 +16,11 @@ from splatforge.core.fake_pipeline import (
     NumbersPayload,
     ScaledNumbersPayload,
     semantic_digest,
+)
+from splatforge.core.pairs import (
+    MAX_PAIR_METADATA_BYTES,
+    PAIR_ARTIFACT_TYPE,
+    PairSet,
 )
 from splatforge.core.quality import (
     QUALITY_ARTIFACT_TYPE,
@@ -48,7 +53,8 @@ class ValidatedArtifact:
     payloads: tuple[PayloadFile, ...]
     semantic_digest: str
     parsed: (
-        NumbersPayload
+        PairSet
+        | NumbersPayload
         | ScaledNumbersPayload
         | CandidateViewSet
         | QualityReport
@@ -67,13 +73,17 @@ def stream_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> tuple[int, st
     return size, digest.hexdigest()
 
 
-def validate_workspace_output(output: Path, artifact_type: str) -> ValidatedArtifact:
+def validate_workspace_output(
+    output: Path, artifact_type: str, *, decode_pixels: bool = True
+) -> ValidatedArtifact:
     if not output.is_dir() or output.is_symlink() or output.is_junction():
         raise ValueError("Stage did not create a safe output directory")
     if artifact_type in {NUMBERS_ARTIFACT_TYPE, SCALED_ARTIFACT_TYPE}:
         return _validate_fake(output, artifact_type)
     if artifact_type == CANDIDATE_ARTIFACT_TYPE:
-        return _validate_candidate(output)
+        return _validate_candidate(output, decode_pixels=decode_pixels)
+    if artifact_type == PAIR_ARTIFACT_TYPE:
+        return _validate_pairs(output)
     if artifact_type == QUALITY_ARTIFACT_TYPE:
         return _validate_quality(output)
     if artifact_type == SELECTED_ARTIFACT_TYPE:
@@ -82,8 +92,12 @@ def validate_workspace_output(output: Path, artifact_type: str) -> ValidatedArti
 
 
 def validate_published_artifact(
-    artifact_directory: Path, manifest: ArtifactManifest
+    artifact_directory: Path, manifest: ArtifactManifest, *, decode_pixels: bool = True
 ) -> ValidatedArtifact:
+    if manifest.artifact_type == PAIR_ARTIFACT_TYPE and (
+        len(manifest.payloads) != 1 or manifest.payloads[0].path != "pair_set.json"
+    ):
+        raise ValueError("PairSet manifest requires exactly pair_set.json")
     if len(manifest.payloads) > MAX_PAYLOADS:
         raise ValueError("Artifact manifest declares too many payload files")
     paths = [payload.path for payload in manifest.payloads]
@@ -93,10 +107,16 @@ def validate_published_artifact(
         path = safe_payload_path(artifact_directory, payload.path)
         if not _plain_file(path):
             raise ValueError("Manifest payload is not a plain file")
+        if manifest.artifact_type == PAIR_ARTIFACT_TYPE and (
+            payload.size > MAX_PAIR_METADATA_BYTES or path.stat().st_size > MAX_PAIR_METADATA_BYTES
+        ):
+            raise ValueError("PairSet metadata exceeds its structural byte bound")
         size, digest = stream_sha256(path)
         if size != payload.size or digest != payload.sha256:
             raise ValueError("Published payload size or digest mismatch")
-    validated = validate_workspace_output(artifact_directory, manifest.artifact_type)
+    validated = validate_workspace_output(
+        artifact_directory, manifest.artifact_type, decode_pixels=decode_pixels
+    )
     if validated.payloads != manifest.payloads:
         raise ValueError("Published payload manifest differs from validated files")
     if validated.semantic_digest != manifest.semantic_digest:
@@ -123,7 +143,50 @@ def validate_published_artifact(
             or lineage["quality_report"].semantic_digest != validated.parsed.quality_semantic_digest
         ):
             raise ValueError("Sharpest selection provenance differs from lineage")
+    if isinstance(validated.parsed, PairSet):
+        validate_pair_lineage(validated.parsed, manifest)
     return validated
+
+
+def validate_pair_lineage(parsed: PairSet, manifest: ArtifactManifest) -> None:
+    """Check exact provenance before publication as well as on cache/recovery reads."""
+    lineage = {item.input_name: item for item in manifest.input_lineage}
+    if len(manifest.input_lineage) != 2 or set(lineage) != {
+        "candidate_views", "selected_views",
+    }:
+        raise ValueError("PairSet requires exactly candidate and selected lineage")
+    for name, artifact_id, digest, artifact_type in (
+        ("candidate_views", parsed.candidate_artifact_id, parsed.candidate_semantic_digest,
+         CANDIDATE_ARTIFACT_TYPE),
+        ("selected_views", parsed.selected_artifact_id, parsed.selected_semantic_digest,
+         SELECTED_ARTIFACT_TYPE),
+    ):
+        item = lineage[name]
+        if (item.artifact_id != artifact_id or item.semantic_digest != digest
+                or item.artifact_type != artifact_type or item.contract_version != 1):
+            raise ValueError("PairSet provenance differs from manifest lineage")
+
+
+def _validate_pairs(output: Path) -> ValidatedArtifact:
+    entries = set()
+    for index, path in enumerate(output.iterdir()):
+        if index >= 2:
+            raise ValueError("PairSet output must contain exactly pair_set.json")
+        entries.add(path.name)
+    if entries not in ({"pair_set.json"}, {"pair_set.json", "manifest.json"}):
+        raise ValueError("PairSet output must contain exactly pair_set.json")
+    metadata = output / "pair_set.json"
+    if not _plain_file(metadata):
+        raise ValueError("PairSet metadata must be a plain file")
+    parsed = PairSet.model_validate_json(
+        _read_bounded(metadata, MAX_PAIR_METADATA_BYTES, "PairSet metadata")
+    )
+    size, digest = stream_sha256(metadata)
+    return ValidatedArtifact(
+        payloads=(PayloadFile(path="pair_set.json", size=size, sha256=digest),),
+        semantic_digest=parsed.semantic_digest,
+        parsed=parsed,
+    )
 
 
 def _validate_fake(output: Path, artifact_type: str) -> ValidatedArtifact:
@@ -148,7 +211,7 @@ def _validate_fake(output: Path, artifact_type: str) -> ValidatedArtifact:
     )
 
 
-def _validate_candidate(output: Path) -> ValidatedArtifact:
+def _validate_candidate(output: Path, *, decode_pixels: bool = True) -> ValidatedArtifact:
     entries = {path.name: path for path in output.iterdir()}
     allowed = {"candidate_views.json", "images", "manifest.json"}
     if not set(entries).issubset(allowed) or not {"candidate_views.json", "images"}.issubset(
@@ -193,7 +256,8 @@ def _validate_candidate(output: Path) -> ValidatedArtifact:
             raise ValueError(f"Candidate image dimensions disagree for {view.view_id}")
         if image_format != parsed.settings.encoding.image_format:
             raise ValueError(f"Candidate image encoding disagrees for {view.view_id}")
-        validate_decodable_image(image_path, width, height, image_format)
+        if decode_pixels:
+            validate_decodable_image(image_path, width, height, image_format)
         size, digest = stream_sha256(image_path)
         if digest != view.image_sha256:
             raise ValueError(f"Candidate image digest disagrees for {view.view_id}")

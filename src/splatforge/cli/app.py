@@ -13,11 +13,18 @@ from splatforge.bootstrap import (
     build_doctor_service,
     build_execution_service,
     build_media_service,
+    build_pairs_service,
     build_project_service,
     build_views_service,
 )
 from splatforge.core import build_builtin_registry, recommended_flat_video_profile
 from splatforge.core.media import VerificationPolicyId
+from splatforge.core.pairs import (
+    ExhaustiveSettings,
+    PairResourceLimits,
+    SequentialSettings,
+    parse_explicit_pair,
+)
 from splatforge.core.quality import (
     QualityAnalysisSettings,
     SharpestIntervalSettings,
@@ -43,6 +50,10 @@ media_app = typer.Typer(no_args_is_help=True, help="Read-only media registration
 app.add_typer(media_app, name="media")
 views_app = typer.Typer(no_args_is_help=True, help="Candidate views and frame selection")
 app.add_typer(views_app, name="views")
+
+
+pairs_app = typer.Typer(no_args_is_help=True, help="Deterministic candidate view graphs")
+app.add_typer(pairs_app, name="pairs")
 
 
 @project_app.command("create")
@@ -306,7 +317,8 @@ def methods() -> None:
     registry = build_builtin_registry()
     for method in registry.list():
         suffix = " [experimental]" if method.experimental else ""
-        typer.echo(f"{method.stage.value:20} {method.id:42} {method.display_name}{suffix}")
+        note = f" — {method.notes}" if method.notes else ""
+        typer.echo(f"{method.stage.value:20} {method.id:42} {method.display_name}{suffix}{note}")
 
 
 @app.command()
@@ -339,6 +351,43 @@ def show_default_config() -> None:
     registry = build_builtin_registry()
     registry.validate_pipeline(config)
     typer.echo(json.dumps(config.model_dump(mode="json"), indent=2))
+
+
+@pairs_app.command("build")
+def build_pairs(
+    path: Path,
+    views_run: Annotated[UUID, typer.Option("--views-run")],
+    method: str = typer.Option("sequential", "--method"),
+    forward_neighbors: int | None = typer.Option(None, "--forward-neighbors"),
+    max_time_gap: str | None = typer.Option(None, "--max-time-gap"),
+    pair: Annotated[list[str] | None, typer.Option("--pair")] = None,
+    max_pairs: int = typer.Option(100_000, "--max-pairs"),
+) -> None:
+    try:
+        if method == "sequential":
+            settings = SequentialSettings(
+                forward_neighbors=5 if forward_neighbors is None else forward_neighbors,
+                max_time_gap=(
+                    parse_non_negative_rational(max_time_gap) if max_time_gap is not None else None
+                ),
+            )
+        elif method == "exhaustive":
+            if forward_neighbors is not None or max_time_gap is not None:
+                raise ValueError("Exhaustive rejects --forward-neighbors and --max-time-gap")
+            settings = ExhaustiveSettings()
+        else:
+            raise ValueError("--method must be sequential or exhaustive")
+        result = build_pairs_service().build(
+            path,
+            views_run_id=views_run,
+            settings=settings,
+            resource_limits=PairResourceLimits(max_pairs=max_pairs),
+            explicit_pairs=tuple(parse_explicit_pair(v) for v in (pair or [])),
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":

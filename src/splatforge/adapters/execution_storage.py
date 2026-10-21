@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from splatforge.adapters.artifact_validation import (
     MAX_MANIFEST_BYTES,
+    validate_pair_lineage,
     validate_published_artifact,
     validate_workspace_output,
 )
@@ -45,6 +46,7 @@ from splatforge.core.execution import (
     CancellationRequestResult,
     FailureCategory,
     FakeRoute,
+    PairSelectionRoute,
     RecoveryResult,
     RunSnapshot,
     RunStatus,
@@ -61,6 +63,15 @@ from splatforge.core.fake_pipeline import (
     sha256_bytes,
 )
 from splatforge.core.media import SourceOccurrence, VerificationPolicyId
+from splatforge.core.pairs import (
+    PAIR_ARTIFACT_TYPE,
+    PairSet,
+    SequentialSettings,
+    exhaustive_recipe_key,
+    generate_pairs,
+    project_pairing_universe,
+    sequential_recipe_key,
+)
 from splatforge.core.project import ProjectDocument
 from splatforge.core.quality import (
     QualityReport,
@@ -705,6 +716,8 @@ class LocalExecutionRepository:
                 validator_id=f"{artifact_type}.integrity", validator_version=1
             ),
         )
+        if isinstance(validated.parsed, PairSet):
+            validate_pair_lineage(validated.parsed, manifest)
         manifest_bytes = manifest.model_dump_json(indent=2).encode("utf-8") + b"\n"
         if len(manifest_bytes) > MAX_MANIFEST_BYTES:
             raise ValueError("Artifact manifest exceeds its explicit size limit")
@@ -914,6 +927,68 @@ class LocalExecutionRepository:
             raise ValueError("Artifact is not a supported SelectedViewSet")
         return validated.parsed
 
+    def resolve_run_output(
+        self,
+        root: Path,
+        run_id: UUID,
+        node_id: str,
+        output_name: str,
+    ) -> ArtifactHandle:
+        snapshot = self._load_run_snapshot(root, run_id)
+        if not isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute)):
+            raise ValueError("--views-run requires a completed views preparation run")
+        with self._read_connection(root) as connection:
+            run = connection.execute(
+                "SELECT status FROM runs WHERE run_id=?", (str(run_id),)
+            ).fetchone()
+            row = connection.execute(
+                """SELECT a.artifact_id, a.artifact_type, a.contract_version, a.recipe_key,
+                          a.semantic_digest, a.manifest_path
+                   FROM run_outputs o JOIN artifacts a ON a.artifact_id=o.artifact_id
+                   WHERE o.run_id=? AND o.node_id=? AND o.output_name=?""",
+                (str(run_id), node_id, output_name),
+            ).fetchone()
+        if run is None or run[0] != "succeeded":
+            raise ValueError("--views-run must reference a succeeded views run")
+        if row is None:
+            raise ValueError(f"Views run has no indexed {node_id}/{output_name} output")
+        handle = ArtifactHandle(
+            artifact_id=UUID(row[0]),
+            artifact_type=row[1],
+            contract_version=row[2],
+            recipe_key=row[3],
+            semantic_digest=row[4],
+            manifest_path=row[5],
+        )
+        self._validate_indexed_artifact(root, handle, metadata_only=True)
+        return handle
+
+    def load_pairing_inputs(
+        self,
+        root: Path,
+        candidate: ArtifactHandle,
+        selected: ArtifactHandle,
+    ) -> tuple[CandidateViewSet, SelectedViewSet | SharpestSelectedViewSet]:
+        result = []
+        for handle in (candidate, selected):
+            manifest, directory = self._validate_indexed_artifact(root, handle, metadata_only=True)
+            result.append(
+                validate_published_artifact(directory, manifest, decode_pixels=False).parsed
+            )
+        if not isinstance(result[0], CandidateViewSet) or not isinstance(
+            result[1], (SelectedViewSet, SharpestSelectedViewSet)
+        ):
+            raise ValueError("Pairing requires CandidateViewSet and a supported SelectedViewSet")
+        project_pairing_universe(result[0], result[1])
+        return result[0], result[1]
+
+    def load_pair_set(self, root: Path, handle: ArtifactHandle) -> PairSet:
+        manifest, directory = self._validate_indexed_artifact(root, handle)
+        parsed = validate_published_artifact(directory, manifest, decode_pixels=False).parsed
+        if not isinstance(parsed, PairSet):
+            raise ValueError("Artifact is not a PairSet")
+        return parsed
+
     def load_quality_report(self, root: Path, artifact: ArtifactHandle) -> QualityReport:
         manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
         validated = validate_published_artifact(artifact_directory, manifest)
@@ -1051,6 +1126,8 @@ class LocalExecutionRepository:
         outputs = self._load_valid_run_outputs(root, run_id)
         if isinstance(snapshot.route, FakeRoute):
             required = {snapshot.route.sequence.node_id, snapshot.route.scale.node_id}
+        elif isinstance(snapshot.route, PairSelectionRoute):
+            required = {snapshot.route.node_id}
         elif isinstance(snapshot.route, SharpestViewPreparationRoute):
             required = {
                 snapshot.route.candidate.node_id,
@@ -1326,6 +1403,21 @@ class LocalExecutionRepository:
                 expected_literal_inputs = {}
             else:
                 raise ValueError("Attempt node is not present in the frozen fake route")
+        elif isinstance(route, PairSelectionRoute):
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("Attempt node is absent from frozen pair route")
+            candidate, selected = self.load_pairing_inputs(root, route.candidate, route.selected)
+            if project_pairing_universe(candidate, selected) != route.universe:
+                raise ValueError("Pair route projection differs from validated upstream inputs")
+            output = route.target
+            key_function = (
+                sequential_recipe_key
+                if isinstance(route.settings, SequentialSettings)
+                else exhaustive_recipe_key
+            )
+            expected_recipe_key = key_function(route.universe, route.settings, route.explicit_pairs)
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
         elif attempt["node_id"] == route.candidate.node_id:
             node = route.candidate
             output = node.output
@@ -1465,7 +1557,27 @@ class LocalExecutionRepository:
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if isinstance(validated.parsed, QualityReport):
+        if isinstance(route, PairSelectionRoute):
+            if not isinstance(validated.parsed, PairSet):
+                raise ValueError("Orphan pair payload has wrong contract")
+            parsed = validated.parsed
+            if (
+                parsed.universe != route.universe
+                or parsed.settings != route.settings
+                or parsed.explicit_pairs != route.explicit_pairs
+                or parsed.candidate_artifact_id != route.candidate.artifact_id
+                or parsed.selected_artifact_id != route.selected.artifact_id
+                or parsed.selected_method_id != selected.selection_method_id
+                or parsed.pairs
+                != generate_pairs(
+                    route.universe,
+                    settings=route.settings,
+                    limits=route.resource_limits,
+                    explicit_pairs=route.explicit_pairs,
+                )
+            ):
+                raise ValueError("Orphan PairSet differs from frozen recipe or lineage")
+        elif isinstance(validated.parsed, QualityReport):
             if consumed_candidate is None or candidate_artifact is None:
                 raise ValueError("Orphan quality payload has no consumed candidate")
             validate_quality_against_candidate(validated.parsed, consumed_candidate)
@@ -1652,10 +1764,13 @@ class LocalExecutionRepository:
         root: Path,
         handle: ArtifactHandle,
         _seen: frozenset[UUID] = frozenset(),
+        *,
+        metadata_only: bool = False,
     ) -> tuple[ArtifactManifest, Path]:
         if handle.artifact_id in _seen:
             raise ValueError("Artifact lineage contains a cycle")
         seen = _seen | {handle.artifact_id}
+        metadata_only = metadata_only or handle.artifact_type == PAIR_ARTIFACT_TYPE
         manifest_path = self._owned_path(root, handle.manifest_path)
         with self._read_connection(root) as connection:
             row = connection.execute(
@@ -1693,7 +1808,7 @@ class LocalExecutionRepository:
         ):
             raise ValueError("Manifest identity or contract mismatch")
         artifact_directory = manifest_path.parent
-        validate_published_artifact(artifact_directory, manifest)
+        validate_published_artifact(artifact_directory, manifest, decode_pixels=not metadata_only)
         for lineage in manifest.input_lineage:
             with self._read_connection(root) as connection:
                 upstream = connection.execute(
@@ -1720,7 +1835,9 @@ class LocalExecutionRepository:
                 semantic_digest=lineage.semantic_digest,
                 manifest_path=upstream[0],
             )
-            self._validate_indexed_artifact(root, upstream_handle, seen)
+            self._validate_indexed_artifact(
+                root, upstream_handle, seen, metadata_only=metadata_only
+            )
         return manifest, artifact_directory
 
     @staticmethod

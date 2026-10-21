@@ -17,6 +17,14 @@ from pydantic import (
 )
 
 from splatforge.core.media import ExecutableIdentity, SourceOccurrence, VerificationPolicyId
+from splatforge.core.pairs import (
+    PAIR_ARTIFACT_TYPE,
+    PairEndpoints,
+    PairingViewUniverse,
+    PairResourceLimits,
+    PairSettings,
+    canonical_explicit_pairs,
+)
 from splatforge.core.project import ProjectDocument
 from splatforge.core.quality import (
     QUALITY_ARTIFACT_CONTRACT_VERSION,
@@ -243,27 +251,6 @@ class SharpestViewPreparationRoute(FrozenModel):
         return self
 
 
-class RunSnapshot(FrozenModel):
-    schema_version: Literal[1] = 1
-    run_id: UUID
-    project_id: UUID
-    project_revision: int = Field(ge=0, strict=True)
-    owner_token: UUID
-    created_at: AwareDatetime
-    project_intent: ProjectDocument
-    route: Annotated[
-        FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute,
-        Field(discriminator="route_id"),
-    ]
-
-    @field_validator("created_at")
-    @classmethod
-    def timestamp_must_be_utc(cls, value: AwareDatetime) -> AwareDatetime:
-        if value.utcoffset() != timedelta(0):
-            raise ValueError("run timestamps must use UTC")
-        return value
-
-
 class CancellationRequest(FrozenModel):
     schema_version: Literal[1] = 1
     request_id: UUID
@@ -322,6 +309,82 @@ class ArtifactHandle(FrozenModel):
     recipe_key: str
     semantic_digest: str
     manifest_path: str
+
+
+class PairSelectionRoute(FrozenModel):
+    route_id: Literal["pairs.build"] = "pairs.build"
+    route_version: Literal[1] = 1
+    views_run_id: UUID
+    candidate: ArtifactHandle
+    selected: ArtifactHandle
+    universe: PairingViewUniverse
+    settings: PairSettings
+    explicit_pairs: tuple[PairEndpoints, ...] = Field(max_length=1_000_000)
+    resource_limits: PairResourceLimits
+    node_id: Literal["pair_set"] = "pair_set"
+    target: OutputReference = OutputReference(
+        node_id="pair_set",
+        output_name="pairs",
+        artifact_type=PAIR_ARTIFACT_TYPE,
+        contract_version=1,
+    )
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(
+            ArtifactInputLineage(input_name=name, **handle.model_dump(exclude={"manifest_path"}))
+            for name, handle in (
+                ("candidate_views", self.candidate),
+                ("selected_views", self.selected),
+            )
+        )
+
+    def literal_inputs(self) -> dict[str, object]:
+        return {
+            "pair_settings": self.settings.model_dump(mode="json"),
+            "explicit_pairs": [p.model_dump(mode="json") for p in self.explicit_pairs],
+            "resource_limits": self.resource_limits.model_dump(mode="json"),
+        }
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> PairSelectionRoute:
+        if (
+            self.candidate.artifact_type != CANDIDATE_ARTIFACT_TYPE
+            or self.selected.artifact_type != SELECTED_ARTIFACT_TYPE
+            or self.candidate.contract_version != 1
+            or self.selected.contract_version != 1
+        ):
+            raise ValueError("pair route requires candidate/selected contract 1")
+        if self.target != OutputReference(
+            node_id=self.node_id,
+            output_name="pairs",
+            artifact_type=PAIR_ARTIFACT_TYPE,
+            contract_version=1,
+        ):
+            raise ValueError("pair output reference differs from PairSet v1")
+        if self.explicit_pairs != canonical_explicit_pairs(self.universe, self.explicit_pairs):
+            raise ValueError("pair route explicit pairs are not canonical")
+        return self
+
+
+class RunSnapshot(FrozenModel):
+    schema_version: Literal[1] = 1
+    run_id: UUID
+    project_id: UUID
+    project_revision: int = Field(ge=0, strict=True)
+    owner_token: UUID
+    created_at: AwareDatetime
+    project_intent: ProjectDocument
+    route: Annotated[
+        FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute,
+        Field(discriminator="route_id"),
+    ]
+
+    @field_validator("created_at")
+    @classmethod
+    def timestamp_must_be_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        if value.utcoffset() != timedelta(0):
+            raise ValueError("run timestamps must use UTC")
+        return value
 
 
 class CacheIneligible(FrozenModel):

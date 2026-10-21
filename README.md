@@ -16,7 +16,7 @@ inputs come later through preprocessing into perspective views.
 
 The repository contains configuration models, a method catalog, safe local project
 persistence, the M1b2 fake-stage execution/recovery slice, M2 media ingest, the M3
-candidate-view/fixed-FPS route and M4 quality-aware selection. The CLI
+candidate-view/fixed-FPS route, M4 quality-aware selection and M6 deterministic PairSet construction. The CLI
 can create/show projects, upgrade historical state v1/v2/v3 to v4, register/list/verify/
 relink ordinary JPEG/PNG/MP4/MOV sources, and execute or inspect the deterministic fake
 route. `views prepare` materializes bounded JPEG/PNG candidate pixels from registered
@@ -28,8 +28,9 @@ Saved intent lives in `project.json`; immutable input inventories live under
 Project saves and fake runs share one OS-held Windows writer lock. Fake outputs are
 validated before immutable publication and cache reuse rechecks manifests and payload
 digests. A second CLI can create the bounded `cancel.request` without taking that lock;
-the owner durably accepts it before stopping, publishing or succeeding. Recovery and
-manual bounded retry remain specific to in-process fake stages; an interrupted M3 route
+the owner durably accepts it before stopping, publishing or succeeding. Manual bounded
+retry remains specific to in-process fake stages; publication recovery validates
+interrupted M3/M4/M6 runs. An interrupted M3 route
 restarts as a new command and reuses only completed stage artifacts. M2 streams source
 hashes, normalizes FFprobe metadata and runs external processes with bounded output,
 timeouts, cancellation and Windows Job Object containment. M3 uses that boundary for
@@ -40,7 +41,8 @@ the reusable report, records a typed decision for every candidate and compares v
 duplicates only against a bounded same-clip accepted history. M5 adds project-free,
 read-only COLMAP/GPU diagnostics with exact binary identity, bounded command/help
 discovery, model evidence, native-database compatibility and optional CPU/GPU SIFT
-smoke probes. Feature extraction, matching, mapping, training and GUI remain planned.
+smoke probes. M6 builds immutable metadata-only candidate view graphs independently of
+COLMAP/GPU or local features. Feature extraction, matching, mapping, training and GUI remain planned.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 These commands work in the foundation:
@@ -71,6 +73,33 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 ```
+
+`splatforge pairs build` requires the exact successful `views prepare` run ID, supports
+both selection variants, and never chooses a latest artifact. For example:
+
+```powershell
+splatforge pairs build "C:\SplatForge Projects\First scene" --views-run <views-run-id> --method sequential --forward-neighbors 5 --max-time-gap 3/2 --max-pairs 100000
+splatforge pairs build "C:\SplatForge Projects\First scene" --views-run <views-run-id> --method exhaustive --max-pairs 100000
+splatforge pairs build "C:\SplatForge Projects\First scene" --views-run <views-run-id> --pair <view-id>:<other-view-id>
+```
+
+Sequential connects timestamp neighbors independently within each video clip/stream;
+a shared source group does not join clip timelines. Unordered photos stay isolated
+unless explicit pairs connect them. Exhaustive connects all selected observations,
+refusing `N(N-1)/2` above the budget before materializing pairs. Explicit edges merge
+with generated edges, preserve both reasons, and count towards the same budget.
+Exhaustive rejects Sequential-only options. Gaps accept exact decimal/integer/fraction
+seconds. The 100,000-pair default is conservative for development; the structural
+PairSet v1 limit is 1,000,000 sparse pairs and 768 MiB metadata.
+
+The JSON result reports artifact handle, cache hit, pair/isolated/component counts,
+cross-source/group coverage and warnings without dumping all pairs. Disconnected clips
+and isolated photos are diagnostics; candidate connectivity does not prove successful
+SfM. M6 validates published hashes without decoding images or accessing originals.
+Its one-node attempts support durable cancellation and safe publication recovery via
+`run recover`; interrupted work regenerates in a new `pairs build` run. Generic
+`run retry` remains fake-only. Practical cross-clip retrieval remains M7c and spatial
+pairing remains later; no embeddings, matching, COLMAP processing or GPU work occurs.
 
 Creation requires a missing or empty directory. It creates `project.json`,
 `project.lock` and state schema v4 in `state.sqlite`; source and execution directories
@@ -190,4 +219,5 @@ translation/benchmarking stays with training integration.
 | [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
 
 Keep source media, generated projects, model weights and training output outside the
-repository. Next is **M6 — minimal pair selection**.
+repository. M6 PairSet is implemented. The separate pre-M7 scalability/operability
+pass precedes M7 features/matching; practical retrieval remains M7c.

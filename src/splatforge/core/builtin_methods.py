@@ -36,21 +36,25 @@ def build_builtin_registry() -> MethodRegistry:
             id="pair_selection.sequential",
             display_name="Sequential",
             stage=StageKind.PAIR_SELECTION,
+            notes="Implemented v1; metadata-only via pairs build; no COLMAP/GPU required",
         ),
         MethodSpec(
             id="pair_selection.exhaustive",
             display_name="Exhaustive",
             stage=StageKind.PAIR_SELECTION,
+            notes="Implemented v1; metadata-only via pairs build; no COLMAP/GPU required",
         ),
         MethodSpec(
             id="pair_selection.vocab_tree",
             display_name="Vocabulary tree / retrieval",
             stage=StageKind.PAIR_SELECTION,
+            notes="Catalog only; not implemented or runnable",
         ),
         MethodSpec(
             id="pair_selection.spatial",
             display_name="Spatial / GPS",
             stage=StageKind.PAIR_SELECTION,
+            notes="Catalog only; not implemented or runnable",
         ),
         MethodSpec(
             id="feature_matching.lightglue_aliked",
