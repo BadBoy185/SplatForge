@@ -1,4 +1,4 @@
-"""Local SQLite/filesystem execution state for the concrete fake route."""
+"""Local SQLite/filesystem execution state for fake and concrete M3 routes."""
 
 from __future__ import annotations
 
@@ -17,6 +17,11 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
+from splatforge.adapters.artifact_validation import (
+    MAX_MANIFEST_BYTES,
+    validate_published_artifact,
+    validate_workspace_output,
+)
 from splatforge.adapters.project_lock import (
     ProjectWriterLockFactory,
     WindowsProjectWriterLock,
@@ -39,25 +44,30 @@ from splatforge.core.execution import (
     CancellationRequest,
     CancellationRequestResult,
     FailureCategory,
-    PayloadFile,
+    FakeRoute,
     RecoveryResult,
     RunSnapshot,
     RunStatus,
     RunWarning,
     ValidationResult,
+    ViewPreparationRoute,
 )
 from splatforge.core.fake_pipeline import (
-    NUMBERS_ARTIFACT_TYPE,
-    SCALED_ARTIFACT_TYPE,
     NumbersPayload,
-    ScaledNumbersPayload,
     canonical_json_bytes,
     scale_recipe_key,
-    semantic_digest,
     sequence_recipe_key,
     sha256_bytes,
 )
+from splatforge.core.media import SourceOccurrence, VerificationPolicyId
 from splatforge.core.project import ProjectDocument
+from splatforge.core.views import (
+    CandidateViewSet,
+    SelectedViewSet,
+    candidate_recipe_key,
+    selection_recipe_key,
+    validate_selected_against_candidate,
+)
 
 
 def _no_fault(_path: Path) -> None:
@@ -90,16 +100,19 @@ class LocalExecutionRepository:
         self._lock_factory = lock_factory
         self._fault_hooks = fault_hooks or ExecutionFaultHooks()
         self._monotonic_starts: dict[UUID, float] = {}
+        self._event_sequences: dict[UUID, int] = {}
 
     @contextmanager
-    def writer(self, root: Path, *, owner_token: UUID) -> Iterator[None]:
+    def writer(
+        self, root: Path, *, owner_token: UUID, operation: str = "fake-run"
+    ) -> Iterator[None]:
         root = root.resolve()
         # Read-only preflight avoids creating a lock for an invalid or unsupported project.
         self._project_store.inspect(root)
         with self._lock_factory(root / "project.lock") as lease:
             # Refuse a raced unsupported format before changing lock diagnostics.
             self._project_store.inspect(root)
-            lease.write_diagnostics(operation="fake-run", owner_token=owner_token)
+            lease.write_diagnostics(operation=operation, owner_token=owner_token)
             yield
 
     def inspect_project(self, root: Path) -> LocalExecutionProject:
@@ -121,6 +134,13 @@ class LocalExecutionRepository:
                 ORDER BY created_at, attempt_id
                 """
             ).fetchone()
+            unresolved_teardown = connection.execute(
+                """
+                SELECT attempt_id FROM attempts
+                WHERE teardown_state='unresolved'
+                ORDER BY created_at, attempt_id
+                """
+            ).fetchone()
         if unfinished_run is not None:
             raise UnresolvedExecutionError(
                 "An unfinished run blocks execution until M1b2 recovery: " + unfinished_run[0]
@@ -128,6 +148,11 @@ class LocalExecutionRepository:
         if active_attempt is not None:
             raise UnresolvedExecutionError(
                 "An unresolved attempt blocks execution until M1b2 recovery: " + active_attempt[0]
+            )
+        if unresolved_teardown is not None:
+            raise UnresolvedExecutionError(
+                "Unresolved external process teardown blocks new execution: "
+                + unresolved_teardown[0]
             )
 
     def create_run(self, root: Path, snapshot: RunSnapshot) -> None:
@@ -184,6 +209,7 @@ class LocalExecutionRepository:
         except sqlite3.Error as exc:
             raise ProjectError(f"Could not persist run state: {exc}") from exc
         self._monotonic_starts[snapshot.run_id] = time.monotonic()
+        self._event_sequences[snapshot.run_id] = 0
         self._fault_hooks.after_run_record(root)
 
     def request_cancellation(self, root: Path, *, run_id: UUID) -> CancellationRequestResult:
@@ -370,11 +396,10 @@ class LocalExecutionRepository:
         try:
             root = root.resolve()
             path = self._owned_path(root, f"runs/{run_id}/events.jsonl")
-            sequence = 1
-            if path.exists():
-                lines = path.read_text(encoding="utf-8").splitlines()
-                if lines:
-                    sequence = int(json.loads(lines[-1])["sequence"]) + 1
+            previous_sequence = self._event_sequences.get(run_id)
+            if previous_sequence is None:
+                previous_sequence = self._last_event_sequence(path)
+            sequence = previous_sequence + 1
             with self._read_connection(root) as connection:
                 row = connection.execute(
                     "SELECT project_id FROM runs WHERE run_id=?", (str(run_id),)
@@ -397,11 +422,14 @@ class LocalExecutionRepository:
                 "details": details or {},
             }
             data = canonical_json_bytes(event) + b"\n"
+            if len(data) > 1024 * 1024:
+                raise ValueError("Execution event exceeds its 1 MiB bound")
             with path.open("ab") as stream:
                 if stream.write(data) != len(data):
                     raise OSError("Could not append complete execution event")
                 stream.flush()
                 os.fsync(stream.fileno())
+            self._event_sequences[run_id] = sequence
         except (
             OSError,
             TypeError,
@@ -416,6 +444,19 @@ class LocalExecutionRepository:
             )
         return None
 
+    @staticmethod
+    def _last_event_sequence(path: Path) -> int:
+        if not path.exists():
+            return 0
+        size = path.stat().st_size
+        with path.open("rb") as stream:
+            stream.seek(max(0, size - 1024 * 1024))
+            tail = stream.read(1024 * 1024)
+        lines = tail.splitlines()
+        if not lines:
+            return 0
+        return int(json.loads(lines[-1].decode("utf-8"))["sequence"])
+
     def find_cache(
         self,
         root: Path,
@@ -423,12 +464,15 @@ class LocalExecutionRepository:
         recipe_key: str,
         artifact_type: str,
         contract_version: int,
+        source_requirements: tuple[SourceOccurrence, ...] = (),
+        verification_policy: VerificationPolicyId | None = None,
     ) -> CacheLookup:
         root = root.resolve()
         with self._read_connection(root) as connection:
             rows = connection.execute(
                 """
-                SELECT a.artifact_id, a.recipe_key, a.semantic_digest, a.manifest_path
+                SELECT a.artifact_id, a.recipe_key, a.semantic_digest, a.manifest_path,
+                       t.source_verification_json
                 FROM artifacts a
                 JOIN attempts t ON t.attempt_id = a.producer_attempt_id
                 WHERE a.recipe_key=? AND a.artifact_type=? AND a.contract_version=?
@@ -447,6 +491,17 @@ class LocalExecutionRepository:
                 semantic_digest=row[2],
                 manifest_path=row[3],
             )
+            try:
+                self._require_cache_verification(
+                    row[4],
+                    sources=source_requirements,
+                    policy=verification_policy,
+                )
+            except (ValueError, json.JSONDecodeError) as exc:
+                ineligible.append(
+                    CacheIneligible(artifact_id=handle.artifact_id, reason=str(exc))
+                )
+                continue
             try:
                 self._validate_indexed_artifact(root, handle)
             except (OSError, ValueError, ValidationError, json.JSONDecodeError) as exc:
@@ -484,6 +539,8 @@ class LocalExecutionRepository:
         recipe_key: str,
         input_artifact_ids: tuple[UUID, ...],
         literal_inputs: dict[str, object],
+        environment: dict[str, object] | None = None,
+        source_verification: dict[str, object] | None = None,
         retry: bool = False,
     ) -> AttemptExecution:
         root = root.resolve()
@@ -544,13 +601,17 @@ class LocalExecutionRepository:
                     canonical_json_bytes([str(value) for value in input_artifact_ids]).decode(),
                     canonical_json_bytes(literal_inputs).decode(),
                     canonical_json_bytes(
-                        {
+                        environment
+                        or {
                             "adapter_id": "splatforge.fake_python",
                             "adapter_version": 1,
                             "python_version": platform.python_version(),
                         }
                     ).decode(),
-                    canonical_json_bytes({"policy": "not_applicable", "evidence": []}).decode(),
+                    canonical_json_bytes(
+                        source_verification
+                        or {"policy": "not_applicable", "evidence": []}
+                    ).decode(),
                     retry_of_attempt_id,
                     now,
                 ),
@@ -578,6 +639,32 @@ class LocalExecutionRepository:
             raise
         return AttemptExecution(attempt_id=attempt_id, workspace=str(workspace))
 
+    def update_attempt_provenance(
+        self,
+        root: Path,
+        *,
+        attempt_id: UUID,
+        environment: dict[str, object],
+        source_verification: dict[str, object],
+    ) -> None:
+        environment_json = canonical_json_bytes(environment).decode()
+        verification_json = canonical_json_bytes(source_verification).decode()
+        if len(environment_json.encode("utf-8")) > 1024 * 1024:
+            raise ProjectError("Attempt environment provenance exceeds 1 MiB")
+        if len(verification_json.encode("utf-8")) > 16 * 1024 * 1024:
+            raise ProjectError("Attempt source-verification provenance exceeds 16 MiB")
+        with self._write_connection(root) as connection, connection:
+            updated = connection.execute(
+                """
+                UPDATE attempts
+                SET environment_json=?, source_verification_json=?
+                WHERE attempt_id=? AND status='running'
+                """,
+                (environment_json, verification_json, str(attempt_id)),
+            )
+            if updated.rowcount != 1:
+                raise ProjectError("Running attempt was unavailable for provenance update")
+
     def publish_attempt(
         self,
         root: Path,
@@ -594,10 +681,8 @@ class LocalExecutionRepository:
         root = root.resolve()
         workspace = Path(attempt.workspace)
         output = workspace / "output"
-        payload_name, parsed = self._validate_candidate(output, artifact_type)
-        payload_path = output / payload_name
-        payload_bytes = payload_path.read_bytes()
-        content_digest = semantic_digest(parsed)
+        validated = validate_workspace_output(output, artifact_type)
+        content_digest = validated.semantic_digest
         artifact_id = uuid4()
         manifest = ArtifactManifest(
             artifact_id=artifact_id,
@@ -609,18 +694,14 @@ class LocalExecutionRepository:
             recipe_key=recipe_key,
             semantic_digest=content_digest,
             input_lineage=input_lineage,
-            payloads=(
-                PayloadFile(
-                    path=payload_name,
-                    size=len(payload_bytes),
-                    sha256=sha256_bytes(payload_bytes),
-                ),
-            ),
+            payloads=validated.payloads,
             validation=ValidationResult(
                 validator_id=f"{artifact_type}.integrity", validator_version=1
             ),
         )
         manifest_bytes = manifest.model_dump_json(indent=2).encode("utf-8") + b"\n"
+        if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+            raise ValueError("Artifact manifest exceeds its explicit size limit")
         self._write_new_file(output / "manifest.json", manifest_bytes)
         manifest_digest = sha256_bytes(manifest_bytes)
 
@@ -743,6 +824,42 @@ class LocalExecutionRepository:
                 ),
             )
 
+    def mark_external_interrupted(
+        self,
+        root: Path,
+        *,
+        run_id: UUID,
+        attempt_id: UUID,
+        message: str,
+    ) -> None:
+        now = self._now()
+        with self._write_connection(root) as connection, connection:
+            connection.execute(
+                """
+                UPDATE attempts
+                SET status='interrupted', finished_at=?, failure_json=?,
+                    failure_category='interrupted', teardown_state='unresolved'
+                WHERE attempt_id=? AND run_id=? AND status IN ('pending', 'running')
+                """,
+                (
+                    now,
+                    canonical_json_bytes({"message": message}).decode(),
+                    str(attempt_id),
+                    str(run_id),
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE runs SET status='interrupted', finished_at=?, failure_json=?
+                WHERE run_id=? AND status='running'
+                """,
+                (
+                    now,
+                    canonical_json_bytes({"message": message}).decode(),
+                    str(run_id),
+                ),
+            )
+
     def mark_run_failed(self, root: Path, *, run_id: UUID, message: str) -> None:
         with self._write_connection(root) as connection, connection:
             connection.execute(
@@ -775,6 +892,24 @@ class LocalExecutionRepository:
         payload = artifact_directory / manifest.payloads[0].path
         return NumbersPayload.model_validate_json(payload.read_bytes())
 
+    def load_candidate_views(
+        self, root: Path, artifact: ArtifactHandle
+    ) -> CandidateViewSet:
+        manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
+        validated = validate_published_artifact(artifact_directory, manifest)
+        if not isinstance(validated.parsed, CandidateViewSet):
+            raise ValueError("Artifact is not a CandidateViewSet")
+        return validated.parsed
+
+    def load_selected_views(
+        self, root: Path, artifact: ArtifactHandle
+    ) -> SelectedViewSet:
+        manifest, artifact_directory = self._validate_indexed_artifact(root.resolve(), artifact)
+        validated = validate_published_artifact(artifact_directory, manifest)
+        if not isinstance(validated.parsed, SelectedViewSet):
+            raise ValueError("Artifact is not a SelectedViewSet")
+        return validated.parsed
+
     def recover_run(self, root: Path, *, run_id: UUID) -> RecoveryResult:
         root = root.resolve()
         snapshot = self._load_run_snapshot(root, run_id)
@@ -803,6 +938,16 @@ class LocalExecutionRepository:
             raise ProjectError(f"Unknown run {run_id}")
         if run["status"] in {"succeeded", "cancelled"}:
             return RecoveryResult(run_id=run_id, status=RunStatus(run["status"]))
+        if (
+            isinstance(snapshot.route, ViewPreparationRoute)
+            and active
+            and any(item["node_id"] == snapshot.route.candidate.node_id for item in active)
+            and os.name != "nt"
+        ):
+            raise ProjectError(
+                "Recovery cannot declare an external M3 FFmpeg attempt dead without "
+                "the tested Windows Job Object kill-on-close guarantee"
+            )
         active_attempt_id = UUID(active[-1]["attempt_id"]) if active else None
         if run["cancellation_accepted_at"] is not None or self.accept_cancellation(
             root, run_id=run_id, attempt_id=active_attempt_id
@@ -889,7 +1034,10 @@ class LocalExecutionRepository:
                 warnings=tuple(warnings),
             )
         outputs = self._load_valid_run_outputs(root, run_id)
-        required = {snapshot.route.sequence.node_id, snapshot.route.scale.node_id}
+        if isinstance(snapshot.route, FakeRoute):
+            required = {snapshot.route.sequence.node_id, snapshot.route.scale.node_id}
+        else:
+            required = {snapshot.route.candidate.node_id, snapshot.route.selection.node_id}
         if required.issubset(outputs):
             self.mark_run_succeeded(root, run_id=run_id)
             status = RunStatus.SUCCEEDED
@@ -918,6 +1066,11 @@ class LocalExecutionRepository:
     ) -> tuple[RunSnapshot, dict[str, ArtifactHandle]]:
         root = root.resolve()
         snapshot = self._load_run_snapshot(root, run_id)
+        if not isinstance(snapshot.route, FakeRoute):
+            raise RetryNotAllowedError(
+                "run retry supports only the historical fake route; restart M3 with "
+                "'splatforge views prepare' to reuse completed stages"
+            )
         with self._read_connection(root) as connection:
             connection.row_factory = sqlite3.Row
             run = connection.execute("SELECT * FROM runs WHERE run_id=?", (str(run_id),)).fetchone()
@@ -1108,29 +1261,87 @@ class LocalExecutionRepository:
             root,
             f"artifacts/{attempt['node_id']}/{artifact_id}/manifest.json",
         )
-        manifest_bytes = manifest_path.read_bytes()
+        manifest_size = manifest_path.stat().st_size
+        if manifest_size > MAX_MANIFEST_BYTES:
+            raise ValueError("Orphan manifest exceeds its explicit size limit")
+        with manifest_path.open("rb") as stream:
+            manifest_bytes = stream.read(MAX_MANIFEST_BYTES + 1)
+        if len(manifest_bytes) != manifest_size:
+            raise ValueError("Orphan manifest changed while being read")
         if sha256_bytes(manifest_bytes) != attempt["expected_manifest_digest"]:
             raise ValueError("Orphan manifest digest mismatch")
         manifest = ArtifactManifest.model_validate_json(manifest_bytes)
-        if attempt["node_id"] == snapshot.route.sequence.node_id:
-            node = snapshot.route.sequence
+        route = snapshot.route
+        expected_lineage: tuple[ArtifactInputLineage, ...]
+        consumed_candidate: CandidateViewSet | None = None
+        if isinstance(route, FakeRoute):
+            if attempt["node_id"] == route.sequence.node_id:
+                node = route.sequence
+                output = node.output
+                expected_recipe_key = sequence_recipe_key(
+                    start=node.start, settings=node.settings
+                )
+                expected_lineage = ()
+                expected_literal_inputs = {"start": node.start}
+            elif attempt["node_id"] == route.scale.node_id:
+                node = route.scale
+                output = node.output
+                inputs = self._load_valid_run_outputs(root, snapshot.run_id)
+                input_artifact = inputs.get(route.sequence.node_id)
+                if input_artifact is None:
+                    raise ValueError("Orphan publication has no valid upstream run output")
+                expected_recipe_key = scale_recipe_key(
+                    settings=node.settings, input_artifact=input_artifact
+                )
+                expected_lineage = (
+                    ArtifactInputLineage(
+                        input_name="numbers",
+                        artifact_id=input_artifact.artifact_id,
+                        artifact_type=input_artifact.artifact_type,
+                        contract_version=input_artifact.contract_version,
+                        semantic_digest=input_artifact.semantic_digest,
+                        recipe_key=input_artifact.recipe_key,
+                    ),
+                )
+                expected_literal_inputs = {}
+            else:
+                raise ValueError("Attempt node is not present in the frozen fake route")
+        elif attempt["node_id"] == route.candidate.node_id:
+            node = route.candidate
             output = node.output
-            expected_recipe_key = sequence_recipe_key(start=node.start, settings=node.settings)
-            expected_lineage: tuple[ArtifactInputLineage, ...] = ()
-            expected_literal_inputs = {"start": node.start}
-        elif attempt["node_id"] == snapshot.route.scale.node_id:
-            node = snapshot.route.scale
+            expected_recipe_key = candidate_recipe_key(
+                sources=route.sources,
+                settings=node.settings,
+                backend=route.ffmpeg_backend,
+            )
+            expected_lineage = ()
+            expected_literal_inputs = {
+                "candidate_settings": node.settings.model_dump(mode="json"),
+                "inventory_content_digest": route.inventory_content_digest,
+                "selected_source_ids": [str(source.source_id) for source in route.sources],
+            }
+            self._require_cache_verification(
+                attempt["source_verification_json"],
+                sources=route.sources,
+                policy=route.verification_policy,
+            )
+        elif attempt["node_id"] == route.selection.node_id:
+            node = route.selection
             output = node.output
             inputs = self._load_valid_run_outputs(root, snapshot.run_id)
-            input_artifact = inputs.get(snapshot.route.sequence.node_id)
+            input_artifact = inputs.get(route.candidate.node_id)
             if input_artifact is None:
-                raise ValueError("Orphan publication has no valid upstream run output")
-            expected_recipe_key = scale_recipe_key(
-                settings=node.settings, input_artifact=input_artifact
+                raise ValueError("Orphan selection has no valid candidate run output")
+            candidate = self.load_candidate_views(root, input_artifact)
+            consumed_candidate = candidate
+            expected_recipe_key = selection_recipe_key(
+                candidate=candidate,
+                candidate_digest=input_artifact.semantic_digest,
+                settings=node.settings,
             )
             expected_lineage = (
                 ArtifactInputLineage(
-                    input_name="numbers",
+                    input_name="candidate_views",
                     artifact_id=input_artifact.artifact_id,
                     artifact_type=input_artifact.artifact_type,
                     contract_version=input_artifact.contract_version,
@@ -1138,9 +1349,11 @@ class LocalExecutionRepository:
                     recipe_key=input_artifact.recipe_key,
                 ),
             )
-            expected_literal_inputs = {}
+            expected_literal_inputs = {
+                "selection_settings": node.settings.model_dump(mode="json")
+            }
         else:
-            raise ValueError("Attempt node is not present in the frozen route")
+            raise ValueError("Attempt node is not present in the frozen M3 route")
         expected_inputs = tuple(
             UUID(value) for value in json.loads(attempt["input_artifacts_json"])
         )
@@ -1162,24 +1375,18 @@ class LocalExecutionRepository:
             or manifest.validation.validator_version != 1
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
-        if len(manifest.payloads) != 1:
-            raise ValueError("Orphan artifact must contain exactly one payload")
-        expected_names = {"manifest.json", manifest.payloads[0].path}
-        if {path.name for path in artifact_directory.iterdir()} != expected_names:
-            raise ValueError("Orphan artifact contains unexpected files")
-        payload = manifest.payloads[0]
-        payload_path = self._artifact_payload_path(artifact_directory, payload.path)
-        data = payload_path.read_bytes()
-        if len(data) != payload.size or sha256_bytes(data) != payload.sha256:
-            raise ValueError("Orphan payload size or digest mismatch")
-        if manifest.artifact_type == NUMBERS_ARTIFACT_TYPE:
-            parsed = NumbersPayload.model_validate_json(data)
-        elif manifest.artifact_type == SCALED_ARTIFACT_TYPE:
-            parsed = ScaledNumbersPayload.model_validate_json(data)
-        else:
-            raise ValueError("Unsupported orphan artifact type")
-        if semantic_digest(parsed) != manifest.semantic_digest:
-            raise ValueError("Orphan semantic digest mismatch")
+        validated = validate_published_artifact(artifact_directory, manifest)
+        if consumed_candidate is not None:
+            if not isinstance(validated.parsed, SelectedViewSet):
+                raise ValueError("Orphan selection payload has the wrong typed contract")
+            validate_selected_against_candidate(validated.parsed, consumed_candidate)
+            if (
+                validated.parsed.candidate_semantic_digest
+                != expected_lineage[0].semantic_digest
+            ):
+                raise ValueError(
+                    "Orphan selection references different candidate semantics"
+                )
         relative_manifest = manifest_path.relative_to(root).as_posix()
         now = self._now()
         with self._write_connection(root) as connection, connection:
@@ -1275,6 +1482,66 @@ class LocalExecutionRepository:
             raise ValueError("Cancellation request run ID mismatch")
         return request, sha256_bytes(payload)
 
+    @staticmethod
+    def _require_cache_verification(
+        encoded: str,
+        *,
+        sources: tuple[SourceOccurrence, ...],
+        policy: VerificationPolicyId | None,
+    ) -> None:
+        if not sources:
+            return
+        if policy is None:
+            raise ValueError("Source-consuming cache lookup omitted verification policy")
+        payload = json.loads(encoded)
+        evidence = payload.get("evidence")
+        if not isinstance(evidence, list):
+            raise ValueError("Cached candidate has no bounded source-verification evidence")
+        indexed: dict[tuple[str, int], dict[str, object]] = {}
+        for item in evidence:
+            if not isinstance(item, dict):
+                raise ValueError("Cached source-verification evidence is malformed")
+            try:
+                key = (str(item["source_id"]), int(item["source_revision"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("Cached source-verification identity is malformed") from exc
+            if key in indexed:
+                raise ValueError("Cached source-verification evidence contains duplicates")
+            indexed[key] = item
+        for source in sources:
+            item = indexed.get((str(source.source_id), source.source_revision))
+            if item is None:
+                raise ValueError(
+                    f"Cached candidate lacks verification for source {source.source_id}"
+                )
+            if item.get("registered_digest") != source.content_sha256:
+                raise ValueError(
+                    f"Cached verification digest differs for source {source.source_id}"
+                )
+            if (
+                item.get("outcome") != "unchanged"
+                or item.get("consumed_under_protected_identity") is not True
+            ):
+                raise ValueError(
+                    f"Cached candidate lacks protected unchanged consumption for "
+                    f"source {source.source_id}"
+                )
+            assurance = item.get("assurance")
+            producer_policy = item.get("policy_id")
+            if policy == VerificationPolicyId.STRICT:
+                if producer_policy != VerificationPolicyId.STRICT.value or assurance != (
+                    "content_verified"
+                ):
+                    raise ValueError(
+                        f"Cached candidate has insufficient Strict provenance for "
+                        f"source {source.source_id}"
+                    )
+            elif assurance not in {"metadata_unchanged", "content_verified"}:
+                raise ValueError(
+                    f"Cached candidate has insufficient Balanced provenance for "
+                    f"source {source.source_id}"
+                )
+
     def _validate_indexed_artifact(
         self, root: Path, handle: ArtifactHandle
     ) -> tuple[ArtifactManifest, Path]:
@@ -1294,7 +1561,13 @@ class LocalExecutionRepository:
             ).fetchone()
         if attempt is None or attempt[0] != "succeeded":
             raise ValueError("Producer attempt is not succeeded")
-        manifest_bytes = manifest_path.read_bytes()
+        manifest_size = manifest_path.stat().st_size
+        if manifest_size > MAX_MANIFEST_BYTES:
+            raise ValueError("Manifest exceeds its explicit size limit")
+        with manifest_path.open("rb") as stream:
+            manifest_bytes = stream.read(MAX_MANIFEST_BYTES + 1)
+        if len(manifest_bytes) != manifest_size:
+            raise ValueError("Manifest changed while being read")
         if sha256_bytes(manifest_bytes) != row[0]:
             raise ValueError("Manifest digest mismatch")
         manifest = ArtifactManifest.model_validate_json(manifest_bytes)
@@ -1304,48 +1577,14 @@ class LocalExecutionRepository:
             or manifest.contract_version != handle.contract_version
             or manifest.recipe_key != handle.recipe_key
             or manifest.semantic_digest != handle.semantic_digest
+            or manifest.validation.validator_id
+            != f"{manifest.artifact_type}.integrity"
             or manifest.validation.validator_version != 1
         ):
             raise ValueError("Manifest identity or contract mismatch")
         artifact_directory = manifest_path.parent
-        if len(manifest.payloads) != 1:
-            raise ValueError("Artifact must contain exactly one declared payload")
-        payload = manifest.payloads[0]
-        payload_path = self._artifact_payload_path(artifact_directory, payload.path)
-        data = payload_path.read_bytes()
-        if len(data) != payload.size:
-            raise ValueError("Payload size mismatch")
-        if sha256_bytes(data) != payload.sha256:
-            raise ValueError("Payload digest mismatch")
-        if manifest.artifact_type == NUMBERS_ARTIFACT_TYPE:
-            parsed = NumbersPayload.model_validate_json(data)
-        elif manifest.artifact_type == SCALED_ARTIFACT_TYPE:
-            parsed = ScaledNumbersPayload.model_validate_json(data)
-        else:
-            raise ValueError("Unsupported artifact type")
-        if semantic_digest(parsed) != manifest.semantic_digest:
-            raise ValueError("Semantic digest mismatch")
+        validate_published_artifact(artifact_directory, manifest)
         return manifest, artifact_directory
-
-    @staticmethod
-    def _validate_candidate(
-        output: Path, artifact_type: str
-    ) -> tuple[str, NumbersPayload | ScaledNumbersPayload]:
-        if not output.is_dir():
-            raise ValueError("Fake stage did not create its output directory")
-        if artifact_type == NUMBERS_ARTIFACT_TYPE:
-            name = "numbers.json"
-            model = NumbersPayload
-        elif artifact_type == SCALED_ARTIFACT_TYPE:
-            name = "scaled.json"
-            model = ScaledNumbersPayload
-        else:
-            raise ValueError(f"Unsupported fake artifact type: {artifact_type}")
-        entries = list(output.iterdir())
-        if len(entries) != 1 or entries[0].name != name or not entries[0].is_file():
-            raise ValueError(f"Fake stage output must contain exactly {name}")
-        parsed = model.model_validate_json(entries[0].read_bytes())
-        return name, parsed
 
     @staticmethod
     def _artifact_payload_path(artifact_directory: Path, relative: str) -> Path:

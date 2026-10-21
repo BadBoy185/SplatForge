@@ -162,6 +162,10 @@ def test_executable_cache_invalidates_same_size_mtime_replacement(tmp_path: Path
 
     assert first.size == second.size
     assert first.last_write_ns == second.last_write_ns
+    assert first.volume_id == str(executable.stat().st_dev)
+    assert first.file_id != second.file_id
+    assert first.change_time_ns is not None
+    assert second.change_time_ns is not None
     assert first.sha256 == hashlib.sha256(b"first-binary").hexdigest()
     assert second.sha256 == hashlib.sha256(b"other-binary").hexdigest()
     assert second.sha256 != first.sha256

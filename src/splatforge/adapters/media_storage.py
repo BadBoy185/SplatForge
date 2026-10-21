@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -85,6 +86,14 @@ class LocalMediaRepository:
             raise ProjectError("Inventory ID does not match its project reference")
         return inventory
 
+    def inventory_content_digest(self, root: Path, reference: str) -> str:
+        path = self._inventory_path(root.resolve(), reference, must_exist=True)
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()
+
     def commit_inventory(
         self,
         root: Path,
@@ -163,41 +172,71 @@ class LocalMediaRepository:
             lease.write_diagnostics(
                 operation="media-verification-state-write", owner_token=uuid4()
             )
-            try:
-                with closing(sqlite3.connect(root / "state.sqlite")) as connection:
-                    connection.execute("PRAGMA foreign_keys = ON")
-                    with connection:
-                        connection.execute(
-                            """
-                            INSERT INTO source_verifications (
-                                verification_id, source_id, source_revision,
-                                expected_content_digest, policy_id, policy_version,
-                                checked_at, baseline_evidence_json, current_evidence_json,
-                                full_hash_performed, observed_content_digest, rehash_reason,
-                                assurance, stability_mechanism, outcome, diagnostic_json
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                str(result.verification_id),
-                                str(result.source_id),
-                                result.source_revision,
-                                result.expected_content_sha256,
-                                result.policy_id.value,
-                                result.policy_version,
-                                result.checked_at.isoformat(),
-                                baseline,
-                                current,
-                                int(result.full_hash_performed),
-                                result.observed_content_sha256,
-                                result.rehash_reason.value if result.rehash_reason else None,
-                                result.assurance.value,
-                                result.stability_mechanism,
-                                result.outcome.value,
-                                diagnostic,
-                            ),
-                        )
-            except sqlite3.Error as exc:
-                raise ProjectError(f"Could not persist source verification: {exc}") from exc
+            self._insert_verification(root, result, baseline, current, diagnostic)
+
+    def record_verification_under_writer(
+        self, root: Path, result: VerificationResult
+    ) -> None:
+        """Persist evidence while the caller already owns project.lock."""
+
+        root = root.resolve()
+        committed = self._project_store.inspect(root)
+        if committed.versions.state != 4:
+            raise ProjectError("State schema v4 is required for source verification")
+        baseline = self._evidence_json(result.baseline_evidence)
+        current = self._evidence_json(result.current_evidence)
+        diagnostic = json.dumps(
+            {"code": result.diagnostic_code, "message": result.diagnostic_message},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if len(diagnostic.encode("utf-8")) > 4096:
+            raise ProjectError("Verification diagnostic exceeds its storage limit")
+        self._insert_verification(root, result, baseline, current, diagnostic)
+
+    @staticmethod
+    def _insert_verification(
+        root: Path,
+        result: VerificationResult,
+        baseline: str | None,
+        current: str | None,
+        diagnostic: str,
+    ) -> None:
+        try:
+            with closing(sqlite3.connect(root / "state.sqlite")) as connection:
+                connection.execute("PRAGMA foreign_keys = ON")
+                with connection:
+                    connection.execute(
+                        """
+                        INSERT INTO source_verifications (
+                            verification_id, source_id, source_revision,
+                            expected_content_digest, policy_id, policy_version,
+                            checked_at, baseline_evidence_json, current_evidence_json,
+                            full_hash_performed, observed_content_digest, rehash_reason,
+                            assurance, stability_mechanism, outcome, diagnostic_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(result.verification_id),
+                            str(result.source_id),
+                            result.source_revision,
+                            result.expected_content_sha256,
+                            result.policy_id.value,
+                            result.policy_version,
+                            result.checked_at.isoformat(),
+                            baseline,
+                            current,
+                            int(result.full_hash_performed),
+                            result.observed_content_sha256,
+                            result.rehash_reason.value if result.rehash_reason else None,
+                            result.assurance.value,
+                            result.stability_mechanism,
+                            result.outcome.value,
+                            diagnostic,
+                        ),
+                    )
+        except sqlite3.Error as exc:
+            raise ProjectError(f"Could not persist source verification: {exc}") from exc
 
     def latest_full_evidence(
         self,

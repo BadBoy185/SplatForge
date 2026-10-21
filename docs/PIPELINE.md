@@ -39,7 +39,19 @@ M2 implements MediaIngest for JPEG/PNG/MP4/MOV as read-only external locators. I
 hashes bytes, records normalized FFprobe metadata and distinct source/camera groups, and
 publishes a new immutable inventory revision only after a writer-locked CAS recheck.
 Balanced/local and Strict verification evidence is durable state, not an inventory
-rewrite. MediaIngest does not decode video or publish `CandidateViewSet`; M3 owns that.
+rewrite.
+
+M3 implements an explicit two-node route. `view_preparation.ffmpeg_fixed_pool` consumes
+selected immutable inventory records and publishes `views.candidate_set` contract 1:
+one explicitly oriented materialized view per photo and a bounded presentation-time
+sample from each video. Video records carry the actual selected FFmpeg `showinfo` PTS
+and filter-link time base; image sequence numbers are not timestamps. View IDs derive
+from source/revision/stream/frame identity, while semantic identity additionally covers
+source content, transforms, dimensions and streamed image SHA-256 values.
+`frame_selection.fixed_fps` consumes candidate metadata without running FFmpeg and
+publishes `views.selected_set` contract 1. It selects each photo once and applies an
+independent exact-rational target grid to each clip, records target/actual time and
+error, never duplicates a candidate, and copies no pixels.
 
 Viewing is a consumer of artifacts, not an implicit processing stage. If generating
 previews changes data, implement a separately fingerprinted conversion. A dataset
@@ -53,6 +65,14 @@ filenames as metadata; generate filesystem-safe names from stable IDs. A frame's
 identity includes its source, stream and actual presentation timestamp/frame identity,
 not an assumed constant frame rate. Record rational time bases and orientation.
 Mixed clips have separate timelines; a list of filenames is not a shared timeline.
+
+M3 candidate recipe keys include selected source semantics, candidate FPS, encoding,
+orientation policy and frozen FFmpeg binary identity. They exclude target FPS, source
+locator spelling and project bookkeeping. Selection keys use the candidate semantic
+digest and target FPS. Contract 1 retains target FPS even for photo-only metadata so
+one recipe key cannot identify artifacts with different recorded resolved settings.
+Consequently a target-FPS-only change reuses candidate pixels, while a candidate-FPS,
+encoding, orientation, source-content or FFmpeg-identity change rebuilds them.
 
 Decoding settings define available candidates. Fixed-FPS selection chooses from that
 pool; sharpest-per-interval requires sufficient candidate density. A selector cannot

@@ -80,6 +80,9 @@ class ExecutableResolver:
                 resolved_path=str(path),
                 size=after.st_size,
                 last_write_ns=after.st_mtime_ns,
+                volume_id=str(after.st_dev),
+                file_id=str(after.st_ino),
+                change_time_ns=after.st_ctime_ns,
                 sha256=digest.hexdigest(),
             )
             self._identity_cache[key] = identity

@@ -32,7 +32,9 @@ from splatforge.core.fake_pipeline import (
     scale_recipe_key,
     sequence_recipe_key,
 )
+from splatforge.core.media import SourceOccurrence, VerificationPolicyId
 from splatforge.core.project import ProjectDocument
+from splatforge.core.views import CandidateViewSet, SelectedViewSet
 
 
 class StateUpgradeRequiredError(ProjectError):
@@ -93,7 +95,13 @@ class FakeStageMethods(Protocol):
 
 
 class ExecutionRepository(Protocol):
-    def writer(self, root: Path, *, owner_token: UUID) -> AbstractContextManager[None]: ...
+    def writer(
+        self,
+        root: Path,
+        *,
+        owner_token: UUID,
+        operation: str = "fake-run",
+    ) -> AbstractContextManager[None]: ...
 
     def inspect_project(self, root: Path) -> ExecutionProject: ...
 
@@ -119,6 +127,8 @@ class ExecutionRepository(Protocol):
         recipe_key: str,
         artifact_type: str,
         contract_version: int,
+        source_requirements: tuple[SourceOccurrence, ...] = (),
+        verification_policy: VerificationPolicyId | None = None,
     ) -> CacheLookup: ...
 
     def bind_cached_output(
@@ -141,8 +151,19 @@ class ExecutionRepository(Protocol):
         recipe_key: str,
         input_artifact_ids: tuple[UUID, ...],
         literal_inputs: dict[str, object],
+        environment: dict[str, object] | None = None,
+        source_verification: dict[str, object] | None = None,
         retry: bool = False,
     ) -> AttemptExecution: ...
+
+    def update_attempt_provenance(
+        self,
+        root: Path,
+        *,
+        attempt_id: UUID,
+        environment: dict[str, object],
+        source_verification: dict[str, object],
+    ) -> None: ...
 
     def publish_attempt(
         self,
@@ -188,9 +209,26 @@ class ExecutionRepository(Protocol):
 
     def mark_run_failed(self, root: Path, *, run_id: UUID, message: str) -> None: ...
 
+    def mark_external_interrupted(
+        self,
+        root: Path,
+        *,
+        run_id: UUID,
+        attempt_id: UUID,
+        message: str,
+    ) -> None: ...
+
     def mark_run_succeeded(self, root: Path, *, run_id: UUID) -> None: ...
 
     def load_numbers(self, root: Path, artifact: ArtifactHandle) -> NumbersPayload: ...
+
+    def load_candidate_views(
+        self, root: Path, artifact: ArtifactHandle
+    ) -> CandidateViewSet: ...
+
+    def load_selected_views(
+        self, root: Path, artifact: ArtifactHandle
+    ) -> SelectedViewSet: ...
 
     def show_run(self, root: Path, run_id: UUID) -> str: ...
 

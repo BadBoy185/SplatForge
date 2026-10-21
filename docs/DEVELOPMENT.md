@@ -59,6 +59,16 @@ and abrupt owner death terminate descendants holding file locks, and that the lo
 fixed-volume Strict lease blocks modification/replacement/deletion while permitting a
 read-only consumer. Non-Windows skips are explicit and are not evidence of support.
 
+M3 default tests use fake materializers and process results to cover exact rational FPS,
+VFR timestamp mapping, all EXIF orientations, right-angle video rotations, predecode
+count/disk/free-space refusal, Balanced/Strict consumption continuity, two-stage cache
+invalidation, streamed multi-file validation, durable cancellation, unresolved teardown
+and crash boundaries. No default test requires FFmpeg. Set `SPLATFORGE_TEST_FFMPEG` to
+an executable path (or `1` to use configured PATH lookup) for the generated tiny MPEG-4
+VFR and explicit-rotation integration test. That test must skip with its exact reason
+when unconfigured; a skip is not backend evidence. A future full media-add-to-M3 smoke
+test may additionally require `SPLATFORGE_TEST_FFPROBE` as a separate opt-in setting.
+
 Source-verification tests distinguish Balanced/local and Strict: unchanged metadata
 must not read the entire source under Balanced; changed/unreliable indicators trigger
 rehash; Strict reads complete content. Cover metadata errors, network evidence gaps,

@@ -139,6 +139,11 @@ Do not copy originals implicitly or extract frames. A failed metadata/hash check
 
 ## M3 Candidate views and fixed-FPS selection
 
+Status: implemented with the explicit `views prepare` two-node route, state schema v4,
+bounded FFmpeg materialization, actual VFR presentation timestamps, explicit orientation,
+multi-file artifact validation, source-verification eligibility, durable cancellation
+and stage-boundary cache reuse. Quality/scoring selection remains M4.
+
 Additional reading: [PIPELINE: views](PIPELINE.md#view-and-camera-rules),
 [execution](PIPELINE.md#method-execution-contract),
 [cache](PIPELINE.md#stage-fingerprints-and-cache-eligibility) and

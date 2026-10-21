@@ -99,6 +99,13 @@ The process adapter and inventory can be separate reviewable tasks within M2.
 
 ## M3 — candidate views and fixed-FPS extraction
 
+Status: implemented. `views prepare` publishes a bounded materialized
+`CandidateViewSet` through the contained FFmpeg adapter and a metadata-only
+`SelectedViewSet` through deterministic per-source fixed-FPS selection. It preserves
+actual selected-frame PTS/time bases, explicit photo/video orientation, source/camera
+groups, immutable multi-file manifests, source-verification provenance, durable
+cancellation and stage-boundary cache reuse. State remains schema v4.
+
 Implement FFmpeg ViewPreparation plus simple fixed-FPS selection from an explicit
 candidate pool. Photos enter the same view contract through orientation/preprocessing.
 Record actual timestamps, source/view mapping, camera transforms and deterministic

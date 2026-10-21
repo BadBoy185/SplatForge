@@ -56,6 +56,9 @@ class ExecutableIdentity(BaseModel):
     resolved_path: str = Field(min_length=1)
     size: int = Field(ge=0, strict=True)
     last_write_ns: int = Field(ge=0, strict=True)
+    volume_id: str | None = Field(default=None, max_length=128)
+    file_id: str | None = Field(default=None, max_length=128)
+    change_time_ns: int | None = Field(default=None, ge=0, strict=True)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     version_line: str | None = Field(default=None, max_length=1024)
 
