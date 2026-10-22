@@ -25,6 +25,7 @@ from splatforge.core.retrieval import (
     RetrievalResourceLimits,
     RetrievalView,
     corpus_digest,
+    retrieval_semantic_digest,
 )
 from splatforge.core.retrieval_pairs import (
     NoRetrievalEdgesError,
@@ -174,9 +175,9 @@ def test_planning_bounds_before_search_or_output_materialization():
     with pytest.raises(ValueError, match="Conservative pair planning"):
         plan_retrieval_pairs(
             export,
-            RetrievalPairSettings(top_k=5, max_retrieval_pairs=20),
+            RetrievalPairSettings(top_k=5),
             PairResourceLimits(),
-            RetrievalResourceLimits(),
+            RetrievalResourceLimits(max_retrieval_pairs=20),
         )
     with pytest.raises(ValueError, match="Conservative pair planning"):
         plan_retrieval_pairs(
@@ -234,8 +235,10 @@ def test_representation_keys_invalidate_model_preprocessing_corpus_but_not_k_or_
         with pytest.raises(ValueError):
             RetrievalExport.model_validate({**export.model_dump(), forbidden: "SIFT"})
     assert retrieval_pair_recipe_key(
-        value, export.recipe_key(), RetrievalPairSettings(top_k=1), ()
-    ) != (retrieval_pair_recipe_key(value, export.recipe_key(), RetrievalPairSettings(top_k=2), ()))
+        value, retrieval_semantic_digest(export), RetrievalPairSettings(top_k=1), ()
+    ) != retrieval_pair_recipe_key(
+        value, retrieval_semantic_digest(export), RetrievalPairSettings(top_k=2), ()
+    )
 
 
 def test_same_graph_m6_semantics_independent_of_retrieval_producer():

@@ -30,6 +30,7 @@ from splatforge.core.retrieval import (
     RetrievalResourceLimits,
     RetrievalView,
     corpus_digest,
+    retrieval_semantic_digest,
     validate_storage,
 )
 from splatforge.core.views import (
@@ -260,7 +261,7 @@ class RetrievalService:
                 )
                 if cached.artifact:
                     payload = repo.load_retrieval(root, cached.artifact)
-                    if payload.export() != export:
+                    if payload.recipe_key() != export.recipe_key():
                         raise ValueError("Cached representation differs from frozen export")
                     checkpoint()
                     repo.bind_cached_output(
@@ -298,7 +299,7 @@ class RetrievalService:
                         candidate_semantic_digest=candidate_handle.semantic_digest,
                         selected_artifact_id=selected_handle.artifact_id,
                         selected_semantic_digest=selected_handle.semantic_digest,
-                        semantic_digest=export.recipe_key(),
+                        semantic_digest=retrieval_semantic_digest(export),
                     )
                     self._adapter.import_export(
                         Path(attempt.workspace),

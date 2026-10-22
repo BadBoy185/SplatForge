@@ -20,6 +20,7 @@ from splatforge.application.retrieval_benchmark import (
 )
 from splatforge.cli.app import app
 from splatforge.core.matching import LomaMatchingSettings
+from splatforge.core.retrieval import RetrievalResourceLimits
 
 
 def test_benchmark_all_external_candidates_share_local_features_and_matcher(tmp_path):
@@ -43,18 +44,20 @@ def test_benchmark_all_external_candidates_share_local_features_and_matcher(tmp_
         candidates=tuple(candidates),
         top_k_values=(1,),
         matching=LomaMatchingSettings(),
+        retrieval_resources=RetrievalResourceLimits(max_retrieval_pairs=3),
         source_devices=tuple(
             BenchmarkSourceDevice(source_id=sid, device_label=f"device-{n}")
             for n, sid in enumerate(value.source_ids)
         ),
     )
     adapter = LocalRetrievalAdapter()
-    report = RetrievalBenchmarkService(
+    service = RetrievalBenchmarkService(
         value.execution,
         RetrievalService(value.execution, adapter),
         PairsService(value.execution, LocalPairWorkspace(), retrieval_adapter=adapter),
         MatchingService(value.execution, native.matching_adapter()),
-    ).run(fixture, colmap=native.exe, model_directory=native.model_root)
+    )
+    report = service.run(fixture, colmap=native.exe, model_directory=native.model_root)
     assert report["production_selection"] is None
     assert len(report["results"]) == 4
     assert len({r["local_features_digest"] for r in report["results"]}) == 1
@@ -64,6 +67,14 @@ def test_benchmark_all_external_candidates_share_local_features_and_matcher(tmp_
         assert result["metrics"]["retrieval_raw_matches"] >= 0
         assert result["peak_ram_bytes"] is None and result["peak_vram_bytes"] is None
         assert len(result["metrics"]["declared_device_coverage"]) == 2
+    with pytest.raises(ValueError, match="Conservative pair planning"):
+        service.run(
+            fixture.model_copy(update={
+                "retrieval_resources": RetrievalResourceLimits(max_retrieval_pairs=1),
+            }),
+            colmap=native.exe,
+            model_directory=native.model_root,
+        )
 
 
 @pytest.mark.parametrize("variant", ["SIFT", "ALIKED_N16ROT", "LOMA_B"])

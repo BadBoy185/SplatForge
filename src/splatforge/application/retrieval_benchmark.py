@@ -25,7 +25,7 @@ from splatforge.core.pairs import (
     SequentialSettings,
     compute_coverage,
 )
-from splatforge.core.retrieval import CandidateMethod
+from splatforge.core.retrieval import CandidateMethod, RetrievalResourceLimits
 from splatforge.core.retrieval_pairs import NoRetrievalEdgesError
 from splatforge.core.views import FrozenModel
 
@@ -75,6 +75,7 @@ class RetrievalBenchmarkFixture(FrozenModel):
     pairing: RetrievalPairSettings = RetrievalPairSettings()
     sequential: SequentialSettings = SequentialSettings()
     total_pair_budget: int = Field(default=100_000, ge=1, le=1_000_000, strict=True)
+    retrieval_resources: RetrievalResourceLimits = RetrievalResourceLimits()
     matching: LomaMatchingSettings = LomaMatchingSettings(use_gpu=True)
     verification: VerificationSettings = VerificationSettings()
     source_devices: tuple[BenchmarkSourceDevice, ...] = Field(default=(), max_length=4096)
@@ -269,6 +270,7 @@ class RetrievalBenchmarkService:
                 root,
                 views_run_id=fixture.views_run_id,
                 descriptor_export=candidate.descriptor_export,
+                resource_limits=fixture.retrieval_resources,
             )
             import_seconds = time.monotonic() - started
             if built.representation.settings.method_id != candidate.method_id:
@@ -285,6 +287,7 @@ class RetrievalBenchmarkService:
                             retrieval=fixture.pairing.model_copy(update={"top_k": k}),
                         ),
                         resource_limits=PairResourceLimits(max_pairs=fixture.total_pair_budget),
+                        retrieval_resources=fixture.retrieval_resources,
                     )
                 except NoRetrievalEdgesError:
                     results.append(

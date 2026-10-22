@@ -14,6 +14,7 @@ from splatforge.application.execution import FakeExecutionService, PublicationUn
 from splatforge.application.pairs import PairsService
 from splatforge.application.progress_reader import RunProgressService
 from splatforge.application.retrieval import RetrievalCapabilityError, RetrievalService
+from splatforge.core.execution import RunSnapshot
 from splatforge.core.pairs import (
     HybridPairSettings,
     PairResourceLimits,
@@ -22,7 +23,12 @@ from splatforge.core.pairs import (
     canonical_pair,
     project_pairing_universe,
 )
-from splatforge.core.retrieval import RetrievalExport, RetrievalView
+from splatforge.core.retrieval import (
+    RetrievalExport,
+    RetrievalResourceLimits,
+    RetrievalView,
+    retrieval_semantic_digest,
+)
 from splatforge.core.views import canonical_json_bytes, sha256_bytes
 
 
@@ -67,7 +73,9 @@ def build(value, views, source, *, repository=None):
     )
 
 
-def pairs(value, views, representation, *, settings=None, repository=None, explicit=()):
+def pairs(
+    value, views, representation, *, settings=None, repository=None, explicit=(), resources=None
+):
     return PairsService(
         repository or value.execution,
         LocalPairWorkspace(),
@@ -79,6 +87,7 @@ def pairs(value, views, representation, *, settings=None, repository=None, expli
         settings=settings or HybridPairSettings(retrieval=RetrievalPairSettings(top_k=1)),
         resource_limits=PairResourceLimits(),
         explicit_pairs=explicit,
+        retrieval_resources=resources,
     )
 
 
@@ -141,6 +150,7 @@ def test_model_preprocessing_and_byte_corruption_invalidate_or_reject(tmp_path):
     views = prepare(value)
     source = exported(value, views, tmp_path / "export")
     first = build(value, views, source)
+    first_pairs = pairs(value, views, first)
     export = RetrievalExport.model_validate_json(source.read_bytes())
     for update in (
         {"models": (export.settings.models[0].model_copy(update={"sha256": "d" * 64}),)},
@@ -153,6 +163,12 @@ def test_model_preprocessing_and_byte_corruption_invalidate_or_reject(tmp_path):
         assert (
             rebuilt.representation_artifact.recipe_key != first.representation_artifact.recipe_key
         )
+        assert rebuilt.representation_artifact.semantic_digest == (
+            first.representation_artifact.semantic_digest
+        )
+        reused_pairs = pairs(value, views, rebuilt)
+        assert reused_pairs.cache_hit
+        assert reused_pairs.pair_set_artifact == first_pairs.pair_set_artifact
     directory = (value.root / rebuilt.representation_artifact.manifest_path).parent
     (directory / "descriptors.f32").write_bytes(b"broken")
     again = build(value, views, source)
@@ -165,6 +181,105 @@ def test_model_preprocessing_and_byte_corruption_invalidate_or_reject(tmp_path):
     (directory / "descriptors.f32").write_bytes(b"broken")
     with pytest.raises(ValueError, match="storage mismatch"):
         build(value, views, source)
+
+
+def test_source_path_and_formatting_changes_reuse_cache_and_preserve_frozen_provenance(tmp_path):
+    value = harness(tmp_path)
+    views = prepare(value)
+    source = exported(value, views, tmp_path / "export")
+    first = build(value, views, source)
+    original = RetrievalExport.model_validate_json(source.read_bytes())
+    changed = original.model_copy(
+        update={
+            "settings": original.settings.model_copy(
+                update={
+                    "models": (
+                        original.settings.models[0].model_copy(
+                            update={
+                                "source": "https://other.example/model-license-evidence",
+                            }
+                        ),
+                    ),
+                }
+            )
+        }
+    )
+    relocated = tmp_path / "relocated ž export"
+    relocated.mkdir()
+    other = relocated / "export.json"
+    other.write_text(changed.model_dump_json(indent=2), encoding="utf-8")
+    # A validated immutable cache hit needs no external numerical payload at the new locator.
+    second = build(value, views, other)
+    assert second.cache_hit and second.representation_artifact == first.representation_artifact
+    payload = value.execution.load_retrieval(value.root, second.representation_artifact)
+    assert payload.settings.models[0].source == original.settings.models[0].source
+    snapshot = RunSnapshot.model_validate_json(
+        (value.root / "runs" / str(second.run_id) / "run.json").read_bytes(),
+    )
+    assert snapshot.route.export == changed
+    assert snapshot.route.export_locator == str(other.absolute())
+    assert second.representation_artifact.semantic_digest == retrieval_semantic_digest(changed)
+
+
+@pytest.mark.parametrize("production_change", ["none", "model", "preprocessing"])
+def test_changed_numerical_bytes_rebuild_representation_and_pairs(tmp_path, production_change):
+    value = harness(tmp_path)
+    views = prepare(value)
+    source = exported(value, views, tmp_path / "export")
+    first = build(value, views, source)
+    first_pairs = pairs(value, views, first)
+    original = RetrievalExport.model_validate_json(source.read_bytes())
+    output, data = export_for(original.universe, [(0.0, 1.0)] * 3, pixels=original.views)
+    settings = original.settings
+    if production_change == "model":
+        settings = settings.model_copy(
+            update={
+                "models": (settings.models[0].model_copy(update={"sha256": "d" * 64}),),
+            }
+        )
+    elif production_change == "preprocessing":
+        settings = settings.model_copy(
+            update={
+                "preprocessing": settings.preprocessing.model_copy(update={"width": 336}),
+            }
+        )
+    changed = output.model_copy(update={"settings": settings})
+    source.write_text(changed.model_dump_json(), encoding="utf-8")
+    (source.parent / "descriptors.f32").write_bytes(data)
+    second = build(value, views, source)
+    assert not second.cache_hit
+    assert second.representation_artifact.recipe_key != first.representation_artifact.recipe_key
+    assert second.representation_artifact.semantic_digest != (
+        first.representation_artifact.semantic_digest
+    )
+    second_pairs = pairs(value, views, second)
+    assert not second_pairs.cache_hit
+    assert second_pairs.pair_set_artifact.recipe_key != first_pairs.pair_set_artifact.recipe_key
+    # These rotated synthetic vectors have the same scores/graph despite different matrices.
+    assert second_pairs.pair_set_artifact.semantic_digest == (
+        first_pairs.pair_set_artifact.semantic_digest
+    )
+
+
+def test_inactive_limits_reuse_pair_cache_but_tighter_limits_refuse_before_run(tmp_path):
+    value = harness(tmp_path)
+    views = prepare(value)
+    source = exported(value, views, tmp_path / "export")
+    representation = build(value, views, source)
+    first = pairs(
+        value, views, representation, resources=RetrievalResourceLimits(max_retrieval_pairs=10_000)
+    )
+    second = pairs(
+        value, views, representation, resources=RetrievalResourceLimits(max_retrieval_pairs=20_000)
+    )
+    assert second.cache_hit and second.pair_set_artifact == first.pair_set_artifact
+    before = query(value.root, "SELECT count(*) FROM runs")
+    with pytest.raises(ValueError, match="Conservative pair planning"):
+        pairs(
+            value, views, representation, resources=RetrievalResourceLimits(max_retrieval_pairs=1)
+        )
+    assert query(value.root, "SELECT count(*) FROM runs") == before
+    assert pairs(value, views, representation).cache_hit
 
 
 @pytest.mark.parametrize("payload", ["descriptors.f32", "retrieval.json"])

@@ -36,11 +36,48 @@ dependencies, model downloaders or research framework imports in SplatForge.
 
 The flat descriptor matrix is the index. Backend row numbers are private transport:
 rows follow canonical indexed UUID order; public pairs use UUIDs exclusively.
-The semantic digest/recipe includes the complete versioned export declaration,
-corpus, model/preprocessing/runtime settings and descriptor bytes identity. Publication
-IDs and external export paths are separate provenance. The entire pipeline config,
-local SIFT/ALIKED/LoMa features, matcher, reconstruction and performance history are
-absent from this key. No pose or reconstruction input exists in the export schema.
+`retrieval_semantic_digest` identifies the actual numerical representation: semantic
+version 1, exact corpus digest, canonical indexed UUID ordering, descriptor SHA-256
+and byte count, dtype, dimension, normalization, metric, index method/version and
+accumulation semantics. The matrix bytes remain authoritative; import/publication
+still validates their count, checksum, finite FP32 values and L2 normalization.
+Method/model/preprocessing declarations do not redefine identical numerical output.
+
+`retrieval_recipe_key` separately freezes export version, numerical semantic digest
+and output-affecting production settings. Recipe projection version 2 excludes pure
+provenance. Field classification for every `RetrievalRepresentationSettings` field:
+
+| Fields | Numerical semantics | Production recipe | Interpretation |
+| --- | --- | --- | --- |
+| `descriptor_dtype`, `descriptor_dimension`, `normalization`, `metric` | Yes | Yes | Descriptor interpretation |
+| `index_method`, `index_version`, `accumulation` | Yes | Yes | Flat index/search interpretation |
+| `method_id`, `method_version`, `settings_schema_version` | No | Yes | Versioned production method |
+| `models` role, SHA-256 and size (weights/backbone/vocabulary) | No | Yes | Pinned production bytes |
+| `models` name and source | No | No | Provenance/licensing/provisioning evidence |
+| `preprocessing` (all fields) | No | Yes | Production pixel processing |
+| `backend_id`, `runtime_identity`, `inference_device` | No | Yes | Output-affecting numerical runtime/device |
+| `inference_provenance` | No | No | External-export provenance |
+
+Every preprocessing field is recipe-only: `schema_version`, stable algorithm
+`identity`, `color`, `orientation`, `resize_policy`, `width`, `height`, `crop_policy`,
+`interpolation`, `antialias`, `pixel_scale`, `mean` and `std`. Its identity denotes
+an algorithm revision, not a filesystem locator. Runtime identity likewise denotes
+numerical runtime identity, not installation path spelling.
+
+Full declarations, including model source/name, remain public in `retrieval.json`
+and frozen run/export provenance. Changing only `model.source` preserves both keys;
+a cache hit retains its original producer provenance while the new run freezes the
+current declaration. Changing model SHA or preprocessing changes the recipe. If
+descriptor bytes remain identical, numerical semantics and downstream pairing can
+still be reused; changed descriptor bytes change both keys.
+
+Publication UUIDs/times, external paths, JSON formatting, local path spelling,
+SIFT/ALIKED/LoMa features, matcher, reconstruction and performance history enter
+neither identity. No pose or reconstruction input exists in the export schema.
+This pre-main v1 correction invalidates the former recipe projection and rejects
+published payloads whose semantic digest was a recipe hash. Rebuild/import those
+development artifacts; they are never migrated or rewritten in place. Historical
+M6 PairSets remain compatible.
 
 The implemented builder **validates and imports an offline export**; it does not
 compute learned descriptors. It never opens pickle/checkpoints or executes exporter
@@ -56,7 +93,7 @@ published representation and emit ordinary `pairs.pair_set` contract 1. M7b cons
 their canonical graph through its unchanged explicit-pair route. Pair UUIDv5 and
 graph semantic digest algorithms are unchanged.
 
-Versioned `RetrievalPairSettings` defaults are K=5, 10,000 maximum retrieval edges,
+Versioned `RetrievalPairSettings` defaults are K=5,
 cosine similarity >=0.5, cross-source policy, same-video exclusion, suppression
 window 5 selected observations, all views eligible for queries/corpus and CPU exact
 search. These numerical defaults are conservative development limits, not validated
@@ -78,7 +115,8 @@ visual interpretation or scene understanding is inferred from this policy.
 Hybrid merges unchanged M6 Sequential edges inside each ordered video, retrieval
 edges and supplied explicit UUID edges. Reasons are sorted/deduplicated by kind;
 retrieval reason retains up to both directed queries' rank/score and representation
-digest. Explicit edges survive even if retrieval suppresses them. PairSet now accepts
+**semantic digest**, never its producer recipe key. Explicit edges survive even if
+retrieval suppresses them. PairSet now accepts
 the additive retrieval/hybrid settings, retrieval reason/provenance and up to four
 reason kinds. Historical M6 payloads remain readable; graph identity excludes all
 producer reasons/settings. Existing M6 Sequential/Exhaustive behavior is unchanged.
@@ -89,8 +127,18 @@ The exact reference search keeps a packed FP32 corpus plus one bounded heap per
 query, never a dense similarity matrix. Cost remains O(Q * C * D); it is a bounded
 reference/benchmark route, not a scalable vector service. Defaults: 4096 indexed
 views, 64 MiB descriptor bytes, 1,000,000 query/corpus comparisons and 100,000,000
-scalar products. Structural descriptor maximum is 256 MiB, dimension <=65536.
+scalar products and 10,000 maximum retrieval candidate edges. Structural descriptor
+maximum is 256 MiB, dimension <=65536.
 Typed `RetrievalResourceLimits` exposes bounded adjustments.
+
+`max_retrieval_pairs` belongs to `RetrievalResourceLimits`, not numerical query
+settings. Descriptor/view/evaluation/scalar-product/retrieval/total-pair limits are
+refusal gates, frozen in run/attempt policy but excluded from numerical recipes.
+For example, raising an inactive retrieval limit from 10,000 to 20,000 preserves
+the PairSet recipe, graph and cache hit. A tighter limit that rejects the conservative
+bound refuses planning before creating a run or looking up the PairSet cache.
+Limits never truncate or silently select edges. Pre-main query JSON containing
+`max_retrieval_pairs` must move that field to the resource JSON; it is not ignored.
 
 Planning calculates eligible directed `sum(min(K, eligible_targets))`, exact Sequential
 count and canonical explicit count before emitting graph edges. Their conservative
@@ -112,9 +160,12 @@ M7b execution. Neither unavailable retrieval nor no overlap switches to Exhausti
 | --- | --- | --- |
 | SIFT / ALIKED / LoMa extractor | Representation and PairSet | Local features and M7b consumers |
 | Matcher/settings | Representation and PairSet | Matching and verification |
-| K / threshold / query eligibility | Representation/index | Retrieval/hybrid PairSet and graph consumers |
+| Model source/name, export locator, JSON formatting | Representation and PairSet | No numerical work; current run provenance is recorded |
+| Inactive resource limits | Representation and PairSet | No numerical work; current limits are still enforced |
+| K / threshold / source, query/corpus or same-clip policy | Representation/index | Retrieval/hybrid PairSet and graph consumers |
 | Sequential window | Representation/index | Hybrid PairSet and graph consumers |
-| Retrieval model / preprocessing / runtime / selected corpus | Independent local features | Representation/index and dependent pairs |
+| Retrieval model SHA / preprocessing / runtime | Independent local features; PairSet if output semantics stay equal | Representation recipe/import; pairs if numerical representation changes |
+| Descriptor bytes / selected corpus | Independent local features | Representation/index and dependent pairs |
 
 Hybrid currently recomputes its bounded queries when Sequential settings change;
 there is no separately persisted query-result cache. If the resulting actual graph
@@ -140,6 +191,7 @@ splatforge retrieval request PROJECT --views-run UUID
 splatforge retrieval build PROJECT --views-run UUID --descriptor-export EXPORT/export.json
 splatforge pairs build PROJECT --views-run UUID --method hybrid --retrieval-run UUID
 splatforge pairs build PROJECT --views-run UUID --method retrieval --retrieval-run UUID --retrieval-settings query.json
+splatforge pairs build PROJECT --views-run UUID --method hybrid --retrieval-run UUID --retrieval-resources limits.json
 splatforge retrieval benchmark fixture.json --colmap COLMAP_EXE --colmap-model-dir LOCAL_MODELS
 ```
 
@@ -151,6 +203,9 @@ The Python model classes are the strict schema. Files and path ancestors must be
 plain, without symlink/junction redirection. Import copies bytes, leaving source
 images/exports/models unchanged. Inspect build result JSON for complete representation,
 artifact identity and cache state. `run status`/progress/events remain available.
+For example, `limits.json` may contain `{"max_retrieval_pairs": 20000}`. The opt-in
+benchmark fixture exposes the same typed gates as `retrieval_resources`, separately
+from its numerical `pairing` settings and `total_pair_budget` gate.
 
 Calling `retrieval build` without an export returns JSON capability code
 `retrieval.production_backend_unselected`. There is no hidden model winner or

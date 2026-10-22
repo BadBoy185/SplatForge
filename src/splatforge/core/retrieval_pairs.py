@@ -28,7 +28,12 @@ from splatforge.core.pairs import (
     pairing_universe_digest,
     stable_pair_id,
 )
-from splatforge.core.retrieval import RetrievalExport, RetrievalResourceLimits, validate_storage
+from splatforge.core.retrieval import (
+    RetrievalExport,
+    RetrievalResourceLimits,
+    retrieval_semantic_digest,
+    validate_storage,
+)
 from splatforge.core.views import FrozenModel, canonical_json_bytes, sha256_bytes
 
 
@@ -161,7 +166,7 @@ def plan_retrieval_pairs(
     )
     seq = sequential_count(universe, sequential) if sequential else 0
     total = seq + edges + len(explicit)
-    if edges > query_settings.max_retrieval_pairs or total > limits.max_pairs:
+    if edges > resources.max_retrieval_pairs or total > limits.max_pairs:
         raise ValueError(
             f"Conservative pair planning bound: retrieval={edges}, sequential={seq}, "
             f"explicit={len(explicit)}, total={total}; lower K/eligibility or raise pair budgets"
@@ -274,10 +279,11 @@ def search_pairs(
             for p in canonical_explicit_pairs(universe, explicit)
         )
     merged = {canonical_pair(p.left_view_id, p.right_view_id): p for p in base}
+    representation_digest = retrieval_semantic_digest(export)
     for pair, evidence in found.items():
         checkpoint()
         reason = RetrievalReason(
-            representation_semantic_digest=export.recipe_key(),
+            representation_semantic_digest=representation_digest,
             evidence=tuple(sorted(evidence, key=lambda e: e.query_view_id.int)),
         )
         existing = merged.get(pair)

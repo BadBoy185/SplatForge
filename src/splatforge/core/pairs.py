@@ -51,7 +51,6 @@ class RetrievalPairSettings(FrozenModel):
     method_version: Literal[1] = 1
     settings_schema_version: Literal[1] = 1
     top_k: int = Field(default=5, ge=1, le=100, strict=True)
-    max_retrieval_pairs: int = Field(default=10_000, ge=1, le=MAX_PAIRS, strict=True)
     minimum_similarity: float = Field(default=0.5, ge=-1, le=1, allow_inf_nan=False)
     source_policy: Literal["cross_source", "prefer_cross_source", "all"] = "cross_source"
     same_clip_policy: Literal["exclude", "long_range"] = "exclude"
@@ -604,7 +603,6 @@ class PairSet(FrozenModel):
                 or self.retrieval.retrieval_edge_count != counts["retrieval"]
                 or self.retrieval.explicit_edge_count != counts["explicit"]
                 or self.retrieval.final_edge_count != len(self.pairs)
-                or counts["retrieval"] > retrieval_settings.max_retrieval_pairs
                 or counts["retrieval"] > self.retrieval.candidate_edge_upper_bound
             ):
                 raise ValueError("Retrieval/hybrid edge accounting mismatch")

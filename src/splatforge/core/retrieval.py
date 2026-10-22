@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from splatforge.core.pairs import Digest, PairingViewUniverse, pairing_universe_digest
+from splatforge.core.pairs import MAX_PAIRS, Digest, PairingViewUniverse, pairing_universe_digest
 from splatforge.core.views import MAX_VIEWS, FrozenModel, canonical_json_bytes, sha256_bytes
 
 RETRIEVAL_ARTIFACT_TYPE = "retrieval.representation_set"
@@ -117,14 +117,49 @@ class RetrievalExport(FrozenModel):
         return self
 
     def recipe_key(self) -> str:
-        return sha256_bytes(
-            canonical_json_bytes(
-                {
-                    "representation_recipe_version": 1,
-                    "export": self.model_dump(mode="json"),
-                }
-            )
+        return retrieval_recipe_key(self)
+
+
+def retrieval_semantic_digest(export: RetrievalExport) -> str:
+    """Identify the numerical matrix and its interpretation, independently of its producer."""
+    settings = export.settings
+    return sha256_bytes(
+        canonical_json_bytes(
+            {
+                "representation_semantic_version": 1,
+                "corpus": export.corpus_semantic_digest,
+                "indexed_view_ids": [str(v.view_id) for v in export.views],
+                "descriptor_sha256": export.descriptor_sha256,
+                "descriptor_bytes": export.descriptor_bytes,
+                "descriptor_dtype": settings.descriptor_dtype,
+                "descriptor_dimension": settings.descriptor_dimension,
+                "normalization": settings.normalization,
+                "metric": settings.metric,
+                "index_method": settings.index_method,
+                "index_version": settings.index_version,
+                "accumulation": settings.accumulation,
+            }
         )
+    )
+
+
+def retrieval_recipe_key(export: RetrievalExport) -> str:
+    """Freeze numerical output dependencies, excluding model labels/locators and provenance."""
+    settings = export.settings.model_dump(mode="json", exclude={"inference_provenance"})
+    settings["models"] = [
+        model.model_dump(mode="json", include={"role", "sha256", "size"})
+        for model in export.settings.models
+    ]
+    return sha256_bytes(
+        canonical_json_bytes(
+            {
+                "representation_recipe_version": 2,
+                "export_version": export.export_version,
+                "representation": retrieval_semantic_digest(export),
+                "settings": settings,
+            }
+        )
+    )
 
 
 class RetrievalRepresentationSet(RetrievalExport):
@@ -142,12 +177,13 @@ class RetrievalRepresentationSet(RetrievalExport):
 
     @model_validator(mode="after")
     def valid_semantics(self) -> RetrievalRepresentationSet:
-        if self.semantic_digest != self.export().recipe_key():
+        if self.semantic_digest != retrieval_semantic_digest(self):
             raise ValueError("Retrieval representation semantic digest mismatch")
         return self
 
 
 class RetrievalResourceLimits(FrozenModel):
+    max_retrieval_pairs: int = Field(default=10_000, ge=1, le=MAX_PAIRS, strict=True)
     max_views: int = Field(default=4096, ge=2, le=MAX_VIEWS, strict=True)
     max_descriptor_bytes: int = Field(
         default=64 * 1024**2,
