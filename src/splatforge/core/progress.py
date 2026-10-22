@@ -106,6 +106,8 @@ class WorkMetric(ProgressValue):
         "pairs",
         "photo_fraction",
         "completed_views",
+        "descriptor_dimension",
+        "descriptor_bytes",
         "features",
         "matches",
     ]

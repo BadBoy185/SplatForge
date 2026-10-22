@@ -14,10 +14,11 @@ members or promises that every stage already has an implementation.
 | QualityAssessment | Candidate views and scoring settings | QualityReport: per-view scores, metric versions, units and unavailable-score reasons; never deletes images |
 | FrameSelection | Candidate views, optional quality report and selection policy | SelectedViewSet plus acceptance/rejection reasons, deterministic tie-breaking and selection order |
 | Masking | Selected views, supplied masks or segmentation inputs | MaskSet with view IDs, dimensions, coordinate alignment and explicit pixel semantics; no mask is an explicit absent input |
-| FeatureExtraction | Selected pixels, optional SfM masks, method/model settings | FeatureSet: view/keypoint correspondence, descriptor signature, coordinate convention and payload format |
+| FeatureExtraction | Selected pixels, optional future SfM masks, method/model settings | LocalFeatureSet: descriptor signature, coordinate convention and payload format; M7a implements the unmasked route |
+| RetrievalRepresentation | Selected pixels/metadata and explicitly prepared offline global descriptors | RetrievalRepresentationSet v1: corpus/pixel/model/preprocess/runtime identity and immutable flat index; production inference selection pending |
 | PairSelection | Selected view IDs and the chronology, retrieval or spatial inputs actually used | PairSet: canonical unordered pairs, no self/duplicate pairs, coverage statistics, selection reasons |
-| FeatureMatching | FeatureSet and PairSet | MatchSet: valid feature indices, counts/confidence, descriptor and matcher identities |
-| GeometricVerification | MatchSet, keypoints and camera assumptions | VerifiedGeometry: inliers, pair models/relative constraints, rejection reasons and convention metadata |
+| FeatureMatching | LocalFeatureSet and PairSet | MatchSet v1: exact requested pairs including zeros, valid feature indices, matcher/settings/model identity and raw numerical digest |
+| GeometricVerification | MatchSet, keypoints and camera assumptions | VerifiedGeometrySet v1: inliers, pair models/relative constraints, camera identity and typed rejection states |
 | Mapping (initial sparse route) | Verified geometry, views, cameras and optional declared priors | ReconstructionSet: all components, camera/pose/point metadata, native payloads, ID mappings and coordinate frames |
 | ReconstructionValidation | ReconstructionSet and relevant views/observations | ValidationReport: metrics, warnings, missing measurements, policy result and component coverage; no model mutation |
 | ReconstructionSelection (application decision) | ReconstructionSet, ValidationReport and explicit manual choices or configured policy | ReconstructionSelection: referenced set, selected component IDs, selection mode, policy/version/settings and evidence; no reconstruction mutation |
@@ -170,12 +171,12 @@ have zero remaining execution duration and never produce successful runtime samp
 The [development contract](DEVELOPMENT.md#progress-and-eta-foundation) freezes estimator,
 history/privacy and throttling rules. SQLite status remains authoritative after crashes.
 
-Future M7 extraction reports completed views/MP and optional feature counts; matching
-and verification report completed pairs. Future M8 may expose reliably parsed loading,
+M7a extraction reports selected VIEWS/megapixels and observed feature counts; M7b matching
+and verification use separate exact PAIRS work models. Future M8 may expose reliably parsed loading,
 initialization, registration, triangulation, bundle-adjustment and finalization phases,
 but nonlinear work must retain absent/phase-scoped percent and unavailable or wide
 low/medium-confidence ETA. Future M11 trainers use completed/total iterations or steps.
-These requirements prepare the boundary; no M7/M8/training backend is implemented here.
+M7a/M7b use this boundary; M8/training backends remain planned.
 
 M1b1 implements one concrete deterministic route for contract testing:
 `fake.sequence` consumes literal `start` plus resolved `count` and publishes
@@ -205,7 +206,108 @@ keypoint convention, matcher weights, retrieval index/model, native format versi
 camera model, trainer input format and device requirements. Equal descriptor dimensions
 alone do not establish compatibility. Report all actionable plan errors before work.
 
+## Local-feature extraction (M7a)
+
+`features.extract` route 1 consumes exact candidate/selected contract-1 handles from
+an explicitly requested successful Fixed-FPS or Sharpest views run. Validate selected
+membership, then copy only its orientation-normalized published image bytes into an
+owned attempt workspace with UUID filenames. Never read original source directories
+or extract rejected candidates. Maximum image size is an explicit numerical setting;
+there is no extra crop, rotation or re-encoding. Native COLMAP uses the existing M2
+process boundary, executable verification, scoped environment, bounded diagnostics,
+timeout, durable cancellation and process-tree teardown.
+
+Settings v1 supplies SIFT, ALIKED_N16ROT/optional ALIKED_N32 and separate LOMA_B/LOMA_B128
+routes: maximum features/image size, explicit CPU/GPU policy, learned minimum score and
+LoMa resize policy. Reject unsupported backend options without substitution. BF16 is
+deferred; LoMa uses explicit FP32. LoMa requires COLMAP >=4.2.1; compatible older
+SIFT/ALIKED builds remain eligible. Tokens, version strings and model file presence
+alone cannot establish learned support. Disposable inference must validate the exact
+variant/device/model bytes and native descriptor schema. Successful inference can
+positively establish ONNX runtime support when explicit build flags are absent.
+No Python ML runtime or PyTorch is required in base SplatForge.
+
+`features.local_feature_set` contract 1 publishes `features.json` (frozen
+`LocalFeatureSet`), `backend_mapping.json` (private format/version/schema and exact
+UUID-to-native-image-ID/name mapping) and self-contained `features.db`. The existing
+manifest hashes all three. Public metadata includes selected artifact ID/digest,
+method/version, typed numerical settings, model source/name/size/SHA-256, backend
+numerical identity, descriptor signature, selected/feature totals and canonical per-view
+summaries keyed by view UUID. Camera rows and backend IDs are private transport only;
+M7b must assemble current camera assumptions in an independent database.
+
+SIFT descriptors are 128 uint8 values; ALIKED are 128 float32 values; LOMA_B are
+256 float32 values; LOMA_B128 are 128 float32 values. These four families remain
+incompatible despite shared dimensions. Storage is row-major, float32 little-endian.
+Keypoints use pixel-corner origin with first pixel center `(0.5, 0.5)`, in published
+image dimensions even when the declared extraction size limit scales the input.
+Native `descriptors.cols` counts bytes, not float dimensions. Typed native schemas must
+match the selected extractor enum; legacy untyped databases are supported only for
+fresh verified SIFT. Validate exact expected images, keypoint/descriptor presence,
+counts/shapes/types, finite data, pixel bounds and empty match/geometry tables. Only the
+owned attempt database is WAL-checkpointed and sealed after confirmed process teardown.
+Published reads are immutable and create no sidecars.
+
+Semantic identity streams every ordered keypoint/descriptor byte into per-view digests
+in UUID order and includes numerical settings/signature/model/backend/input identity.
+It excludes native IDs, insertion order, SQLite layout, timestamps and workspace paths.
+Recipe v1 includes selected semantic identity, method/version/settings, model identity
+and conservative backend identity (executable/version, schema and observed colocated
+Windows DLL hashes). PairSet/matcher settings and private performance history are
+excluded. Cache reuse revalidates manifest bytes, typed metadata and native content;
+corrupt publications are refused and a new attempt can publish another immutable result.
+
+Structural limits are MAX_VIEWS=100,000, 100,000 features/view, two learned models,
+64 MiB public metadata, 32 MiB mapping metadata and 1 TiB database. Default execution
+limits are 10,000 selected views, 100,000 source megapixels, 64 GiB workspace and 3600s.
+Before launch estimate configured descriptor/keypoint storage, SQLite/index/journal
+overhead, copied pixels and pinned model copies; enforce limits and current free disk.
+This storage gate does not guarantee RAM/VRAM allocation. OOM fails without automatic
+retry. Failed/cancelled/unresolved attempts never publish. Existing orphan validation
+supports publication recovery; resume means stage restart, not checkpoint resume.
+
+`features.selected_views_v1` uses exact selected VIEWS total with views/megapixels
+workload. Verified COLMAP 4.2.1 logs provide bounded tolerant per-image evidence only
+for expected UUIDs, extractor and bounded feature counts. Other formats leave observed
+completion at zero until successful validation. Known total enables existing historical
+ETA; elapsed time never advances completion. Performance signatures include method/
+version/work model, settings key, runtime/executable/model digests and existing hardware
+profile. Only a committed complete successful run teaches one private history sample.
+Cached/failed/cancelled/interrupted/unresolved runs and Doctor do not teach history.
+Event/history failures degrade diagnostics without affecting identity or publication.
+
+Provision models explicitly. Replace backend URL defaults with copied, SHA-256-pinned
+local files before numerical execution; explicit FP32 prevents fallback downloads.
+Enforce backend-pinned expected hashes. Record source/name/hash provenance for later
+installer-license review; permissive source licensing alone does not grant commercial
+weight redistribution rights. SIFT is the baseline/fallback, ALIKED a learned route;
+current SfM defaults remain unchanged. LoMa-R/L/G are M7b matchers. M7a adds
+no matching, geometry or retrieval and leaves PairSet semantics unchanged.
+
+References: [COLMAP database format](https://colmap.github.io/database.html),
+[extractor types](https://colmap.github.io/features.html) and
+[4.2.1 release](https://github.com/colmap/colmap/releases/tag/4.2.1).
+
 ## Pair selection and native execution
+
+M7b consumes M6 PairSet through the verified explicit-pair `matches_importer` interface;
+its backend never generates Sequential, Exhaustive, retrieval or spatial pairs.
+`MatchSet` and `VerifiedGeometrySet` v1 are separate immutable artifacts/cache/restart
+boundaries. Raw matching disables native verification and fixes its otherwise destructive
+minimum-raw-count transport threshold to 1. Verification-only settings and camera priors
+cannot invalidate raw matching. Every requested pair remains in public summaries,
+including zero raw matches and rejected/insufficient geometry. Streaming per-pair
+numerical hashing canonicalizes UUID direction and feature-index order independently
+of SQLite/native-ID layout. Complete contracts are in [M7B.md](M7B.md).
+
+Simple profiles resolve `auto` before execution: try route-specific GPU inference,
+then positively supported CPU inference for the same technology candidate, then the
+next candidate. Advanced `auto` resolves device only for its explicit methods. Explicit
+CPU/GPU requests fail if unavailable. Every device assessment and final concrete device
+is typed provenance; runtime failure cannot trigger device or technology fallback.
+Local model arguments must be absolute paths to observed, SHA-pinned bytes. Native
+URL/default download resolution is never used. Missing/reference-mismatching models
+fail planning, with paths, expected SHA where known and manual rerun instructions.
 
 M6 implements `pair_selection.sequential` and `pair_selection.exhaustive` version 1.
 Both consume a published CandidateViewSet and either Fixed-FPS or Sharpest SelectedViewSet
@@ -244,7 +346,8 @@ Pair identity v1 is UUIDv5 in namespace `35a55597-1ab8-5bd4-9a56-82075e175da3` o
 `1:<left-uuid>:<right-uuid>` using lowercase hyphenated UUIDs. It excludes method/reasons.
 Pairs sort by endpoints. Typed reason records sort by unique kind: sequential timeline,
 neighbor offset and exact time delta; exhaustive enumeration; explicit supplied pair.
-Deduplication preserves all applicable reasons. There are no retrieval score placeholders.
+Deduplication preserves all applicable reasons. M7c adds actual retrieval rank/score
+evidence through its explicit offline representation route; no placeholder scores.
 
 PairSet semantic identity v1 hashes the canonical universe digest and ordered pair IDs
 with the semantic/contract versions. Settings, reasons, coverage, warnings, artifact UUIDs
@@ -259,7 +362,7 @@ policy. A hit retains its original producer lineage; the new immutable run route
 its own exact upstream handles. Equal graphs from different recipes can have equal
 semantic digests while their recipe keys differ.
 
-Structural bounds are 100,000 selected views, 1,000,000 sparse pairs, three reasons per
+Structural bounds are 100,000 selected views, 1,000,000 sparse pairs, four reasons per
 pair, 100,000 entries per coverage collection, three warning codes and 768 MiB of compact
 UTF-8 PairSet metadata. This accommodates roughly 20k views with tens of neighbors;
 it is a bounded JSON contract, not a production memory/performance guarantee. The
@@ -279,7 +382,13 @@ across clips. Manual pairs and exhaustive matching remain optional diagnostic to
 Warn when a requested whole-scene graph has isolated clips or photos;
 never promise that candidate connectivity guarantees reconstruction connectivity.
 
-M7c will benchmark modern retrieval/hybrid options rather than treating Vocabulary Tree
+M7c's neutral offline representation/hybrid implementation is documented in
+[M7C.md](M7C.md); production VPR inference/selection and representative quality remain
+pending as recorded in the [candidate ledger](M7C_BENCHMARK.md). M7b has no retrieval
+model dependency. The exact CPU reference route is bounded and independent of local
+features; no PyTorch/FAISS is added to base dependencies.
+
+M7c must benchmark modern retrieval/hybrid options rather than treating Vocabulary Tree
 as a final solution. No final neural model is selected in M6. Evaluate real drone/phone
 video, mixed clips, unordered photos, indoor/outdoor, repeated texture, weak overlap and
 large viewpoint changes. Compare useful geometrically verified pairs, graph coverage,
@@ -287,7 +396,7 @@ registration coverage, runtime, VRAM/RAM, descriptor/index size and pair count a
 Recall@K. Weight/model licensing and commercial redistribution feasibility are selection
 criteria alongside quality. M6 adds no ML dependency or model weights.
 
-Future retrieval has an explicit representation contract: embedding/aggregation method and
+The neutral retrieval implementation has an explicit representation contract: embedding/aggregation method and
 version, weights digest, image preprocessing, descriptor dimensions/normalization,
 indexed view IDs and corpus digest, distance metric, index format/version/settings,
 query limits and deterministic tie handling. The corpus identity covers actual view

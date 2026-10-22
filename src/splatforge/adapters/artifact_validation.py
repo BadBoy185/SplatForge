@@ -18,6 +18,13 @@ from splatforge.core.fake_pipeline import (
     ScaledNumbersPayload,
     semantic_digest,
 )
+from splatforge.core.features import (
+    FEATURE_ARTIFACT_TYPE,
+    MAX_FEATURE_METADATA_BYTES,
+    LocalFeatureSet,
+)
+from splatforge.core.geometry import GEOMETRY_ARTIFACT_TYPE, VerifiedGeometrySet
+from splatforge.core.matching import MATCH_ARTIFACT_TYPE, MatchSet
 from splatforge.core.pairs import (
     MAX_PAIR_METADATA_BYTES,
     PAIR_ARTIFACT_TYPE,
@@ -30,6 +37,7 @@ from splatforge.core.quality import (
     quality_semantic_digest,
     sharpest_selected_semantic_digest,
 )
+from splatforge.core.retrieval import RETRIEVAL_ARTIFACT_TYPE, RetrievalRepresentationSet
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     MAX_VIEWS,
@@ -55,6 +63,10 @@ class ValidatedArtifact:
     semantic_digest: str
     parsed: (
         PairSet
+        | RetrievalRepresentationSet
+        | LocalFeatureSet
+        | MatchSet
+        | VerifiedGeometrySet
         | NumbersPayload
         | ScaledNumbersPayload
         | CandidateViewSet
@@ -102,6 +114,16 @@ def validate_workspace_output(
                                    verified_payloads=verified_payloads)
     if artifact_type == PAIR_ARTIFACT_TYPE:
         return _validate_pairs(output, verified_payloads)
+    if artifact_type == RETRIEVAL_ARTIFACT_TYPE:
+        from splatforge.adapters.retrieval_artifacts import validate_retrieval_output
+
+        return validate_retrieval_output(output, verified_payloads)
+    if artifact_type == FEATURE_ARTIFACT_TYPE:
+        return _validate_features(output, verified_payloads)
+    if artifact_type in {MATCH_ARTIFACT_TYPE, GEOMETRY_ARTIFACT_TYPE}:
+        from splatforge.adapters.matching_artifacts import validate_matching_output
+
+        return validate_matching_output(output, artifact_type, verified_payloads)
     if artifact_type == QUALITY_ARTIFACT_TYPE:
         return _validate_quality(output, verified_payloads)
     if artifact_type == SELECTED_ARTIFACT_TYPE:
@@ -166,16 +188,69 @@ def validate_published_artifact(
             raise ValueError("Sharpest selection provenance differs from lineage")
     if isinstance(validated.parsed, PairSet):
         validate_pair_lineage(validated.parsed, manifest)
+    if isinstance(validated.parsed, RetrievalRepresentationSet):
+        from splatforge.adapters.retrieval_artifacts import validate_retrieval_lineage
+
+        validate_retrieval_lineage(validated.parsed, manifest)
+    if isinstance(validated.parsed, LocalFeatureSet):
+        validate_feature_lineage(validated.parsed, manifest)
+    if isinstance(validated.parsed, (MatchSet, VerifiedGeometrySet)):
+        from splatforge.adapters.matching_artifacts import validate_matching_lineage
+
+        validate_matching_lineage(validated.parsed, manifest)
     return validated
+
+
+def validate_feature_lineage(parsed: LocalFeatureSet, manifest: ArtifactManifest) -> None:
+    lineage = {i.input_name: i for i in manifest.input_lineage}
+    if len(manifest.input_lineage) != 2 or set(lineage) != {"candidate_views", "selected_views"}:
+        raise ValueError("Features require exact candidate and selected lineage")
+    selected = lineage["selected_views"]
+    if (selected.artifact_id != parsed.selected_artifact_id
+            or selected.semantic_digest != parsed.selected_semantic_digest
+            or selected.artifact_type != SELECTED_ARTIFACT_TYPE or selected.contract_version != 1
+            or lineage["candidate_views"].artifact_type != CANDIDATE_ARTIFACT_TYPE
+            or lineage["candidate_views"].contract_version != 1):
+        raise ValueError("Feature provenance differs from manifest lineage")
+
+
+def _validate_features(
+    output: Path, verified_payloads: dict[str, PayloadFile] | None = None,
+) -> ValidatedArtifact:
+    from splatforge.adapters.feature_database import validate_feature_payload
+
+    names = {p.name for p in output.iterdir()}
+    required = {"features.json", "backend_mapping.json", "features.db"}
+    if names not in (required, required | {"manifest.json"}):
+        raise ValueError("Feature output has missing/unexpected payloads")
+    if any(not _plain_file(output / name) for name in required):
+        raise ValueError("Feature payload must contain plain files")
+    features = LocalFeatureSet.model_validate_json(_read_bounded(
+        output / "features.json", MAX_FEATURE_METADATA_BYTES, "LocalFeatureSet metadata",
+    ))
+    validate_feature_payload(output, features)
+    payloads = []
+    for name in sorted(required):
+        size, digest = _payload_digest(output, output / name, verified_payloads)
+        payloads.append(PayloadFile(path=name, size=size, sha256=digest))
+    return ValidatedArtifact(payloads=tuple(payloads), semantic_digest=features.semantic_digest,
+                             parsed=features)
 
 
 def validate_pair_lineage(parsed: PairSet, manifest: ArtifactManifest) -> None:
     """Check exact provenance before publication as well as on cache/recovery reads."""
     lineage = {item.input_name: item for item in manifest.input_lineage}
-    if len(manifest.input_lineage) != 2 or set(lineage) != {
+    expected = {
         "candidate_views", "selected_views",
-    }:
+    } | ({"retrieval_representation"} if parsed.retrieval else set())
+    if len(manifest.input_lineage) != len(expected) or set(lineage) != expected:
         raise ValueError("PairSet requires exactly candidate and selected lineage")
+    if parsed.retrieval:
+        item = lineage["retrieval_representation"]
+        if (item.artifact_id != parsed.retrieval.artifact_id
+                or item.semantic_digest != parsed.retrieval.semantic_digest
+                or item.artifact_type != RETRIEVAL_ARTIFACT_TYPE or item.contract_version != 1):
+            raise ValueError("PairSet retrieval provenance differs from manifest lineage")
     for name, artifact_id, digest, artifact_type in (
         ("candidate_views", parsed.candidate_artifact_id, parsed.candidate_semantic_digest,
          CANDIDATE_ARTIFACT_TYPE),

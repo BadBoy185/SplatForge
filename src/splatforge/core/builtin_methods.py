@@ -33,6 +33,16 @@ def build_builtin_registry() -> MethodRegistry:
             descriptor_family="sift",
         ),
         MethodSpec(
+            id="feature_extraction.loma_b", display_name="LoMa B",
+            stage=StageKind.FEATURE_EXTRACTION, descriptor_family="loma_b",
+            notes="M7a native extraction; verified COLMAP >=4.2.1 and local ONNX models required",
+        ),
+        MethodSpec(
+            id="feature_extraction.loma_b128", display_name="LoMa B128",
+            stage=StageKind.FEATURE_EXTRACTION, descriptor_family="loma_b128",
+            notes="M7a native extraction; verified COLMAP >=4.2.1 and local ONNX models required",
+        ),
+        MethodSpec(
             id="pair_selection.sequential",
             display_name="Sequential",
             stage=StageKind.PAIR_SELECTION,
@@ -50,6 +60,12 @@ def build_builtin_registry() -> MethodRegistry:
             stage=StageKind.PAIR_SELECTION,
             notes="Catalog only; not implemented or runnable",
         ),
+        *(MethodSpec(
+            id=f"pair_selection.{name}", display_name=name.title(),
+            stage=StageKind.PAIR_SELECTION,
+            notes="Implemented v1 with explicit immutable offline retrieval representation; "
+                  "production neural model selection pending representative M7b benchmark",
+        ) for name in ("retrieval", "hybrid")),
         MethodSpec(
             id="pair_selection.spatial",
             display_name="Spatial / GPS",
@@ -70,6 +86,26 @@ def build_builtin_registry() -> MethodRegistry:
         ),
         MethodSpec(
             id="mapping.colmap_global", display_name="COLMAP Global Mapper", stage=StageKind.MAPPING
+        ),
+        MethodSpec(
+            id="feature_matching.sift_bruteforce", display_name="SIFT brute-force",
+            stage=StageKind.FEATURE_MATCHING, accepts_descriptor_families=frozenset({"sift"}),
+        ),
+        MethodSpec(
+            id="feature_matching.aliked_bruteforce", display_name="ALIKED brute-force",
+            stage=StageKind.FEATURE_MATCHING, accepts_descriptor_families=frozenset({"aliked"}),
+        ),
+        *(MethodSpec(
+            id=f"feature_matching.loma_{variant}", display_name=f"LoMa {variant.upper()}",
+            stage=StageKind.FEATURE_MATCHING,
+            accepts_descriptor_families=frozenset(
+                {"loma_b", "loma_b128"} if variant == "bruteforce" else
+                {"loma_b128"} if variant == "b128" else {"loma_b"}),
+            notes="Production native route; verified COLMAP >=4.2.1 and pinned local models",
+        ) for variant in ("bruteforce", "b", "b128", "r", "l", "g")),
+        MethodSpec(
+            id="geometric_verification.colmap", display_name="COLMAP geometric verification",
+            stage=StageKind.GEOMETRIC_VERIFICATION,
         ),
         MethodSpec(
             id="mapping.colmap_incremental",

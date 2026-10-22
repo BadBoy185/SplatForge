@@ -178,7 +178,10 @@ def test_no_colmap_is_a_valid_report_and_planned_methods_are_not_runnable() -> N
     report = service.report()
     assert report.colmap.binary.status == CapabilityStatus.UNAVAILABLE
     assert all(method.catalogued for method in report.methods)
-    assert all(method.implementation_status == "planned" for method in report.methods)
+    assert all(method.implementation_status == (
+        "implemented" if method.method_id.startswith(("feature_extraction.", "feature_matching.",
+                                                     "geometric_verification.")) else "planned"
+    ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)
     DoctorReport.model_validate_json(report.model_dump_json())
 
@@ -194,9 +197,11 @@ def test_deep_flag_is_forwarded_and_backend_status_never_marks_stage_runnable() 
     report = service.report(deep=True)
     assert report.deep is True
     assert report.colmap.deep is True
-    assert all(
-        method.backend_capability_status == CapabilityStatus.AVAILABLE for method in report.methods
-    )
+    assert all(method.backend_capability_status == (
+        CapabilityStatus.UNKNOWN if method.method_id.startswith(("feature_extraction.",
+            "feature_matching.", "geometric_verification."))
+        else CapabilityStatus.AVAILABLE
+    ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)
     assert colmap.calls == 1
 
@@ -238,7 +243,7 @@ def test_human_report_is_concise_and_explicit_about_planned_methods() -> None:
     rendered = render_doctor_report(report)
     assert "COLMAP 4.2.1" in rendered
     assert "implemented=planned, runnable=no" in rendered
-    assert len(rendered.splitlines()) < 25
+    assert len(rendered.splitlines()) < 40
 
 
 def test_generic_gpu_availability_does_not_change_colmap_gpu_health() -> None:

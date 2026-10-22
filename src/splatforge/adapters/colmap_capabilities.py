@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlparse
 
 from PIL import Image, ImageDraw
@@ -60,6 +60,10 @@ from splatforge.core.capabilities import (
 from splatforge.core.media import ExecutableIdentity
 from splatforge.core.process import ProcessResult
 
+if TYPE_CHECKING:
+    from splatforge.core.features import FeatureSettings
+    from splatforge.core.matching import MatcherSettings
+
 _REQUIRED_COMMANDS = (
     "database_creator",
     "feature_extractor",
@@ -69,6 +73,8 @@ _REQUIRED_COMMANDS = (
     "mapper",
     "hierarchical_mapper",
     "model_converter",
+    "matches_importer",
+    "geometric_verifier",
 )
 _REQUIRED_SCHEMA = {
     "cameras": {"camera_id", "model", "width", "height", "params", "prior_focal_length"},
@@ -84,6 +90,11 @@ _MODEL_OPTIONS = {
     "lightglue.sift": "SiftMatching.lightglue_model_path",
     "lightglue.aliked": "AlikedMatching.lightglue_model_path",
     "bruteforce.aliked": "AlikedMatching.bruteforce_model_path",
+    "loma.detector": "LomaExtraction.detector_model_path",
+    "loma.b": "LomaExtraction.descriptor_model_path",
+    "loma.b128": "LomaExtraction.descriptor_b128_model_path",
+    "bruteforce.loma": "LomaMatching.brute_force_model_path",
+    **{f"loma.matcher.{v}": f"LomaMatching.{v}_model_path" for v in ("b", "b128", "r", "l", "g")},
 }
 _CAPABILITY_IDS = (
     *(f"colmap.operation.{operation}" for operation in _REQUIRED_COMMANDS),
@@ -92,10 +103,18 @@ _CAPABILITY_IDS = (
     "gpu.colmap_cuda",
     "colmap.onnx",
     "colmap.feature.aliked",
+    *(f"colmap.feature.{variant}.{device}"
+      for variant in ("aliked_n16rot", "aliked_n32", "loma_b", "loma_b128")
+      for device in ("cpu", "gpu")),
     "colmap.match.sift_bruteforce",
     "colmap.match.aliked_bruteforce",
     "colmap.match.sift_lightglue",
     "colmap.match.aliked_lightglue",
+    *(f"colmap.match.{token}.{device}" for token in (
+        "sift_bruteforce", "sift_lightglue", "aliked_bruteforce", "aliked_lightglue",
+        "loma_bruteforce", "loma_b", "loma_b128", "loma_r", "loma_l", "loma_g",
+    ) for device in ("cpu", "gpu")),
+    "colmap.verification.standalone",
     "colmap.mapper.global",
     "colmap.mapper.incremental",
     "colmap.mapper.hierarchical",
@@ -192,12 +211,29 @@ class ColmapCapabilityAdapter:
     def verify_expected_identity(self, expected: ExecutableIdentity) -> bool:
         return self._resolver.verify_expected_identity(expected)
 
+    def verify_model_identities(self, models: tuple[ModelEvidence, ...]) -> bool:
+        for model in models:
+            if model.resolved_path:
+                path = Path(model.resolved_path)
+                try:
+                    if model.sha256 is None:
+                        if path.exists():
+                            return False
+                    elif (path.is_symlink() or path.is_junction()
+                          or path.stat().st_size != model.size
+                          or self._hash_file(path) != model.sha256):
+                        return False
+                except OSError:
+                    return False
+        return True
+
     def configuration_key(self) -> tuple[str, ...]:
         return tuple(
             self._environment.get(name, "")
             for name in (
                 "SPLATFORGE_COLMAP",
                 "SPLATFORGE_COLMAP_MODEL_DIR",
+                "LOCALAPPDATA",
                 "PATH",
                 "PATHEXT",
                 "QT_PLUGIN_PATH",
@@ -215,6 +251,9 @@ class ColmapCapabilityAdapter:
         deep: bool,
         observed_at: datetime,
         freshness: FreshnessPolicy,
+        feature_settings: FeatureSettings | None = None,
+        matching_settings: MatcherSettings | None = None,
+        verification_only: bool = False,
     ) -> ColmapProbeReport:
         try:
             selection = self._locator.locate(
@@ -321,11 +360,13 @@ class ColmapCapabilityAdapter:
             self._probe_subcommand_help(
                 identity, command, commands, listing_ok, observed_at, freshness, environment
             )
-            for command in ("feature_extractor", "exhaustive_matcher", "sequential_matcher")
+            for command in ("feature_extractor", "exhaustive_matcher", "sequential_matcher",
+                            "matches_importer", "geometric_verifier")
         )
         feature_parsed = help_results[0][2]
         matcher_parsed = next(
-            (item[2] for item in help_results[1:] if item[2].recognized),
+            (item[2] for item in (help_results[3],help_results[1],help_results[2])
+             if item[2].recognized),
             ParsedOptionHelp(False, (), (), ()),
         )
         parsed_helps = tuple(item[2] for item in help_results)
@@ -381,11 +422,38 @@ class ColmapCapabilityAdapter:
             matcher=matcher_parsed,
             models=models,
             database=database,
-            deep=deep,
+            deep=deep and not (verification_only or matching_settings is not None
+                              or (feature_settings is not None
+                                  and feature_settings.variant != "SIFT")),
             observed_at=observed_at,
             freshness=freshness,
             build_text=combined,
             environment=environment,
+        )
+        # M7a extends the existing discovery/probe lifecycle, including containment.
+        from splatforge.adapters.learned_feature_probe import probe_feature_routes
+        from splatforge.core.features import SiftExtractionSettings
+
+        capabilities, models = probe_feature_routes(
+            self, capabilities=capabilities, models=models, feature=feature_parsed,
+            database=database, identity=identity, deep=deep, observed_at=observed_at,
+            freshness=freshness, environment=environment,
+            cuda_build=parse_build_support(combined, "CUDA"),
+            requested=(
+                SiftExtractionSettings()
+                if verification_only or matching_settings is not None
+                else feature_settings
+            ),
+        )
+        from splatforge.adapters.matching_capabilities import probe_matching_routes
+
+        capabilities, models = probe_matching_routes(
+            self, capabilities=capabilities, models=models, helps=help_results,
+            database=database, identity=identity, deep=deep, observed_at=observed_at,
+            freshness=freshness, environment=environment, requested=matching_settings,
+            feature_settings=feature_settings,
+            verification_only=verification_only,
+            cuda_build=parse_build_support(combined, "CUDA"),
         )
         if binary.status != CapabilityStatus.AVAILABLE:
             capabilities = tuple(
@@ -742,7 +810,7 @@ class ColmapCapabilityAdapter:
                 elif problem is not None:
                     status, code, message = problem
                 else:
-                    option = (
+                    option = "TwoViewGeometry" if command == "geometric_verifier" else (
                         "FeatureExtraction.type"
                         if command == "feature_extractor"
                         else "FeatureMatching.type"
@@ -800,7 +868,9 @@ class ColmapCapabilityAdapter:
             return path, "environment"
         if bundled is not None:
             return bundled, "bundled"
-        return None, "unconfigured"
+        local = self._environment.get("LOCALAPPDATA")
+        base = Path(local) if local else Path.home() / "AppData" / "Local"
+        return base / "SplatForge" / "models" / "colmap", "local_default"
 
     def _inspect_models(
         self,
@@ -816,9 +886,17 @@ class ColmapCapabilityAdapter:
         for role, option in _MODEL_OPTIONS.items():
             default = by_option.get(option)
             expected_name = None
+            expected_digest = None
             if default:
-                parsed = urlparse(default)
-                expected_name = Path(parsed.path or default).name or None
+                parts = default.split(";")
+                parsed = urlparse(parts[0])
+                expected_name = (parts[1] if len(parts) == 3 else
+                                 Path(parsed.path or parts[0]).name) or None
+                if len(parts) == 3 and re.fullmatch(r"[0-9a-f]{64}", parts[2]):
+                    expected_digest = parts[2]
+                if expected_name and (Path(expected_name).name != expected_name
+                                      or "/" in expected_name or "\\" in expected_name):
+                    expected_name = None
             if expected_name is None:
                 evidence = self._evidence(
                     f"colmap.model.{role}",
@@ -834,6 +912,7 @@ class ColmapCapabilityAdapter:
                         role=role,
                         configured_source=source,
                         expected_name=None,
+                        expected_root=str(root) if root else None,
                         evidence=evidence,
                     )
                 )
@@ -844,7 +923,9 @@ class ColmapCapabilityAdapter:
                     CapabilityStatus.UNAVAILABLE,
                     "colmap.model_missing",
                     (
-                        f"Configure a model directory containing {expected_name}; "
+                        f"{role}: configure --colmap-model-dir or SPLATFORGE_COLMAP_MODEL_DIR "
+                        f"to an absolute local directory containing {expected_name}; "
+                        f"expected SHA-256: {expected_digest or 'reference digest unavailable'}; "
                         "no download was attempted"
                     ),
                     observed_at,
@@ -856,20 +937,33 @@ class ColmapCapabilityAdapter:
                         role=role,
                         configured_source=source,
                         expected_name=expected_name,
+                        expected_sha256=expected_digest,
+                        source_uri=default,
                         evidence=evidence,
                     )
                 )
                 continue
             candidate = root / expected_name
+            # COLMAP 4.2.1 stores already provisioned cache files as SHA-name.
+            # Inspect only this exact alternative, within the configured root.
+            if (expected_digest and not candidate.exists()
+                    and not candidate.is_symlink()):
+                cached = root / f"{expected_digest}-{expected_name}"
+                if cached.exists():
+                    candidate = cached
+            digest = None
+            observed_size = None
             try:
+                if not root.is_absolute() or "://" in str(root) or ";" in str(root):
+                    raise OSError("model root must be an absolute local directory")
                 if root.is_symlink() or root.is_junction() or candidate.is_symlink():
                     raise OSError("redirected model roots/files require explicit relinking")
                 resolved = candidate.resolve(strict=True)
                 if resolved.parent != root.resolve(strict=True) or not resolved.is_file():
                     raise OSError("not a regular file in the configured model root")
                 stat_before = resolved.stat()
-                if stat_before.st_size == 0:
-                    raise OSError("model file is empty")
+                if not 0 < stat_before.st_size <= 8 * 1024**3:
+                    raise OSError("model file is empty or exceeds the supported size bound")
                 digest = self._hash_file(resolved)
                 stat_after = resolved.stat()
                 if (
@@ -884,12 +978,17 @@ class ColmapCapabilityAdapter:
                     stat_after.st_ctime_ns,
                 ):
                     raise OSError("model changed while hashing")
+                observed_size = stat_after.st_size
+                if expected_digest is not None and digest != expected_digest:
+                    raise OSError("model SHA-256 differs from the backend's pinned model contract")
             except OSError as exc:
                 evidence = self._evidence(
                     f"colmap.model.{role}",
                     CapabilityStatus.UNAVAILABLE,
                     "colmap.model_unreadable",
-                    f"Configured model is missing or unreadable: {candidate} ({exc})",
+                    f"{role}: {candidate} ({exc}); expected SHA-256: "
+                    f"{expected_digest or 'reference digest unavailable'}; configure "
+                    "--colmap-model-dir or SPLATFORGE_COLMAP_MODEL_DIR; no download attempted",
                     observed_at,
                     freshness.static_cli_seconds,
                     identity,
@@ -899,7 +998,13 @@ class ColmapCapabilityAdapter:
                         role=role,
                         configured_source=source,
                         expected_name=expected_name,
+                        expected_root=str(root),
+                        checked_path=str(candidate.absolute()),
                         resolved_path=str(candidate.absolute()),
+                        expected_sha256=expected_digest,
+                        source_uri=default,
+                        sha256=digest if observed_size is not None else None,
+                        size=observed_size,
                         evidence=evidence,
                     )
                 )
@@ -908,7 +1013,9 @@ class ColmapCapabilityAdapter:
                 f"colmap.model.{role}",
                 CapabilityStatus.AVAILABLE,
                 "colmap.model_available",
-                f"Concrete model evidence recorded for {role}",
+                f"Concrete model evidence recorded for {role}; "
+                + ("backend reference SHA-256 verified" if expected_digest else
+                   "reference digest unavailable; observed local SHA-256 recorded"),
                 observed_at,
                 freshness.static_cli_seconds,
                 identity,
@@ -918,9 +1025,13 @@ class ColmapCapabilityAdapter:
                     role=role,
                     configured_source=source,
                     expected_name=expected_name,
+                    expected_root=str(root),
+                    checked_path=str(candidate.absolute()),
                     resolved_path=str(resolved),
                     size=stat_after.st_size,
                     sha256=digest,
+                    source_uri=default,
+                    expected_sha256=expected_digest,
                     evidence=evidence,
                 )
             )
@@ -1761,6 +1872,7 @@ class ColmapCapabilityAdapter:
 
 def inspect_colmap_database(
     path: Path,
+    *, maximum_bytes: int = 16 * 1024 * 1024,
 ) -> tuple[int, int, tuple[DatabaseTableEvidence, ...]]:
     """Read a generated COLMAP database strictly read-only and validate schema v1."""
 
@@ -1769,11 +1881,11 @@ def inspect_colmap_database(
     resolved = path.resolve(strict=True)
     if not resolved.is_file():
         raise ValueError("database output is not a regular file")
-    if resolved.stat().st_size > 16 * 1024 * 1024:
-        raise ValueError("database probe exceeds the 16 MiB inspection limit")
-    uri = resolved.as_uri() + "?mode=ro"
+    if resolved.stat().st_size > maximum_bytes:
+        raise ValueError("database exceeds its inspection byte limit")
+    uri = resolved.as_uri() + "?mode=ro&immutable=1"
     with closing(sqlite3.connect(uri, uri=True)) as connection:
-        deadline = time.monotonic() + 2.0
+        deadline = time.monotonic() + (2.0 if maximum_bytes <= 16 * 1024 * 1024 else 300.0)
         connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
         connection.execute("PRAGMA query_only=ON")
         connection.execute("PRAGMA trusted_schema=OFF")
@@ -1795,6 +1907,8 @@ def inspect_colmap_database(
         for table, required_columns in _REQUIRED_SCHEMA.items():
             rows = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
             columns = tuple(str(row[1]) for row in rows)
+            if table == "descriptors" and "type" in columns:
+                required_columns = required_columns | {"type"}
             missing_columns = sorted(required_columns - set(columns))
             if missing_columns:
                 raise ValueError(f"table {table} is missing columns: {', '.join(missing_columns)}")

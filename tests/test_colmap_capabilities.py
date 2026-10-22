@@ -261,6 +261,9 @@ FEATURE_HELP = """Options:
 --FeatureExtraction.type arg (=SIFT) {SIFT, ALIKED_N16ROT, ALIKED_N32, LOMA_B128}
 --FeatureExtraction.use_gpu arg (=1)
 --FeatureExtraction.num_threads arg (=-1)
+--FeatureExtraction.max_image_size arg (=-1)
+--FeatureExtraction.gpu_index arg (=-1)
+--SiftExtraction.max_num_features arg (=8192)
 --AlikedExtraction.n16rot_model_path arg (=https://models.invalid/aliked-n16rot.onnx)
 --AlikedExtraction.n32_model_path arg (=https://models.invalid/aliked-n32.onnx)
 """
@@ -579,7 +582,7 @@ def test_top_level_probe_failures_are_structured(
     assert report.binary.status != CapabilityStatus.AVAILABLE
 
 
-def test_concrete_model_files_are_hashed_and_enable_learned_routes(tmp_path: Path) -> None:
+def test_model_files_are_hashed_but_do_not_certify_learned_inference(tmp_path: Path) -> None:
     for name in (
         "aliked-n16rot.onnx",
         "aliked-n32.onnx",
@@ -600,7 +603,7 @@ def test_concrete_model_files_are_hashed_and_enable_learned_routes(tmp_path: Pat
     expected = hashlib.sha256(b"model-aliked-n16rot.onnx").hexdigest()
     assert by_role["aliked.n16rot"].sha256 == expected
     assert by_role["aliked.n16rot"].evidence.status == CapabilityStatus.AVAILABLE
-    assert report.capability("colmap.feature.aliked").status == CapabilityStatus.AVAILABLE
+    assert report.capability("colmap.feature.aliked").status == CapabilityStatus.UNKNOWN
     assert report.capability("colmap.match.sift_lightglue").status == CapabilityStatus.AVAILABLE
     assert report.capability("colmap.match.aliked_lightglue").status == CapabilityStatus.AVAILABLE
 
@@ -1094,7 +1097,10 @@ def test_unknown_raw_features_never_mutate_the_method_catalog() -> None:
     report = probe_with_overrides({})
     assert "LOMA_B128" in report.command_discovery.feature_tokens
     assert registry.list() == before
-    assert all("loma" not in method.id for method in registry.list())
+    assert {m.id for m in registry.list() if "loma" in m.id} == {
+        "feature_extraction.loma_b", "feature_extraction.loma_b128",
+        *(f"feature_matching.loma_{v}" for v in ("bruteforce", "b", "b128", "r", "l", "g")),
+    }
 
 
 def test_unknown_aliked_variant_remains_raw_with_unknown_model_mapping() -> None:

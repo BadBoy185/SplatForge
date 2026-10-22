@@ -16,7 +16,9 @@ implemented. The dedicated post-M6/pre-M7 scalability/operability pass is comple
 preserve the brute-force selector oracle, early expansion bounds, operation-scoped
 validation, linear producer provenance and bounded optional attempt diagnostics in
 later milestones. Numerical keys and existing project/state/artifact versions are
-unchanged. M7 remains a separate, unimplemented task.
+unchanged. M7a extraction and M7b matching/verification are implemented. M7c's neutral
+offline contracts/hybrid path are implemented; production inference/model selection
+and representative quality acceptance remain pending.
 
 M6.5 progress/ETA foundation is implemented. Later backends must integrate
 with the [progress contract](DEVELOPMENT.md#progress-and-eta-foundation), preserving
@@ -199,8 +201,10 @@ rejected images as metadata-backed artifacts. Defer adaptive motion selection.
 Implemented by the project-free `doctor` application service and CLI. Lightweight
 discovery records exact executable/build identity, bounded raw commands/options/tokens,
 ONNX/model prerequisites and separate generic-GPU evidence. `--deep` adds disposable
-native database and CPU/GPU SIFT functional probes. All M7/M8 catalog methods remain
-planned and never become runnable from M5 evidence.
+native database and CPU/GPU SIFT functional probes. M7a extends this same machinery
+with exact ALIKED/LoMa variant/device/model inference gates. M7b adds explicit-pair
+matching and standalone verification inference gates. M8 methods remain planned;
+capability evidence alone cannot make an unimplemented method runnable.
 Windows official-style installations accept `COLMAP.bat` only as an inert locator;
 all probes execute hash-verified native `colmap.exe` with the same controlled child
 runtime paths. Record typed layout evidence separately; never execute the wrapper,
@@ -235,6 +239,12 @@ Practical modern retrieval/hybrid benchmarking remains M7c; spatial pairing rema
 
 ## M7a Features
 
+Status: implemented as `features extract` and `LocalFeatureSet` contract 1, with
+deterministic contract/adapter/application tests and opt-in real SIFT. Real ALIKED/LoMa
+integration requires configured compatible ONNX models/runtime; mocks do not certify it.
+The route consumes an exact successful views run, uses existing immutable publication,
+cache/recovery/cancellation and `features.selected_views_v1` Progress/ETA history.
+
 Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-outputs),
 [view conventions](PIPELINE.md#view-and-camera-rules),
 [execution](PIPELINE.md#method-execution-contract),
@@ -243,14 +253,46 @@ Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-output
 [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
 
 ```text
-Implement verified ALIKED and SIFT extraction routes and feature artifacts. Validate
+Implement verified SIFT, ALIKED_N16ROT, optional ALIKED_N32, LOMA_B and LOMA_B128
+extraction routes and feature artifacts. Require COLMAP >=4.2.1 only for LoMa.
+LoMa-R/L/G belong to M7b matching. Keep current SfM defaults. Validate
 signatures, model digests and pixel/keypoint conventions. Isolate native databases
 by feature identity and publish immutable results. Test incompatible routes and real
 opt-in extraction. Missing learned support is a capability gap, not a completed
 integration milestone based solely on mocks/SIFT. No matching or mapping.
+Pin explicitly provisioned local models before numerical execution, record source/name
+and SHA-256 for a later installer-license audit, and forbid implicit downloads.
+No PyTorch or other Python ML runtime. Integrate VIEWS/megapixels and eligible successful
+history through M6.5; never put ETA/history or pair/matcher settings in feature keys.
 ```
 
 ## M7b Matching and geometric verification
+
+Status: implemented with `MatchSet`/`VerifiedGeometrySet` v1, exact external PairSet,
+separate immutable database copies/cache boundaries, PAIRS progress/history, production
+SIFT/ALIKED/LoMa families and versioned feature/matching profile v1 resolution.
+Real tiny SIFT passes on installed COLMAP 4.2.1; learned real validation requires
+provisioned local model/runtime evidence. See [M7B.md](M7B.md) for exact routes,
+settings, fixture configuration and limitations. M7b.1 hardens route-specific device
+resolution: Simple `auto` checks GPU then supported CPU inside each candidate;
+Advanced `auto` changes device only. Concrete devices are frozen, performance history
+never selects them, and local models cannot invoke native URI downloads. Real
+ALIKED_N16ROT/LightGlue CPU passes. M7b.2 extends the opt-in real fixture to the
+complete 13-combination Advanced matrix, including N32 and learned brute-force.
+Official weights are explicitly provisioned separately using verified native
+URL/name/SHA defaults; numerical attempts still cannot download. Runtime diagnosis
+stays inside the controlled installation, with no software installation, borrowed
+DLLs or global PATH changes. All thirteen compatible CPU combinations passed real
+validation, covering all ten matcher types. SIFT/brute-force also passed GPU;
+learned GPU routes remain blocked by missing cuDNN 9 in the controlled installation.
+M7b.3 subsequently resolves this dependency through explicitly authorized isolated
+runtime provisioning: native COLMAP 4.2.1, CUDA 12.8 and cuDNN 9.27.0.42. All thirteen
+compatible routes pass real GPU validation, with cache and published-input integrity;
+CPU ALIKED/LightGlue also passes on that bundle. The original installation, existing
+models and system PATH are preserved. Numerical attempts and Doctor still perform
+no installation/download. Simple profile v1 and production code are unchanged.
+See [GPU runtime setup](GPU_RUNTIME.md) and M7B.md for metrics and limitations.
+This prompt remains a scope reference.
 
 Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-outputs),
 [pairing and native execution](PIPELINE.md#pair-selection-and-native-execution),
@@ -259,16 +301,26 @@ Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-output
 [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
 
 ```text
-Implement compatible LightGlue and SIFT/brute-force matching of an explicit PairSet,
-then geometric verification with separate settings. Test pair preservation, signatures,
-raw matches versus verified geometry, database integrity and feature reuse. Expose any
-native fusion as one execution key/restart boundary; reject routes ignoring requested
-pairs. Assemble current cameras in private databases without writable hardlinks; test
-upstream bytes remain unchanged. Validate tiny real supported routes;
-report missing prerequisites honestly. No mapping.
+Implement first-class SIFT/BF/LightGlue, ALIKED/BF/LightGlue and LoMa-B128/B/R/L/G/BF
+matching over the exact M6 PairSet, then standalone geometric verification. Preserve
+zero-match/rejected pairs and separate MatchSet/VerifiedGeometrySet identities.
+Resolve Simple Fast/Medium/High/Max High v1 before execution; Advanced is explicit
+typed selection without fallback. Freeze exact numerical settings and capability
+evidence; never switch algorithms inside an attempt or migrate saved ALIKED intent.
+Use independent private database copies, canonical numerical digests, current camera
+priors, existing attempts/cancellation/recovery and separate PAIRS/ETA signatures.
+Test full compatibility, corruption, cache dependencies, immutable bytes and real
+SIFT; provide complete learned opt-ins and actionable provisioning gaps. No retrieval,
+mapping, training, GUI, downloads or new Python ML runtime.
 ```
 
 ## M7c Practical cross-clip retrieval and hybrid pairing
+
+Status: partially implemented. Read [M7C.md](M7C.md) and the
+[candidate audit/evidence ledger](M7C_BENCHMARK.md) before continuing. Preserve the
+offline contracts/hybrid path and complete the real candidate comparison before
+selecting or integrating one production inference backend. No current Simple profile
+selects a retrieval model. Do not reinterpret synthetic transport evidence as quality.
 
 Additional reading: [PIPELINE: pair selection](PIPELINE.md#pair-selection-and-native-execution),
 [PIPELINE: cache rules](PIPELINE.md#stage-fingerprints-and-cache-eligibility) and

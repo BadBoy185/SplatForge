@@ -19,6 +19,7 @@ from splatforge.core.capabilities import (
     FreshnessPolicy,
     ImplementationStatus,
     MethodCapability,
+    required_status,
 )
 from splatforge.core.registry import MethodRegistry
 
@@ -72,6 +73,8 @@ class DoctorService:
             if (
                 selected is not None
                 and self._colmap.verify_expected_identity(selected.identity)
+                and (not hasattr(self._colmap, "verify_model_identities")
+                     or self._colmap.verify_model_identities(cached.report.colmap.models))
                 and (gpu_identity is None or self._gpu.verify_expected_identity(gpu_identity))
             ):
                 return cached.report
@@ -157,29 +160,36 @@ class DoctorService:
                 "feature_extraction.sift",
                 ("colmap.feature.sift.cpu", "colmap.feature.sift.gpu"),
             ),
+            ("feature_extraction.loma_b",
+             ("colmap.feature.loma_b.cpu", "colmap.feature.loma_b.gpu")),
+            ("feature_extraction.loma_b128",
+             ("colmap.feature.loma_b128.cpu", "colmap.feature.loma_b128.gpu")),
             (
                 "feature_matching.lightglue_aliked",
-                ("colmap.match.aliked_lightglue",),
+                ("colmap.match.aliked_lightglue.cpu", "colmap.match.aliked_lightglue.gpu"),
             ),
             (
                 "feature_matching.lightglue_sift",
-                ("colmap.match.sift_lightglue",),
+                ("colmap.match.sift_lightglue.cpu", "colmap.match.sift_lightglue.gpu"),
             ),
+            *((f"feature_matching.{token}",
+               (f"colmap.match.{token}.cpu", f"colmap.match.{token}.gpu"))
+              for token in ("sift_bruteforce", "aliked_bruteforce", "loma_bruteforce",
+                            "loma_b", "loma_b128", "loma_r", "loma_l", "loma_g")),
+            ("geometric_verification.colmap", ("colmap.verification.standalone",)),
             ("mapping.colmap_global", ("colmap.mapper.global",)),
             ("mapping.colmap_incremental", ("colmap.mapper.incremental",)),
             ("mapping.colmap_hierarchical", ("colmap.mapper.hierarchical",)),
         )
         mapped = []
         for method_id, prerequisites in routes:
-            statuses = tuple(
-                (
-                    report.capability(item).status
-                    if observed_at < report.capability(item).expires_at
-                    else CapabilityStatus.UNKNOWN
-                )
-                for item in prerequisites
-            )
-            if method_id == "feature_extraction.sift":
+            statuses = []
+            for item in prerequisites:
+                try:
+                    statuses.append(report.capability(item).current_at(observed_at).status)
+                except KeyError:
+                    statuses.append(CapabilityStatus.UNKNOWN)
+            if len(prerequisites) > 1:
                 if CapabilityStatus.AVAILABLE in statuses:
                     backend_status = CapabilityStatus.AVAILABLE
                 elif CapabilityStatus.UNKNOWN in statuses:
@@ -190,15 +200,23 @@ class DoctorService:
                 backend_status = statuses[0]
             if report.binary.status != CapabilityStatus.AVAILABLE:
                 backend_status = report.binary.status
+            implemented = method_id.startswith(("feature_extraction.", "feature_matching.",
+                                                "geometric_verification."))
+            if implemented:
+                backend_status = required_status((backend_status, report.database.evidence.status))
             mapped.append(
                 MethodCapability(
                     method_id=method_id,
                     catalogued=method_id in catalog,
-                    implementation_status=ImplementationStatus.PLANNED,
+                    supported_by_splatforge=implemented,
+                    implementation_status=(ImplementationStatus.IMPLEMENTED if implemented
+                                           else ImplementationStatus.PLANNED),
                     backend_capability_status=backend_status,
-                    runnable=False,
-                    diagnostic_code="splatforge.stage_not_implemented",
-                    message="SplatForge stage not implemented yet",
+                    runnable=implemented and backend_status == CapabilityStatus.AVAILABLE,
+                    diagnostic_code=("splatforge.native_capability_gate" if implemented else
+                                     "splatforge.stage_not_implemented"),
+                    message=("Native execution requires verified method/device/models and options"
+                             if implemented else "SplatForge stage not implemented yet"),
                     prerequisites=prerequisites,
                 )
             )
@@ -254,7 +272,8 @@ def render_doctor_report(report: DoctorReport) -> str:
     for method in report.methods:
         lines.append(
             f"  {method.method_id}: backend={method.backend_capability_status.value}, "
-            "implemented=planned, runnable=no"
+            f"implemented={method.implementation_status.value}, "
+            f"runnable={'yes' if method.runnable else 'no'}"
         )
     if report.warnings:
         lines.append("Warnings:")

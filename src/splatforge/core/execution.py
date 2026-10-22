@@ -16,13 +16,38 @@ from pydantic import (
     model_validator,
 )
 
+from splatforge.core.features import (
+    FEATURE_ARTIFACT_TYPE,
+    DescriptorSignature,
+    FeatureBackend,
+    FeatureResourceEstimate,
+    FeatureResourceLimits,
+    FeatureSettings,
+)
+from splatforge.core.geometry import (
+    GEOMETRY_ARTIFACT_TYPE,
+    CameraPriorSet,
+    VerificationSettings,
+    verification_recipe_key,
+)
+from splatforge.core.matching import (
+    MATCH_ARTIFACT_TYPE,
+    MatcherSettings,
+    MatchingBackend,
+    MatchingResourceEstimate,
+    MatchingResourceLimits,
+    matching_recipe_key,
+    validate_matcher_compatibility,
+)
 from splatforge.core.media import ExecutableIdentity, SourceOccurrence, VerificationPolicyId
 from splatforge.core.pairs import (
     PAIR_ARTIFACT_TYPE,
+    HybridPairSettings,
     PairEndpoints,
     PairingViewUniverse,
     PairResourceLimits,
     PairSettings,
+    RetrievalPairSettings,
     canonical_explicit_pairs,
 )
 from splatforge.core.project import ProjectDocument
@@ -33,6 +58,13 @@ from splatforge.core.quality import (
     QualityBackendIdentity,
     SharpestIntervalSettings,
 )
+from splatforge.core.retrieval import (
+    RETRIEVAL_ARTIFACT_TYPE,
+    RetrievalExport,
+    RetrievalRepresentationSettings,
+    RetrievalResourceLimits,
+)
+from splatforge.core.sfm_profiles import ResolvedFeatureMatchingRoute
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     SELECTED_ARTIFACT_TYPE,
@@ -321,6 +353,9 @@ class PairSelectionRoute(FrozenModel):
     settings: PairSettings
     explicit_pairs: tuple[PairEndpoints, ...] = Field(max_length=1_000_000)
     resource_limits: PairResourceLimits
+    retrieval: ArtifactHandle | None = None
+    retrieval_resources: RetrievalResourceLimits = RetrievalResourceLimits()
+    retrieval_descriptor_dimension: int | None = Field(default=None, ge=1, le=65536, strict=True)
     node_id: Literal["pair_set"] = "pair_set"
     target: OutputReference = OutputReference(
         node_id="pair_set",
@@ -335,6 +370,7 @@ class PairSelectionRoute(FrozenModel):
             for name, handle in (
                 ("candidate_views", self.candidate),
                 ("selected_views", self.selected),
+                *((("retrieval_representation", self.retrieval),) if self.retrieval else ()),
             )
         )
 
@@ -343,6 +379,8 @@ class PairSelectionRoute(FrozenModel):
             "pair_settings": self.settings.model_dump(mode="json"),
             "explicit_pairs": [p.model_dump(mode="json") for p in self.explicit_pairs],
             "resource_limits": self.resource_limits.model_dump(mode="json"),
+            **({"retrieval_resources": self.retrieval_resources.model_dump(mode="json")}
+               if self.retrieval else {}),
         }
 
     @model_validator(mode="after")
@@ -363,6 +401,230 @@ class PairSelectionRoute(FrozenModel):
             raise ValueError("pair output reference differs from PairSet v1")
         if self.explicit_pairs != canonical_explicit_pairs(self.universe, self.explicit_pairs):
             raise ValueError("pair route explicit pairs are not canonical")
+        uses_retrieval = isinstance(self.settings, (RetrievalPairSettings, HybridPairSettings))
+        if uses_retrieval != (self.retrieval is not None):
+            raise ValueError("Retrieval/hybrid route requires --retrieval-run; no fallback")
+        if self.retrieval and (
+            self.retrieval.artifact_type != RETRIEVAL_ARTIFACT_TYPE
+            or self.retrieval.contract_version != 1
+        ):
+            raise ValueError("Pair route requires RetrievalRepresentationSet v1")
+        return self
+
+
+class RetrievalBuildRoute(FrozenModel):
+    route_id: Literal["retrieval.build"] = "retrieval.build"
+    route_version: Literal[1] = 1
+    views_run_id: UUID
+    candidate: ArtifactHandle
+    selected: ArtifactHandle
+    export: RetrievalExport
+    export_locator: str = Field(min_length=1, max_length=4096)
+    resource_limits: RetrievalResourceLimits
+    node_id: Literal["retrieval_representation"] = "retrieval_representation"
+    target: OutputReference = OutputReference(
+        node_id="retrieval_representation", output_name="representation",
+        artifact_type=RETRIEVAL_ARTIFACT_TYPE, contract_version=1,
+    )
+
+    @property
+    def settings(self) -> RetrievalRepresentationSettings:
+        return self.export.settings
+
+    def recipe_key(self) -> str:
+        return self.export.recipe_key()
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(ArtifactInputLineage(
+            input_name=name, **handle.model_dump(exclude={"manifest_path"}),
+        ) for name, handle in (("candidate_views", self.candidate),
+                               ("selected_views", self.selected)))
+
+    def literal_inputs(self) -> dict[str, object]:
+        return {"export": self.export.model_dump(mode="json"),
+                "resource_limits": self.resource_limits.model_dump(mode="json")}
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> RetrievalBuildRoute:
+        if (self.candidate.artifact_type != CANDIDATE_ARTIFACT_TYPE
+                or self.selected.artifact_type != SELECTED_ARTIFACT_TYPE
+                or self.candidate.contract_version != 1 or self.selected.contract_version != 1
+                or self.target != OutputReference(
+                    node_id=self.node_id, output_name="representation",
+                    artifact_type=RETRIEVAL_ARTIFACT_TYPE, contract_version=1,
+                )):
+            raise ValueError("Retrieval build requires exact selected/candidate v1 contracts")
+        return self
+
+
+class FeatureExtractionRoute(FrozenModel):
+    route_id: Literal["features.extract"] = "features.extract"
+    route_version: Literal[1] = 1
+    views_run_id: UUID
+    candidate: ArtifactHandle
+    selected: ArtifactHandle
+    settings: FeatureSettings
+    backend: FeatureBackend
+    resource_limits: FeatureResourceLimits
+    estimate: FeatureResourceEstimate
+    node_id: Literal["local_features"] = "local_features"
+    target: OutputReference = OutputReference(
+        node_id="local_features", output_name="features",
+        artifact_type=FEATURE_ARTIFACT_TYPE, contract_version=1,
+    )
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(ArtifactInputLineage(
+            input_name=name, **handle.model_dump(exclude={"manifest_path"}),
+        ) for name, handle in (("candidate_views", self.candidate),
+                               ("selected_views", self.selected)))
+
+    def literal_inputs(self) -> dict[str, object]:
+        return {"extraction_settings": self.settings.model_dump(mode="json"),
+                "resource_limits": self.resource_limits.model_dump(mode="json")}
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> FeatureExtractionRoute:
+        if (self.candidate.artifact_type != CANDIDATE_ARTIFACT_TYPE
+                or self.selected.artifact_type != SELECTED_ARTIFACT_TYPE
+                or self.candidate.contract_version != 1 or self.selected.contract_version != 1):
+            raise ValueError("Features require candidate/selected contract 1")
+        if self.target != OutputReference(
+            node_id=self.node_id, output_name="features",
+            artifact_type=FEATURE_ARTIFACT_TYPE, contract_version=1,
+        ):
+            raise ValueError("Feature output reference differs from LocalFeatureSet v1")
+        return self
+
+
+class FeatureMatchingRoute(FrozenModel):
+    route_id: Literal["matches.run"] = "matches.run"
+    route_version: Literal[1] = 1
+    features_run_id: UUID
+    pairs_run_id: UUID
+    features: ArtifactHandle
+    pairs: ArtifactHandle
+    settings: MatcherSettings
+    descriptor: DescriptorSignature
+    backend: MatchingBackend
+    resource_limits: MatchingResourceLimits
+    estimate: MatchingResourceEstimate
+    resolution: ResolvedFeatureMatchingRoute | None = None
+    node_id: Literal["raw_matches"] = "raw_matches"
+    target: OutputReference = OutputReference(
+        node_id="raw_matches",
+        output_name="matches",
+        artifact_type=MATCH_ARTIFACT_TYPE,
+        contract_version=1,
+    )
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(
+            ArtifactInputLineage(
+                input_name=name,
+                **handle.model_dump(exclude={"manifest_path"}),
+            )
+            for name, handle in (("local_features", self.features), ("pair_set", self.pairs))
+        )
+
+    def literal_inputs(self) -> dict[str, object]:
+        return {
+            "matching_settings": self.settings.model_dump(mode="json"),
+            "resource_limits": self.resource_limits.model_dump(mode="json"),
+        }
+
+    def recipe_key(self) -> str:
+        return matching_recipe_key(
+            self.features.semantic_digest,
+            self.pairs.semantic_digest,
+            self.settings,
+            self.backend.numerical_identity,
+            self.backend.model_identities(),
+        )
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> FeatureMatchingRoute:
+        validate_matcher_compatibility(self.descriptor, self.settings)
+        if (
+            self.features.artifact_type != FEATURE_ARTIFACT_TYPE
+            or self.pairs.artifact_type != PAIR_ARTIFACT_TYPE
+            or self.features.contract_version != 1
+            or self.pairs.contract_version != 1
+            or self.backend.operation != "matches_importer"
+            or self.target
+            != OutputReference(
+                node_id=self.node_id,
+                output_name="matches",
+                artifact_type=MATCH_ARTIFACT_TYPE,
+                contract_version=1,
+            )
+        ):
+            raise ValueError(
+                "Matching route requires LocalFeatureSet/PairSet v1 and raw-only output"
+            )
+        if self.resolution and self.resolution.choice.matcher != self.settings:
+            raise ValueError("Frozen profile matcher differs from matching route")
+        return self
+
+
+class GeometricVerificationRoute(FrozenModel):
+    route_id: Literal["verification.run"] = "verification.run"
+    route_version: Literal[1] = 1
+    matches_run_id: UUID
+    matches: ArtifactHandle
+    settings: VerificationSettings
+    cameras: CameraPriorSet
+    backend: MatchingBackend
+    resource_limits: MatchingResourceLimits
+    estimate: MatchingResourceEstimate
+    resolution: ResolvedFeatureMatchingRoute | None = None
+    node_id: Literal["verified_geometry"] = "verified_geometry"
+    target: OutputReference = OutputReference(
+        node_id="verified_geometry",
+        output_name="geometry",
+        artifact_type=GEOMETRY_ARTIFACT_TYPE,
+        contract_version=1,
+    )
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return (
+            ArtifactInputLineage(
+                input_name="match_set", **self.matches.model_dump(exclude={"manifest_path"})
+            ),
+        )
+
+    def literal_inputs(self) -> dict[str, object]:
+        return {
+            "verification_settings": self.settings.model_dump(mode="json"),
+            "cameras": self.cameras.model_dump(mode="json"),
+            "resource_limits": self.resource_limits.model_dump(mode="json"),
+        }
+
+    def recipe_key(self) -> str:
+        return verification_recipe_key(
+            self.matches.semantic_digest,
+            self.cameras.semantic_digest,
+            self.settings,
+            self.backend.numerical_identity,
+        )
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> GeometricVerificationRoute:
+        if self.resolution and self.resolution.choice.verification != self.settings:
+            raise ValueError("Frozen profile verification differs from route settings")
+        if (
+            self.matches.artifact_type != MATCH_ARTIFACT_TYPE
+            or self.matches.contract_version != 1
+            or self.backend.operation != "geometric_verifier"
+            or self.target
+            != OutputReference(
+                node_id=self.node_id,
+                output_name="geometry",
+                artifact_type=GEOMETRY_ARTIFACT_TYPE,
+                contract_version=1,
+            )
+        ):
+            raise ValueError("Verification route requires MatchSet v1 and standalone verifier")
         return self
 
 
@@ -375,7 +637,9 @@ class RunSnapshot(FrozenModel):
     created_at: AwareDatetime
     project_intent: ProjectDocument
     route: Annotated[
-        FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute,
+        FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute
+        | FeatureExtractionRoute | FeatureMatchingRoute | GeometricVerificationRoute
+        | RetrievalBuildRoute,
         Field(discriminator="route_id"),
     ]
 

@@ -133,7 +133,9 @@ class SubcommandDiscovery(BaseModel):
 
     command: str = Field(min_length=1, max_length=128)
     evidence: CapabilityEvidence
-    parser_profile: Literal["typed_enum_v1", "legacy_sift_v1", "options_v1", "unknown"]
+    parser_profile: Literal[
+        "typed_enum_v1", "native_options_v2", "legacy_sift_v1", "options_v1", "unknown",
+    ]
     tokens: tuple[str, ...] = Field(default=(), max_length=128)
     option_names: tuple[str, ...] = Field(default=(), max_length=512)
     model_defaults: tuple[EvidenceDetail, ...] = Field(default=(), max_length=32)
@@ -178,10 +180,14 @@ class ModelEvidence(BaseModel):
     role: str = Field(min_length=1, max_length=128)
     configured_source: str = Field(min_length=1, max_length=128)
     expected_name: str | None = Field(default=None, max_length=512)
+    expected_root: str | None = Field(default=None, max_length=4096)
+    checked_path: str | None = Field(default=None, max_length=4096)
     resolved_path: str | None = Field(default=None, max_length=4096)
     size: int | None = Field(default=None, ge=0, strict=True)
     sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    compatibility_verified: Literal[False] = False
+    source_uri: str | None = Field(default=None, max_length=2048)
+    expected_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    compatibility_verified: bool = False
     evidence: CapabilityEvidence
 
 
@@ -237,6 +243,7 @@ class MethodCapability(BaseModel):
 
     method_id: str = Field(min_length=1, max_length=128)
     catalogued: bool
+    supported_by_splatforge: bool = False
     implementation_status: ImplementationStatus
     backend_capability_status: CapabilityStatus
     runnable: bool

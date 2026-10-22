@@ -22,6 +22,7 @@ from splatforge.adapters.artifact_validation import (
     ArtifactValidationContext,
     ValidatedArtifact,
     ValidationStrength,
+    validate_feature_lineage,
     validate_pair_lineage,
     validate_published_artifact,
     validate_workspace_output,
@@ -54,8 +55,12 @@ from splatforge.core.execution import (
     CancellationRequestResult,
     FailureCategory,
     FakeRoute,
+    FeatureExtractionRoute,
+    FeatureMatchingRoute,
+    GeometricVerificationRoute,
     PairSelectionRoute,
     RecoveryResult,
+    RetrievalBuildRoute,
     RunSnapshot,
     RunStatus,
     RunWarning,
@@ -70,6 +75,13 @@ from splatforge.core.fake_pipeline import (
     sequence_recipe_key,
     sha256_bytes,
 )
+from splatforge.core.features import (
+    MAX_FEATURE_METADATA_BYTES,
+    LocalFeatureSet,
+    feature_recipe_key,
+)
+from splatforge.core.geometry import CameraPriorSet, VerifiedGeometrySet
+from splatforge.core.matching import MAX_MATCH_METADATA_BYTES, MatchSet
 from splatforge.core.media import SourceOccurrence, VerificationPolicyId
 from splatforge.core.pairs import (
     PAIR_ARTIFACT_TYPE,
@@ -91,6 +103,7 @@ from splatforge.core.quality import (
     validate_quality_against_candidate,
     validate_sharpest_against_inputs,
 )
+from splatforge.core.retrieval import RetrievalRepresentationSet
 from splatforge.core.views import (
     CandidateViewSet,
     SelectedViewSet,
@@ -851,6 +864,16 @@ class LocalExecutionRepository:
         )
         if isinstance(validated.parsed, PairSet):
             validate_pair_lineage(validated.parsed, manifest)
+        if isinstance(validated.parsed, LocalFeatureSet):
+            validate_feature_lineage(validated.parsed, manifest)
+        if isinstance(validated.parsed, RetrievalRepresentationSet):
+            from splatforge.adapters.retrieval_artifacts import validate_retrieval_lineage
+
+            validate_retrieval_lineage(validated.parsed, manifest)
+        if isinstance(validated.parsed, (MatchSet, VerifiedGeometrySet)):
+            from splatforge.adapters.matching_artifacts import validate_matching_lineage
+
+            validate_matching_lineage(validated.parsed, manifest)
         manifest_bytes = manifest.model_dump_json(indent=2).encode("utf-8") + b"\n"
         if len(manifest_bytes) > MAX_MANIFEST_BYTES:
             raise ValueError("Artifact manifest exceeds its explicit size limit")
@@ -1067,8 +1090,19 @@ class LocalExecutionRepository:
         output_name: str,
     ) -> ArtifactHandle:
         snapshot = self._load_run_snapshot(root, run_id)
-        if not isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute)):
-            raise ValueError("--views-run requires a completed views preparation run")
+        if isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute)):
+            allowed = {(snapshot.route.candidate.node_id, "candidate_set"),
+                       (snapshot.route.selection.node_id, "selected_set")}
+        elif isinstance(snapshot.route, (FeatureExtractionRoute, PairSelectionRoute,
+                                         RetrievalBuildRoute,
+                                         FeatureMatchingRoute, GeometricVerificationRoute)):
+            allowed = {(snapshot.route.node_id, snapshot.route.target.output_name)}
+        else:
+            allowed = set()
+        if (node_id, output_name) not in allowed:
+            if node_id in {"candidate_views", "selected_views"}:
+                raise ValueError("--views-run requires a completed views preparation run")
+            raise ValueError("Requested run does not produce the exact required stage output")
         with self._read_connection(root) as connection:
             run = connection.execute(
                 "SELECT status FROM runs WHERE run_id=?", (str(run_id),)
@@ -1081,9 +1115,14 @@ class LocalExecutionRepository:
                 (str(run_id), node_id, output_name),
             ).fetchone()
         if run is None or run[0] != "succeeded":
-            raise ValueError("--views-run must reference a succeeded views run")
+            if node_id in {"candidate_views", "selected_views"}:
+                raise ValueError("--views-run must reference a succeeded views run")
+            flag = {"local_features": "--features-run", "pair_set": "--pairs-run",
+                    "raw_matches": "--matches-run"}.get(node_id, "Upstream run")
+            raise ValueError(f"{flag} must reference a succeeded compatible run")
         if row is None:
-            raise ValueError(f"Views run has no indexed {node_id}/{output_name} output")
+            label = "Views run" if node_id in {"candidate_views", "selected_views"} else "Run"
+            raise ValueError(f"{label} has no indexed {node_id}/{output_name} output")
         handle = ArtifactHandle(
             artifact_id=UUID(row[0]),
             artifact_type=row[1],
@@ -1119,6 +1158,69 @@ class LocalExecutionRepository:
         if not isinstance(parsed, PairSet):
             raise ValueError("Artifact is not a PairSet")
         return parsed
+
+    def load_retrieval(self, root: Path, handle: ArtifactHandle) -> RetrievalRepresentationSet:
+        parsed = self._validate_indexed_artifact(root, handle, metadata_only=True)[2].parsed
+        if not isinstance(parsed, RetrievalRepresentationSet):
+            raise ValueError("Artifact is not a RetrievalRepresentationSet")
+        return parsed
+
+    def _recover_retrieval_pairs(self, root: Path, route: PairSelectionRoute):
+        from splatforge.adapters.retrieval_artifacts import LocalRetrievalAdapter
+
+        representation = self.load_retrieval(root, route.retrieval)
+        return LocalRetrievalAdapter().query(
+            self.artifact_directory(root, route.retrieval), representation,
+            route.settings, route.resource_limits, route.retrieval_resources,
+            route.explicit_pairs, checkpoint=lambda: None, progress=lambda _n: None,
+        )
+
+    def load_local_features(self, root: Path, handle: ArtifactHandle) -> LocalFeatureSet:
+        _, _, validated = self._validate_indexed_artifact(root, handle)
+        if not isinstance(validated.parsed, LocalFeatureSet):
+            raise ValueError("Artifact is not a LocalFeatureSet")
+        return validated.parsed
+
+    def write_feature_metadata(self, workspace: Path, features: LocalFeatureSet) -> None:
+        data = canonical_json_bytes(features.model_dump(mode="json")) + b"\n"
+        if len(data) > MAX_FEATURE_METADATA_BYTES:
+            raise ValueError("LocalFeatureSet metadata exceeds structural byte bound")
+        self._write_new_file(workspace / "output" / "features.json", data)
+
+    def load_match_set(self, root: Path, handle: ArtifactHandle) -> MatchSet:
+        parsed = self._validate_indexed_artifact(root, handle, metadata_only=True)[2].parsed
+        if not isinstance(parsed, MatchSet):
+            raise ValueError("Artifact is not a MatchSet")
+        return parsed
+
+    def load_verified_geometry(self, root: Path, handle: ArtifactHandle) -> VerifiedGeometrySet:
+        parsed = self._validate_indexed_artifact(root, handle, metadata_only=True)[2].parsed
+        if not isinstance(parsed, VerifiedGeometrySet):
+            raise ValueError("Artifact is not a VerifiedGeometrySet")
+        return parsed
+
+    def load_match_inputs(
+        self, root: Path, handle: ArtifactHandle,
+    ) -> tuple[LocalFeatureSet, PairSet]:
+        from splatforge.adapters.matching_artifacts import read_matching_inputs
+
+        _, directory, _ = self._validate_indexed_artifact(root, handle, metadata_only=True)
+        return read_matching_inputs(directory)
+
+    def write_matching_metadata(
+        self, workspace: Path, payload: MatchSet | VerifiedGeometrySet,
+        cameras: CameraPriorSet | None = None,
+    ) -> None:
+        name = "match_set.json" if isinstance(payload, MatchSet) else "verified_geometry.json"
+        data = canonical_json_bytes(payload.model_dump(mode="json")) + b"\n"
+        if len(data) > MAX_MATCH_METADATA_BYTES:
+            raise ValueError("M7b metadata exceeds structural byte bound")
+        self._write_new_file(workspace / "output" / name, data)
+        if cameras is not None:
+            data = canonical_json_bytes(cameras.model_dump(mode="json")) + b"\n"
+            if len(data) > MAX_FEATURE_METADATA_BYTES:
+                raise ValueError("Camera metadata exceeds structural byte bound")
+            self._write_new_file(workspace / "output" / "cameras.json", data)
 
     def load_quality_report(self, root: Path, artifact: ArtifactHandle) -> QualityReport:
         _, _, validated = self._validate_indexed_artifact(root.resolve(), artifact)
@@ -1158,6 +1260,10 @@ class LocalExecutionRepository:
             raise ProjectError(f"Unknown run {run_id}")
         if run["status"] in {"succeeded", "cancelled"}:
             return RecoveryResult(run_id=run_id, status=RunStatus(run["status"]))
+        if (isinstance(snapshot.route, (FeatureMatchingRoute, GeometricVerificationRoute))
+                and active and os.name != "nt"):
+            raise ProjectError("Native M7b recovery requires tested Windows Job Object owner-death "
+                               "containment; an OS writer lease alone does not prove teardown")
         if (
             isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute))
             and active
@@ -1256,7 +1362,9 @@ class LocalExecutionRepository:
         outputs = self._load_valid_run_outputs(root, run_id)
         if isinstance(snapshot.route, FakeRoute):
             required = {snapshot.route.sequence.node_id, snapshot.route.scale.node_id}
-        elif isinstance(snapshot.route, PairSelectionRoute):
+        elif isinstance(snapshot.route, (PairSelectionRoute, FeatureExtractionRoute,
+                                         RetrievalBuildRoute,
+                                         FeatureMatchingRoute, GeometricVerificationRoute)):
             required = {snapshot.route.node_id}
         elif isinstance(snapshot.route, SharpestViewPreparationRoute):
             required = {
@@ -1611,6 +1719,40 @@ class LocalExecutionRepository:
                 expected_literal_inputs = {}
             else:
                 raise ValueError("Attempt node is not present in the frozen fake route")
+        elif isinstance(route, (FeatureMatchingRoute, GeometricVerificationRoute)):
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("Attempt node absent from frozen M7b route")
+            if isinstance(route, FeatureMatchingRoute):
+                self.load_local_features(root, route.features)
+                self.load_pair_set(root, route.pairs)
+            else:
+                self.load_match_set(root, route.matches)
+            output = route.target
+            expected_recipe_key = route.recipe_key()
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
+        elif isinstance(route, FeatureExtractionRoute):
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("Attempt node absent from frozen feature route")
+            candidate, selected = self.load_pairing_inputs(root, route.candidate, route.selected)
+            output = route.target
+            expected_recipe_key = feature_recipe_key(
+                route.selected.semantic_digest, route.settings, route.backend.numerical_identity,
+                route.backend.model_identities(),
+            )
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
+        elif isinstance(route, RetrievalBuildRoute):
+            from splatforge.application.retrieval import require_corpus
+
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("Attempt node absent from frozen retrieval route")
+            candidate, selected = self.load_pairing_inputs(root, route.candidate, route.selected)
+            require_corpus(route.export, candidate, selected)
+            output = route.target
+            expected_recipe_key = route.recipe_key()
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
         elif isinstance(route, PairSelectionRoute):
             if attempt["node_id"] != route.node_id:
                 raise ValueError("Attempt node is absent from frozen pair route")
@@ -1623,7 +1765,20 @@ class LocalExecutionRepository:
                 if isinstance(route.settings, SequentialSettings)
                 else exhaustive_recipe_key
             )
-            expected_recipe_key = key_function(route.universe, route.settings, route.explicit_pairs)
+            if route.retrieval:
+                representation = self.load_retrieval(root, route.retrieval)
+                from splatforge.application.retrieval import require_corpus
+                from splatforge.core.retrieval_pairs import retrieval_pair_recipe_key
+
+                require_corpus(representation.export(), candidate, selected)
+                expected_recipe_key = retrieval_pair_recipe_key(
+                    route.universe, representation.semantic_digest,
+                    route.settings, route.explicit_pairs,
+                )
+            else:
+                expected_recipe_key = key_function(
+                    route.universe, route.settings, route.explicit_pairs,
+                )
             expected_lineage = route.input_lineage()
             expected_literal_inputs = route.literal_inputs()
         elif attempt["node_id"] == route.candidate.node_id:
@@ -1765,7 +1920,34 @@ class LocalExecutionRepository:
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if isinstance(route, PairSelectionRoute):
+        if isinstance(route, (FeatureMatchingRoute, GeometricVerificationRoute)):
+            from splatforge.application.matching import require_route_payload
+
+            require_route_payload(route, validated.parsed)
+        elif isinstance(route, FeatureExtractionRoute):
+            parsed = validated.parsed
+            if not isinstance(parsed, LocalFeatureSet):
+                raise ValueError("Orphan feature payload has wrong contract")
+            selected_ids = {s.view_id for s in selected.selected_views}
+            expected = {v.view_id: v for v in candidate.views if v.view_id in selected_ids}
+            if (parsed.settings != route.settings
+                    or parsed.backend_numerical_identity != route.backend.numerical_identity
+                    or parsed.models != route.backend.model_identities()
+                    or parsed.selected_artifact_id != route.selected.artifact_id
+                    or parsed.selected_semantic_digest != route.selected.semantic_digest
+                    or {v.view_id for v in parsed.views} != set(expected)
+                    or any((v.width, v.height, v.image_sha256) != (
+                        expected[v.view_id].width, expected[v.view_id].height,
+                        expected[v.view_id].image_sha256) for v in parsed.views)):
+                raise ValueError("Orphan features differ from frozen route/upstream pixels")
+        elif isinstance(route, RetrievalBuildRoute):
+            parsed = validated.parsed
+            if (not isinstance(parsed, RetrievalRepresentationSet)
+                    or parsed.export() != route.export
+                    or parsed.candidate_artifact_id != route.candidate.artifact_id
+                    or parsed.selected_artifact_id != route.selected.artifact_id):
+                raise ValueError("Orphan retrieval representation differs from frozen route")
+        elif isinstance(route, PairSelectionRoute):
             if not isinstance(validated.parsed, PairSet):
                 raise ValueError("Orphan pair payload has wrong contract")
             parsed = validated.parsed
@@ -1776,13 +1958,13 @@ class LocalExecutionRepository:
                 or parsed.candidate_artifact_id != route.candidate.artifact_id
                 or parsed.selected_artifact_id != route.selected.artifact_id
                 or parsed.selected_method_id != selected.selection_method_id
-                or parsed.pairs
-                != generate_pairs(
+                or parsed.pairs != (self._recover_retrieval_pairs(root, route) if route.retrieval
+                else generate_pairs(
                     route.universe,
                     settings=route.settings,
                     limits=route.resource_limits,
                     explicit_pairs=route.explicit_pairs,
-                )
+                ))
             ):
                 raise ValueError("Orphan PairSet differs from frozen recipe or lineage")
         elif isinstance(validated.parsed, QualityReport):

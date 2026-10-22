@@ -12,6 +12,7 @@ class StageKind(StrEnum):
     FEATURE_EXTRACTION = "feature_extraction"
     PAIR_SELECTION = "pair_selection"
     FEATURE_MATCHING = "feature_matching"
+    GEOMETRIC_VERIFICATION = "geometric_verification"
     MAPPING = "mapping"
     VALIDATION = "validation"
     TRAINING = "training"

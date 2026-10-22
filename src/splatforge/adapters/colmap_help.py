@@ -56,6 +56,10 @@ def parse_option_help(text: str, option: str) -> ParsedOptionHelp:
             if default and len(default.group(1)) <= 1024:
                 defaults.append((name, default.group(1).strip()))
     selected = [block for name, block in blocks if name == option]
+    if option == "TwoViewGeometry" and "-h [ --help ]" in text and {
+        "database_path", "TwoViewGeometry.min_num_inliers", "batch_size", "num_threads",
+    } <= set(names):
+        return ParsedOptionHelp(True, (), names, tuple(defaults), "options_v1")
     if len(selected) == 1:
         enum = re.fullmatch(
             r"\s+arg(?:\s+\(=[^\n)]*\))?\s*\{([^{}]+)\}\s*",
@@ -67,6 +71,43 @@ def parse_option_help(text: str, option: str) -> ParsedOptionHelp:
                 return ParsedOptionHelp(
                     True, tuple(dict.fromkeys(tokens)), names, tuple(defaults), "typed_enum_v1"
                 )
+        # Official 4.2.1 builds print the default but omit enum alternatives.
+        # These are candidate routes only: each extractor still needs a disposable
+        # typed-database inference probe before it becomes available.
+        if (option == "FeatureExtraction.type" and "-h [ --help ]" in text
+                and re.fullmatch(r"\s+arg\s+\(=SIFT\)\s*", selected[0])
+                and {"database_path", "image_path", "FeatureExtraction.use_gpu",
+                     "FeatureExtraction.max_image_size", "FeatureExtraction.num_threads",
+                     "SiftExtraction.max_num_features"} <= set(names)):
+            candidates = ["SIFT"]
+            for token, model_option in (
+                ("ALIKED_N16ROT", "AlikedExtraction.n16rot_model_path"),
+                ("ALIKED_N32", "AlikedExtraction.n32_model_path"),
+                ("LOMA_B", "LomaExtraction.descriptor_model_path"),
+                ("LOMA_B128", "LomaExtraction.descriptor_b128_model_path"),
+            ):
+                if model_option in names:
+                    candidates.append(token)
+            return ParsedOptionHelp(True, tuple(candidates), names, tuple(defaults),
+                                    "native_options_v2")
+        if (option == "FeatureMatching.type" and "-h [ --help ]" in text
+                and re.fullmatch(r"\s+arg\s+\(=SIFT_BRUTEFORCE\)\s*", selected[0])
+                and {"database_path", "FeatureMatching.use_gpu", "SiftMatching.max_ratio"}
+                <= set(names)):
+            tokens = ["SIFT_BRUTEFORCE"]
+            for token, model in (
+                ("SIFT_LIGHTGLUE", "SiftMatching.lightglue_model_path"),
+                ("ALIKED_BRUTEFORCE", "AlikedMatching.bruteforce_model_path"),
+                ("ALIKED_LIGHTGLUE", "AlikedMatching.lightglue_model_path"),
+                ("LOMA_BRUTEFORCE", "LomaMatching.brute_force_model_path"),
+                *((f"LOMA_{v.upper()}", f"LomaMatching.{v}_model_path")
+                  for v in ("b", "b128", "r", "l", "g")),
+            ):
+                if model in names:
+                    tokens.append(token)
+            return ParsedOptionHelp(
+                True, tuple(tokens), names, tuple(defaults), "native_options_v2",
+            )
         return ParsedOptionHelp(False, (), names, tuple(defaults))
     if option not in names and "-h [ --help ]" in text:
         if option == "FeatureExtraction.type":

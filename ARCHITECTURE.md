@@ -4,7 +4,12 @@
 
 This document describes the target architecture and the boundaries that implemented
 milestones must preserve. M0-M6.5 provide the current local persistence, media, execution,
-view/quality selection, capability-diagnostic and PairSet foundations; later contracts
+view/quality selection, capability-diagnostic and PairSet foundations. M7a adds
+local-feature extraction through the same execution boundary. M7b adds separate raw
+matching and geometric verification artifacts plus versioned feature/matching profiles.
+M7c adds neutral offline retrieval representations, bounded retrieval/hybrid PairSets
+and an M7b benchmark harness; production retrieval inference/selection remains pending.
+See [M7c contracts](docs/M7C.md). Later contracts
 remain staged by the [roadmap](ROADMAP.md). The historical
 [review](docs/ARCHITECTURE_REVIEW.md) records the reasoning behind the foundation and
 intentionally deferred choices.
@@ -188,17 +193,27 @@ Published inputs can be consumed without their producing backend installed; curr
 readers/validators and operations actually scheduled still need working capabilities.
 Cache reuse does not certify that the original producer could be executed now.
 
-ALIKED + compatible LightGlue is the preferred learned route; COLMAP Global Mapper
-is the preferred mapper. Selection depends on verified installed capabilities and
-dataset suitability. SIFT with compatible brute-force matching and COLMAP
-Incremental/Hierarchical Mapper remain explicit alternatives. An automatic profile
-may propose a fallback; execution records the resolved choice and never substitutes
-another algorithm inside an attempt.
+LoMa, ALIKED + compatible LightGlue and SIFT + brute-force are first-class supported
+feature/matching families. Versioned Simple profiles express speed/quality intent and
+resolve deterministic candidates before execution; Advanced exposes compatible typed
+choices without fallback. Current saved explicit ALIKED intent remains explicit.
+COLMAP Global Mapper remains the preferred planned mapper, with explicit
+Incremental/Hierarchical alternatives in M8. No profile currently selects a mapper.
 
 The documented COLMAP learned route depends on build options, including ONNX support;
 it is not guaranteed by the executable name or version alone. This motivates probing,
 not a requirement that every learned method use COLMAP's ONNX implementation.
 See [COLMAP's feature guidance](https://colmap.github.io/faq.html#choosing-between-sift-aliked-and-loma-features).
+
+M7a supports SIFT, ALIKED_N16ROT, optional ALIKED_N32, LOMA_B and LOMA_B128 as explicit
+extraction routes. LoMa requires COLMAP >=4.2.1 and positively verified local
+detector/descriptor/ONNX inference; its version or help tokens alone are insufficient.
+Compatible older SIFT/ALIKED routes remain supported. LoMa-B and LoMa-B128 are distinct
+descriptor families; LoMa-R/L/G are implemented M7b matchers. LoMa-R is an explicit
+rotation-robust Advanced choice, not a generic quality rung. Existing end-to-end SfM defaults
+stay unchanged. Local weights are pinned by source/name and SHA-256 before execution,
+without implicit downloads or a base Python ML-runtime/PyTorch dependency. Model
+provenance supports a later installer-license audit and does not grant redistribution rights.
 
 M5 implements this environment boundary as a project-free Doctor report. Static
 CLI evidence is short-lived, resource/GPU health is shorter-lived, and cached evidence
@@ -240,6 +255,23 @@ ID mappings. Validate schema, coordinates, descriptors and verified geometry at 
 COLMAP distinguishes raw matches from the two-view geometry used by reconstruction;
 that distinction is part of the adapter contract.
 See [COLMAP database format](https://colmap.github.io/database.html).
+
+M7b implements independent `FeatureMatching` and `GeometricVerification` semantic
+stages and frozen `matches.run` / `verification.run` routes. `MatchSet` v1 binds every
+requested PairSet edge, including zeros, to canonical UUID-index correspondences.
+`VerifiedGeometrySet` v1 explains every upstream pair and binds camera-prior identity
+only at verification. Neither stage mutates a published upstream database. Numerical
+digests exclude SQLite layout, native IDs, paths, timestamps and profile labels.
+Matching uses the verified explicit-pair importer with verification disabled;
+standalone verification assembles current perspective camera inputs in a private copy.
+Full contracts and limitations are in [M7B.md](docs/M7B.md).
+
+Simple resolution uses route-specific `auto` device policy: GPU, then positively
+supported CPU for that same candidate, then the next technology. Advanced `auto`
+changes device only; explicit CPU/GPU choices never substitute another device or
+algorithm. Concrete device settings are frozen before attempts. Requested policy and
+profile labels are provenance; actual device/runtime/settings retain numerical and
+performance identity. Performance history never selects algorithms or devices.
 
 Never hardlink a writable native database or hand a published file to a tool that may
 open it for writing. Close/checkpoint native writers before a consistent copy; include
@@ -296,8 +328,10 @@ the deployment options above without adding remote execution or scheduling.
 
 Stages without a defensible total expose indeterminate or phase-scoped work. Mapping
 must not invent linear percentages; future backend evidence may justify wide planning
-ranges at low/medium confidence. M7 feature/matching/verification and M11 managed training
-must integrate with this foundation. Their backends and estimates remain unimplemented.
+ranges at low/medium confidence. M7 features/matching/verification use this foundation;
+M11 managed training must integrate with it later. Matching and verification expose
+real phases, exact planned pair totals, observed completion after output validation,
+and separate historical ETA signatures. Backend logs do not fabricate pair percentages.
 See [work models and estimator rules](docs/DEVELOPMENT.md#progress-and-eta-foundation).
 
 ## Training, legacy work and future inputs

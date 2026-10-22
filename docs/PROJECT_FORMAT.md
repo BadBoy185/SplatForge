@@ -166,6 +166,23 @@ the first CREATE/ALTER. DDL and the version update commit together; a failure ro
 both back and leaves the backup available for inspection and a clean upgrade retry.
 Calling upgrade on v4 is a read-only no-op; unsupported newer versions remain untouched.
 
+M6/M7 add discriminated `pairs.build`, `retrieval.build`, `features.extract`, `matches.run` and
+`verification.run` routes to RunSnapshot schema 1 without a project/config/state
+migration. M7b freezes exact upstream handles, methods, versioned numerical settings,
+backend/model identities, resource limits and optional resolved profile provenance.
+Verification additionally freezes current `CameraPriorSet` v1. MatchSet and
+VerifiedGeometrySet contract 1 use the existing immutable manifest/publication/recovery
+protocol and independent private database copies. Cached artifacts retain their original
+producer lineage; new runs record their own resolved inputs. Profile labels and
+capability/performance diagnostics do not replace numerical recipe identity.
+See [M7B.md](M7B.md) for payloads and independent invalidation boundaries.
+M7c's additive retrieval route freezes exact candidate/selected handles, offline
+export declaration and resource limits. `retrieval.representation_set` v1 publishes
+`retrieval.json` and `descriptors.f32` with candidate/selected lineage. Retrieval/hybrid
+PairSets retain v1 UUID/graph semantics and add typed settings, evidence and exact
+retrieval lineage. Existing M6 payloads remain readable. No state/project migration
+or research model bundle is introduced. See [M7C.md](M7C.md).
+
 Creation accepts a missing or empty destination and creates `project.json`,
 `project.lock` and `state.sqlite`. The destination is checked again after acquiring
 the OS-held lock; lock-file existence or contents do not establish ownership.

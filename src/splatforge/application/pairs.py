@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -23,9 +24,14 @@ from splatforge.core.execution import (
 )
 from splatforge.core.pairs import (
     ExhaustiveSettings,
+    HybridPairSettings,
     PairEndpoints,
+    PairRecord,
     PairResourceLimits,
     PairSet,
+    PairSettings,
+    RetrievalPairInput,
+    RetrievalPairSettings,
     SequentialSettings,
     canonical_explicit_pairs,
     compute_coverage,
@@ -37,6 +43,8 @@ from splatforge.core.pairs import (
     sequential_recipe_key,
 )
 from splatforge.core.quality import SharpestSelectedViewSet
+from splatforge.core.retrieval import RetrievalRepresentationSet, RetrievalResourceLimits
+from splatforge.core.retrieval_pairs import plan_retrieval_pairs, retrieval_pair_recipe_key
 from splatforge.core.views import CandidateViewSet, FrozenModel, SelectedViewSet
 
 
@@ -58,9 +66,22 @@ class PairRepository(ExecutionRepository, Protocol):
 
     def load_pair_set(self, root: Path, handle: ArtifactHandle) -> PairSet: ...
 
+    def load_retrieval(self, root: Path, handle: ArtifactHandle) -> RetrievalRepresentationSet: ...
+
+    def artifact_directory(self, root: Path, artifact: ArtifactHandle) -> Path: ...
+
 
 class PairWorkspace(Protocol):
     def write_pair_set(self, workspace: Path, payload: PairSet) -> None: ...
+
+
+class RetrievalQueryAdapter(Protocol):
+    def query(
+        self, directory: Path, representation: RetrievalRepresentationSet,
+        settings: RetrievalPairSettings | HybridPairSettings, limits: PairResourceLimits,
+        resources: RetrievalResourceLimits, explicit: tuple[PairEndpoints, ...], *,
+        checkpoint: Callable[[], None], progress: Callable[[int], None],
+    ) -> tuple[PairRecord, ...]: ...
 
 
 class PairsRunResult(FrozenModel):
@@ -77,25 +98,30 @@ class PairsRunResult(FrozenModel):
     cross_source_pair_count: int = 0
     cross_group_pair_count: int = 0
     warnings: tuple[str, ...] = ()
+    retrieval: RetrievalPairInput | None = None
 
 
 class PairsService:
     def __init__(
         self, repository: PairRepository, workspace: PairWorkspace, *,
         progress: ProgressSupport | None = None,
+        retrieval_adapter: RetrievalQueryAdapter | None = None,
     ) -> None:
         self._repository = repository
         self._workspace = workspace
         self._progress = progress or ProgressSupport()
+        self._retrieval_adapter = retrieval_adapter
 
     def build(
         self,
         root: Path,
         *,
         views_run_id: UUID,
-        settings: SequentialSettings | ExhaustiveSettings,
+        settings: PairSettings,
         resource_limits: PairResourceLimits,
         explicit_pairs: tuple[PairEndpoints, ...] = (),
+        retrieval_run_id: UUID | None = None,
+        retrieval_resources: RetrievalResourceLimits | None = None,
     ) -> PairsRunResult:
         root = root.resolve()
         repo = self._repository
@@ -121,6 +147,26 @@ class PairsService:
             explicit_pairs = canonical_explicit_pairs(universe, explicit_pairs)
             if len(explicit_pairs) > resource_limits.max_pairs:
                 raise ValueError("Explicit pairs exceed max_pairs")
+            representation = retrieval_handle = plan = None
+            resources = retrieval_resources or RetrievalResourceLimits()
+            uses_retrieval = isinstance(settings, (RetrievalPairSettings, HybridPairSettings))
+            if uses_retrieval:
+                if retrieval_run_id is None or self._retrieval_adapter is None:
+                    raise ValueError(
+                        "Retrieval/hybrid needs --retrieval-run from retrieval build and its "
+                        "offline query adapter; no Exhaustive fallback is available"
+                    )
+                retrieval_handle = repo.resolve_run_output(
+                    root, retrieval_run_id, "retrieval_representation", "representation",
+                )
+                representation = repo.load_retrieval(root, retrieval_handle)
+                from splatforge.application.retrieval import require_corpus
+
+                require_corpus(representation.export(), candidate, selected)
+                plan = plan_retrieval_pairs(representation.export(), settings, resource_limits,
+                                            resources, explicit_pairs)
+            elif retrieval_run_id is not None:
+                raise ValueError("--retrieval-run requires retrieval/hybrid settings")
             route = PairSelectionRoute(
                 views_run_id=views_run_id,
                 candidate=candidate_handle,
@@ -129,6 +175,9 @@ class PairsService:
                 settings=settings,
                 explicit_pairs=explicit_pairs,
                 resource_limits=resource_limits,
+                retrieval=retrieval_handle, retrieval_resources=resources,
+                retrieval_descriptor_dimension=representation.settings.descriptor_dimension
+                if representation else None,
             )
             snapshot = RunSnapshot(
                 run_id=run_id,
@@ -144,7 +193,11 @@ class PairsService:
                 if isinstance(settings, SequentialSettings)
                 else exhaustive_recipe_key
             )
-            key = key_function(universe, settings, explicit_pairs)
+            key = (
+                retrieval_pair_recipe_key(universe, representation.semantic_digest,
+                                          settings, explicit_pairs)
+                if uses_retrieval else key_function(universe, settings, explicit_pairs)
+            )
             repo.create_run(root, snapshot)
             progress = self._progress.session(
                 run_id, (pairs_progress_plan(route, self._progress.hardware),),
@@ -173,6 +226,8 @@ class PairsService:
 
             try:
                 event("pairs.run.started")
+                if plan:
+                    event("pairs.retrieval.planned", **plan.model_dump(mode="json"))
                 checkpoint()
                 cached = repo.find_cache(
                     root,
@@ -188,6 +243,10 @@ class PairsService:
                         or payload.explicit_pairs != explicit_pairs
                     ):
                         raise ValueError("Cached PairSet does not match its recipe")
+                    if uses_retrieval and payload.retrieval.semantic_digest != (
+                        representation.semantic_digest
+                    ):
+                        raise ValueError("Cached PairSet references another retrieval index")
                     if len(payload.pairs) > resource_limits.max_pairs:
                         raise ValueError(
                             f"Cached pair count={len(payload.pairs)} exceeds "
@@ -213,17 +272,19 @@ class PairsService:
                         node_id=route.node_id,
                         output_name=route.target.output_name,
                         recipe_key=key,
-                        input_artifact_ids=(
-                            candidate_handle.artifact_id,
-                            selected_handle.artifact_id,
-                        ),
+                        input_artifact_ids=tuple(x.artifact_id for x in route.input_lineage()),
                         literal_inputs=route.literal_inputs(),
                         environment={"adapter_id": "splatforge.pairs_python", "adapter_version": 1},
                         source_verification={"policy": "not_applicable", "evidence": []},
                     )
                     event("pairs.stage.started")
                     progress.start(route.node_id, attempt.attempt_id)
-                    pairs = generate_pairs(
+                    pairs = self._retrieval_adapter.query(
+                        repo.artifact_directory(root, retrieval_handle), representation,
+                        settings, resource_limits, resources, explicit_pairs,
+                        checkpoint=checkpoint,
+                        progress=lambda count: progress.report(route.node_id, count),
+                    ) if uses_retrieval else generate_pairs(
                         universe,
                         settings=settings,
                         limits=resource_limits,
@@ -249,6 +310,19 @@ class PairsService:
                         pairs=pairs,
                         coverage=compute_coverage(universe, pairs),
                         semantic_digest=pair_graph_digest(universe, pairs),
+                        retrieval=RetrievalPairInput(
+                            artifact_id=retrieval_handle.artifact_id,
+                            semantic_digest=representation.semantic_digest,
+                            indexed_views=plan.indexed_views,
+                            descriptor_bytes=plan.descriptor_bytes,
+                            requested_k=plan.requested_k,
+                            candidate_edge_upper_bound=plan.candidate_edge_upper_bound,
+                            sequential_edge_count=sum(
+                                any(r.kind == "sequential" for r in p.reasons) for p in pairs),
+                            retrieval_edge_count=sum(
+                                any(r.kind == "retrieval" for r in p.reasons) for p in pairs),
+                            explicit_edge_count=len(explicit_pairs), final_edge_count=len(pairs),
+                        ) if uses_retrieval else None,
                     )
                     self._workspace.write_pair_set(Path(attempt.workspace), payload)
                     checkpoint()
@@ -318,4 +392,5 @@ class PairsService:
                 () if payload is None else payload.coverage.warnings
             ),
             **counts,
+            retrieval=payload.retrieval if payload else None,
         )

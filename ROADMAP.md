@@ -20,7 +20,10 @@ The bounded post-M6/pre-M7 scalability/operability pass is complete: ordered exa
 fixed-FPS selection and early slot/interval bounds, operation-scoped typed artifact
 validation, one complete candidate provenance write and bounded durable FFmpeg attempt
 diagnostics. Numerical identities and project/state/artifact versions stay unchanged.
-M7 remains planned.
+M7a extraction and M7b matching/geometric verification are implemented with real
+CPU validation of the thirteen-combination SIFT/ALIKED/LoMa matrix. M7c remains
+planned. GPU availability is route-specific; learned execution still requires
+positive local model/runtime evidence and must not be claimed from mocks.
 
 ## M0 — existing foundation and architecture review
 
@@ -192,29 +195,71 @@ Acceptance covers deterministic clocks, cold/live/historical learning, compatibi
 dispersion, spikes/stalls, unknown stages, cache/skips, monotonic display aggregation,
 history privacy/retention/failures, cancellation, old runs and structured FFmpeg progress.
 M7 must report views/MP and pairs; M8 must preserve nonlinear/indeterminate progress;
-M11 managed trainers must report iterations/steps through the same contract. Their
-backends and estimates are still planned. Numerical schema versions remain unchanged.
+M11 managed trainers must report iterations/steps through the same contract. M7a/M7b
+now implement their work models; M8/M11 remain planned. Numerical schema versions remain unchanged.
 
 ## M7 — features, matching and geometric verification
 
-Deliver feature extraction as M7a and matching/verification as M7b, followed by M7c.
-Implement ALIKED and compatible LightGlue using a verified backend route, plus SIFT
-and compatible brute-force matching. Separate stages and settings for features,
-matches and geometric verification; expose any unavoidable native coupling. Validate
-actual descriptor/weight/format compatibility and preserve the requested PairSet.
-Keep databases isolated and published upstream payloads immutable. Assemble current
-camera/calibration metadata in private downstream databases; do not reopen published
-payloads writable or use writable hardlinks. A fused native operation has one execution
-key/restart boundary and only promises intermediates it actually exposes. Reject a
-route that cannot honor requested external pairs rather than claiming PairSet support.
+**M7a implemented:** `features extract --views-run <uuid> --method ...` publishes
+`features.local_feature_set` v1 using existing attempts, cache, cancellation,
+publication/recovery and M6.5 progress/history. SIFT is the baseline/fallback;
+ALIKED_N16ROT, ALIKED_N32, LOMA_B and LOMA_B128 require exact verified routes.
+LoMa requires COLMAP >=4.2.1; older compatible SIFT/ALIKED builds remain eligible.
+Local ONNX model provenance and SHA-256 plus disposable inference are mandatory;
+no implicit downloads or Python ML runtime. LoMa-R/L/G are M7b matchers.
+Numerical descriptors are streamed into semantic identity independently of PairSet
+and matcher settings. The work model is `features.selected_views_v1` (VIEWS + MP),
+with bounded verified per-image logs or limited live evidence plus historical ETA.
+Tiny real SIFT publication/cache/immutability is opt-in; learned routes must be
+validated on a configured compatible machine before claiming their real integration.
 
-Acceptance: a tiny real integration fixture produces features, matches and verified
-geometry; incompatible routes fail before work; changing pair settings reuses features;
-changing extractor cannot reuse an incompatible database. Test fallback explicitly.
-If a local learned route is unavailable, report the missing capability and validate it
-on a designated test machine before claiming the milestone's integration complete.
+**M7b implemented:** `matches run` consumes exact M7a/M6 run outputs and publishes
+`MatchSet` v1; `verification run` independently publishes `VerifiedGeometrySet` v1.
+LoMa, ALIKED/LightGlue and SIFT/brute-force share these contracts and services.
+Compatibility is explicit, including Advanced SIFT/LightGlue, ALIKED brute-force,
+N32, LoMa brute-force and rotation-robust LoMa-R. Simple Fast/Medium/High/Max High v1
+profiles resolve exact settings with ordered capability evidence before execution.
+No runtime substitution, saved-default migration, retrieval or mapping is introduced.
+
+The installed COLMAP 4.2.1 route uses explicit-pair raw-only `matches_importer` and
+standalone `geometric_verifier`, independent private database copies, canonical
+numerical digests, current camera priors and separate PAIRS progress/history.
+Tests cover complete PairSet preservation including zero matches, malformed indices/
+matrices, schema/mapping integrity, cache boundaries, immutable upstream bytes,
+cancellation, failures, publication recovery and profile decisions. Real SIFT passes
+with 3 views/3 pairs/636 raw matches/3 verified pairs/636 inliers on the tiny fixture.
+M7b.1 adds Simple `auto` device resolution inside each technology candidate and
+Advanced device-only `auto`, with frozen settings and no runtime substitution.
+Read-only local model checks preserve expected SHA even for missing/wrong bytes;
+native URL/default downloads are blocked. ALIKED_N16ROT/LightGlue CPU passes the
+real tiny fixture (339 raw matches/inliers, 3 verified pairs).
+**M7b.2 validated:** all ten matcher types, thirteen compatible CPU combinations,
+including ALIKED_N32, LoMa-B128/B/R/L/G and both LoMa brute-force inputs, pass the
+same tiny explicit-pair fixture. Official weights were separately staged and
+SHA-verified; no processing downloader was added. SIFT/brute-force also passes GPU;
+learned GPU routes remain blocked by absent cuDNN 9 in the controlled installation.
+**M7b.3 validated:** explicit operator provisioning of an isolated native runtime
+with CUDA 12.8/cuDNN 9.27.0.42 resolves that GPU dependency. All thirteen compatible
+combinations pass real GPU extraction, matching and separate verification, including
+LoMa-B128/B/R/L/G. Cache, upstream byte integrity and actual bundle DLL loading are
+verified; a CPU ALIKED/LightGlue smoke also passes with the new bundle. Original
+installations, model files and system PATH remain unchanged. Simple profile v1 and
+production code are unchanged. See [GPU runtime setup](docs/GPU_RUNTIME.md).
+Simple profile v1 and all Advanced choices remain unchanged. These results establish
+execution/cache/artifact correctness, not quality rankings. Heavy L/G and explicit
+phone/drone cross-source fixture tests are opt-in. See [M7B.md](docs/M7B.md).
 
 ## M7c — practical cross-clip retrieval and hybrid pairing
+
+**Partial implementation:** immutable `retrieval.representation_set` v1, explicit
+offline descriptor import, exact bounded CPU retrieval, retrieval/hybrid M6 PairSets,
+M6.5 progress, cancellation/recovery and an opt-in fixed-LoMa-B comparison harness
+are implemented. No production VPR inference backend/model is selected. All four
+shortlisted candidates received licensing/deployment inspection, but representative
+captures and prepared inference exports were unavailable. Real multi-clip quality,
+resource comparison and production redistribution selection remain acceptance gates;
+synthetic/native transport tests do not satisfy them. See [M7c](docs/M7C.md) and
+[candidate evidence](docs/M7C_BENCHMARK.md). M7c is not marked complete.
 
 Benchmark modern retrieval/hybrid candidates on representative drone/phone video,
 mixed clips, unordered photos and difficult indoor/outdoor overlap/texture/viewpoint
@@ -223,7 +268,7 @@ index size and pair count alongside Recall@K and commercial redistribution/licen
 Vocabulary Tree is a catalog option, not a selected final backend. M6 selects no model.
 
 Implement one verified retrieval representation/index route, independent of the local
-ALIKED/SIFT descriptor choice unless an explicit compatible aggregation is implemented.
+LoMa/ALIKED/SIFT descriptor choice unless an explicit compatible aggregation is implemented.
 Record embedding/model weights, preprocessing, normalization/dimension, indexed corpus,
 distance metric, index version/settings and query budgets. Combine Sequential within
 clips with bounded retrieval across clips, deduplicate pairs and explain coverage.

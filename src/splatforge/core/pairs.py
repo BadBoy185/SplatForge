@@ -46,7 +46,42 @@ class ExhaustiveSettings(FrozenModel):
     settings_schema_version: Literal[1] = 1
 
 
-PairSettings = Annotated[SequentialSettings | ExhaustiveSettings, Field(discriminator="method_id")]
+class RetrievalPairSettings(FrozenModel):
+    method_id: Literal["pair_selection.retrieval"] = "pair_selection.retrieval"
+    method_version: Literal[1] = 1
+    settings_schema_version: Literal[1] = 1
+    top_k: int = Field(default=5, ge=1, le=100, strict=True)
+    max_retrieval_pairs: int = Field(default=10_000, ge=1, le=MAX_PAIRS, strict=True)
+    minimum_similarity: float = Field(default=0.5, ge=-1, le=1, allow_inf_nan=False)
+    source_policy: Literal["cross_source", "prefer_cross_source", "all"] = "cross_source"
+    same_clip_policy: Literal["exclude", "long_range"] = "exclude"
+    same_clip_suppression_window: int = Field(default=5, ge=0, le=100_000, strict=True)
+    query_view_ids: tuple[UUID, ...] = Field(default=(), max_length=100_000)
+    corpus_view_ids: tuple[UUID, ...] = Field(default=(), max_length=100_000)
+    search_device: Literal["cpu"] = "cpu"
+    budget_policy: Literal["refuse_conservative_upper_bound"] = "refuse_conservative_upper_bound"
+    tie_policy: Literal["source_priority_similarity_uuid"] = "source_priority_similarity_uuid"
+
+    @model_validator(mode="after")
+    def canonical_eligibility(self) -> RetrievalPairSettings:
+        for ids in (self.query_view_ids, self.corpus_view_ids):
+            if list(ids) != sorted(set(ids), key=lambda v: v.int):
+                raise ValueError("Retrieval eligibility UUIDs must be unique and sorted")
+        return self
+
+
+class HybridPairSettings(FrozenModel):
+    method_id: Literal["pair_selection.hybrid"] = "pair_selection.hybrid"
+    method_version: Literal[1] = 1
+    settings_schema_version: Literal[1] = 1
+    sequential: SequentialSettings = SequentialSettings()
+    retrieval: RetrievalPairSettings = RetrievalPairSettings()
+
+
+PairSettings = Annotated[
+    SequentialSettings | ExhaustiveSettings | RetrievalPairSettings | HybridPairSettings,
+    Field(discriminator="method_id"),
+]
 
 
 class PairResourceLimits(FrozenModel):
@@ -179,14 +214,47 @@ class ExplicitReason(FrozenModel):
     kind: Literal["explicit"] = "explicit"
 
 
+class RetrievalEvidence(FrozenModel):
+    query_view_id: UUID
+    rank: int = Field(ge=1, le=100, strict=True)
+    similarity: float = Field(ge=-1, le=1, allow_inf_nan=False)
+
+
+class RetrievalReason(FrozenModel):
+    kind: Literal["retrieval"] = "retrieval"
+    representation_semantic_digest: Digest
+    evidence: tuple[RetrievalEvidence, ...] = Field(min_length=1, max_length=2)
+
+    @model_validator(mode="after")
+    def canonical_queries(self) -> RetrievalReason:
+        ids = [e.query_view_id.int for e in self.evidence]
+        if ids != sorted(set(ids)):
+            raise ValueError("Retrieval evidence must have unique sorted query UUIDs")
+        return self
+
+
+class RetrievalPairInput(FrozenModel):
+    artifact_id: UUID
+    semantic_digest: Digest
+    indexed_views: int = Field(ge=2, le=100_000, strict=True)
+    descriptor_bytes: int = Field(ge=8, le=256 * 1024**2, strict=True)
+    requested_k: int = Field(ge=1, le=100, strict=True)
+    candidate_edge_upper_bound: Count
+    sequential_edge_count: Count
+    retrieval_edge_count: Count
+    explicit_edge_count: Count
+    final_edge_count: Count
+
+
 PairReason = Annotated[
-    SequentialReason | ExhaustiveReason | ExplicitReason, Field(discriminator="kind")
+    SequentialReason | ExhaustiveReason | ExplicitReason | RetrievalReason,
+    Field(discriminator="kind"),
 ]
 
 
 class PairRecord(PairEndpoints):
     pair_id: UUID
-    reasons: tuple[PairReason, ...] = Field(min_length=1, max_length=3)
+    reasons: tuple[PairReason, ...] = Field(min_length=1, max_length=4)
 
     @model_validator(mode="after")
     def stable_and_canonical(self) -> PairRecord:
@@ -415,6 +483,7 @@ class PairSet(FrozenModel):
     pairs: tuple[PairRecord, ...] = Field(min_length=1, max_length=MAX_PAIRS)
     coverage: PairCoverage
     semantic_digest: Digest
+    retrieval: RetrievalPairInput | None = None
 
     @model_validator(mode="after")
     def validate_graph(self) -> PairSet:
@@ -433,6 +502,20 @@ class PairSet(FrozenModel):
         for timeline, views in _timelines(self.universe).items():
             for index, view in enumerate(views):
                 positions[view.view_id] = (timeline, index)
+        retrieval_settings = (
+            self.settings.retrieval if isinstance(self.settings, HybridPairSettings)
+            else self.settings if isinstance(self.settings, RetrievalPairSettings) else None
+        )
+        sequential_settings = (
+            self.settings.sequential if isinstance(self.settings, HybridPairSettings)
+            else self.settings if isinstance(self.settings, SequentialSettings) else None
+        )
+        if (retrieval_settings is not None) != (self.retrieval is not None):
+            raise ValueError("Retrieval/hybrid PairSet requires exact representation provenance")
+        query_ranks: dict[UUID, set[int]] = {}
+        temporal_positions = {k: v[1] for k, v in positions.items()}
+        eligible_queries = set(retrieval_settings.query_view_ids) if retrieval_settings else set()
+        eligible_corpus = set(retrieval_settings.corpus_view_ids) if retrieval_settings else set()
         for pair in self.pairs:
             if pair.left_view_id not in ids or pair.right_view_id not in ids:
                 raise ValueError("pair endpoint is outside the selected universe")
@@ -444,12 +527,12 @@ class PairSet(FrozenModel):
                     raise ValueError("exhaustive reason requires Exhaustive settings")
                 if isinstance(reason, SequentialReason):
                     if (
-                        not isinstance(self.settings, SequentialSettings)
-                        or reason.neighbor_offset > self.settings.forward_neighbors
+                        sequential_settings is None
+                        or reason.neighbor_offset > sequential_settings.forward_neighbors
                         or (
-                            self.settings.max_time_gap is not None
+                            sequential_settings.max_time_gap is not None
                             and reason.time_delta.as_fraction()
-                            > self.settings.max_time_gap.as_fraction()
+                            > sequential_settings.max_time_gap.as_fraction()
                         )
                     ):
                         raise ValueError("sequential reason contradicts resolved settings")
@@ -464,6 +547,36 @@ class PairSet(FrozenModel):
                         reason.time_delta.as_fraction() != delta
                     ):
                         raise ValueError("sequential reason offset or time delta differs")
+                elif isinstance(reason, RetrievalReason):
+                    if (
+                        retrieval_settings is None or self.retrieval is None
+                        or reason.representation_semantic_digest != self.retrieval.semantic_digest
+                        or any(
+                            e.query_view_id not in (left.view_id, right.view_id)
+                            or e.rank > retrieval_settings.top_k
+                            or e.similarity < retrieval_settings.minimum_similarity
+                            for e in reason.evidence
+                        )
+                    ):
+                        raise ValueError("Retrieval evidence contradicts settings/endpoints/index")
+                    from splatforge.core.retrieval_pairs import eligible
+
+                    for evidence in reason.evidence:
+                        query = ids[evidence.query_view_id]
+                        target = right if query == left else left
+                        if (
+                            eligible_queries and query.view_id not in eligible_queries
+                            or eligible_corpus and target.view_id not in eligible_corpus
+                            or not eligible(query, target, retrieval_settings,
+                                            temporal_positions, sequential_settings)
+                        ):
+                            raise ValueError(
+                                "Retrieval evidence violates eligibility/source/clip policy",
+                            )
+                        ranks = query_ranks.setdefault(query.view_id, set())
+                        if evidence.rank in ranks:
+                            raise ValueError("Retrieval query repeats a neighbor rank")
+                        ranks.add(evidence.rank)
                 elif (
                     isinstance(reason, ExplicitReason)
                     and PairEndpoints(
@@ -479,6 +592,22 @@ class PairSet(FrozenModel):
         }
         if actual_explicit != explicit:
             raise ValueError("supplied explicit pairs differ from pair reasons")
+        if any(ranks != set(range(1, len(ranks) + 1)) for ranks in query_ranks.values()):
+            raise ValueError("Retrieval query ranks must be consecutive from one")
+        if self.retrieval is not None:
+            counts = {kind: sum(any(r.kind == kind for r in p.reasons) for p in self.pairs)
+                      for kind in ("sequential", "retrieval", "explicit")}
+            if (
+                self.retrieval.indexed_views != len(self.universe.views)
+                or self.retrieval.requested_k != retrieval_settings.top_k
+                or self.retrieval.sequential_edge_count != counts["sequential"]
+                or self.retrieval.retrieval_edge_count != counts["retrieval"]
+                or self.retrieval.explicit_edge_count != counts["explicit"]
+                or self.retrieval.final_edge_count != len(self.pairs)
+                or counts["retrieval"] > retrieval_settings.max_retrieval_pairs
+                or counts["retrieval"] > self.retrieval.candidate_edge_upper_bound
+            ):
+                raise ValueError("Retrieval/hybrid edge accounting mismatch")
         if self.coverage != compute_coverage(self.universe, self.pairs):
             raise ValueError("PairSet coverage differs from recomputed graph")
         if self.semantic_digest != pair_graph_digest(self.universe, self.pairs):

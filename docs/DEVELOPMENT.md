@@ -20,6 +20,15 @@ on every later Python release.
 | Quality/scale benchmark | Registration, components, reprojection/track metrics, runtime, RAM/VRAM/disk, trainer image quality where meaningful | Versioned reference datasets outside Git |
 
 The default full pytest suite must run without tools, GPU, network or model downloads.
+
+M7b.1 device/model regressions live in `test_sfm_devices.py` and `test_local_models.py`.
+Simple `auto` probes GPU then CPU inside each candidate; Advanced `auto` retains exact
+methods. Use `--device cpu` / `--device gpu:0` for explicit planning; other GPU indices
+are not exposed by this adapter. Low-level stage settings remain explicit. Integration
+`SPLATFORGE_TEST_COLMAP_DEVICE=auto|cpu|gpu:0` freezes the selected route before work.
+Complete local model sets must execute; runtime failures are failures, not missing-model
+skips. Missing-model skips carry all roles, expected/observed SHA, checked paths,
+configuration and exact pytest rerun commands. No model downloader/installer exists.
 Add explicit integration/GPU markers when those tests exist. Tests skip with reasons
 when prerequisites are absent; skips are not evidence of backend support. Configure
 separate Windows integration runs for supported backend builds and retain capability
@@ -37,6 +46,96 @@ evidence are retained as test properties for optional JUnit output.
 Headless CUDA success is valid evidence; an OpenGL-only route without a display is
 reported as unavailable while CPU SIFT can remain available.
 
+M7a's opt-in `tests/test_features_integration.py` uses the same
+`SPLATFORGE_TEST_COLMAP` selection for real SIFT on tiny textured published selected
+views, feature validation, cache reuse and upstream hash comparisons. Add
+`SPLATFORGE_TEST_COLMAP_LEARNED=1` and `SPLATFORGE_COLMAP_MODEL_DIR` to request
+ALIKED_N16ROT, optional ALIKED_N32, LOMA_B and LOMA_B128. Learned methods run only after
+positive disposable variant/model/runtime inference; missing prerequisites skip with
+actionable capability reasons. `SPLATFORGE_TEST_COLMAP_FEATURE_GPU=1` requests GPU.
+CI needs neither GPU nor network; no command downloads models or installs a toolchain.
+
+Deterministic M7a tests cover settings/signatures, streamed numerical digests,
+UUID-to-native mapping, counts/types/dimensions/schema, model/ONNX/version/option gates,
+changed executable/model/runtime identities, resource limits, timeout/cancellation/OOM,
+cache corruption/invalidation, publication recovery, interruption, upstream immutability,
+CLI and Progress/ETA/history degradation. SIFT is the baseline/fallback; LoMa requires
+COLMAP >=4.2.1 without raising the global SIFT/ALIKED floor. Source/name/size/SHA-256
+supports reproducibility and later installer-license review; commercial redistribution
+clearance remains separate. Base dependencies have no PyTorch or Python ML runtime.
+M7b implements LoMa-R/L/G matching and separate geometric verification. M7c's neutral
+offline representation/hybrid slice is implemented; production inference and model
+selection remain pending. See [M7c contracts](M7C.md) and [candidate evidence](M7C_BENCHMARK.md).
+
+M7c tests live in `test_retrieval_core.py`, `test_retrieval_execution.py` and
+`test_retrieval_benchmark.py`. They cover exact top-K/ties, graph compatibility,
+cross-source/loop policies, budgets, model/preprocess/corpus identity, local-feature
+independence, cache corruption, cancellation/recovery, M6.5 progress and fixed-matcher
+benchmark accounting. They use synthetic vectors, not real candidate inference.
+`test_retrieval_integration.py` separately enables real M7b LoMa-B GPU transport with
+`SPLATFORGE_TEST_RETRIEVAL_TRANSPORT=1`, or an operator-owned representative fixture
+with `SPLATFORGE_TEST_RETRIEVAL_FIXTURE`. The eight required real categories, model
+rights, inference runtime/peak memory and useful-pair quality remain explicit gaps.
+
+M7b's `tests/test_matching_integration.py` uses the same native executable/model
+configuration. It proves raw-only explicit PairSet matching, separate geometric
+verification, independent caches and byte-identical published inputs for SIFT/BF.
+Learned opt-ins cover ALIKED_N16ROT/LightGlue and LoMa-B128/B/R/L/G. Set
+`SPLATFORGE_TEST_COLMAP_HEAVY=1` for L/G. Missing learned prerequisites skip with
+the exact capability/model reason; configured SIFT failures fail. Mocks do not
+establish learned real-backend validation. No test downloads weights.
+
+M7b.2 extends that same fixture to all 13 compatible Advanced combinations: both
+SIFT matchers, both matchers for each ALIKED variant, both LoMa-B128 matchers and
+all five LoMa-B matchers. `SIFT_LIGHTGLUE` also requires the learned opt-in and
+route-specific model preflight. Tests record total features, stage runtimes, frozen
+backend/device/model identities and feature/matching/verification cache hits.
+These cases never change Simple profile v1 recommendations.
+
+Explicitly authorized operator provisioning is separate from processing: obtain
+the exact URL/name/SHA tuple from the verified selected binary, stage the download,
+require a matching local SHA-256, then publish it without overwriting different
+existing bytes. No downloader is added to SplatForge or its integration tests.
+Keep setup scripts, weights and machine-specific reports in ignored local storage.
+Inspect missing GPU dependencies only within the selected controlled runtime layout;
+do not borrow DLLs from unrelated applications or alter global PATH. An available
+ONNX CUDA provider DLL does not prove its cuDNN dependencies are present.
+
+Explicit operator authorization may provision an isolated versioned native runtime
+from official NVIDIA archives. Keep the original COLMAP/toolkit installations and
+system PATH unchanged, record archive checksums and every bundled DLL, then rerun
+functional GPU inference and real integrations. See
+[controlled Windows GPU runtime](GPU_RUNTIME.md) for setup and validation commands.
+Processing and Doctor still perform no downloads or installation.
+M7b.3 validates all thirteen compatible combinations with explicit `gpu:0` on that
+bundle, plus CPU ALIKED/LightGlue. Tests pass with a child/session PATH containing
+only the bundle and Windows directories. Read-only module observations confirm the
+observed ONNX/CUDA/cuDNN DLLs load from the selected bundle. FP32 is supported;
+BF16 remains unexposed and untested. See [M7b real results](M7B.md).
+
+`tests/test_matching_cross_source.py` accepts `SPLATFORGE_TEST_CROSS_SOURCE_FIXTURE`
+pointing to a bounded manifest of externally prepared phone/drone perspective views,
+SHA-256 values and explicit zero-based pair indices. It creates a separate temporary
+project and runs each production family on the same supplied pair universe; it does
+no retrieval. Larger fixture data stays outside Git. Schema, example, provisioning
+and current real results are in [M7B.md](M7B.md).
+
+New deterministic M7b tests cover the full signature compatibility matrix, frozen
+Simple/Advanced decisions, unavailable candidates, zero-match requested pairs,
+canonical correspondences, malformed indices/F/E/H/pose/configuration, native schema,
+SQLite-layout independence, independent camera/verification cache keys, immutable
+database copies, stale-state rejection, runtime failures, cancellation, orphan
+publication recovery, CLI delegation and successful-only performance history.
+
+The installed Windows COLMAP 4.2.1 help omits extractor enum alternatives. Narrow
+`native_options_v2` parsing recognizes its default/options shape and proposes candidate
+routes; real validated inference must prove each route. Unknown shapes fail closed.
+That build converts image paths with narrow APIs. M7a uses existing ASCII Windows
+short aliases for owned workspace transport, creating no links and changing no data
+identity. Without such an alias, it fails with guidance to use an ASCII project location.
+Only the owned attempt database is checkpointed/sealed; immutable published reads never
+create SQLite WAL/SHM files.
+
 The shared executable resolver caches SHA-256 only with concrete file/change evidence.
 Windows also reads an existing NTFS/ReFS USN marker to detect rapid same-size writes
 with restored modification times; it never enables or alters a journal. If this marker
@@ -45,8 +144,8 @@ Future frozen attempts can call `verify_expected_identity()` immediately before 
 
 Doctor schema v1 uses five-minute maximum static CLI evidence and thirty-second
 resource/functional evidence. The process-local report cache expires at its earliest
-evidence expiry and rechecks executable identity/configuration on reuse. Parsing v1
-recognizes braced feature/matcher enums and a narrow legacy SIFT option profile;
+evidence expiry and rechecks executable/model identities and configuration on reuse.
+Parsing recognizes braced feature/matcher enums, `native_options_v2` and a narrow legacy SIFT profile;
 unrecognized formats fail closed. Per-command failure codes/excerpts remain separate.
 Learned model roles follow the selected binary's concrete model-path option defaults.
 No ONNX inference or model compatibility is certified by recording a readable file.
@@ -297,8 +396,22 @@ All new estimator/history/progress correctness tests use injected monotonic and 
 clocks, never sleep thresholds. Cover privacy, retention, exact incompatibility, scale,
 dispersion, transient spikes and stalls, learning across executions, terminal/cache
 eligibility, history/event failures, cancellation, crash/recovery and old-event reads.
-Future M7 extraction must report views/MP/features; matching and verification report
-pairs. M8 exposes only reliably supported phases and may leave percent/ETA unavailable
+M7a uses `features.selected_views_v1`, exact VIEWS total and views/megapixels workload.
+Verified COLMAP 4.2.1 logs supply per-view completion/features through existing process
+polling: 64 KiB reads, 4096-byte lines, eight files and 32 MiB total logs. Other formats
+keep observed completion at zero until terminal success and may use historical ETA
+through the unchanged estimator. Elapsed time never advances the count. Exact native/
+runtime/model/settings identities and the existing hardware profile partition history.
+M7b uses `matching.explicit_pairs_v1` (all requested PAIRS) and
+`verification.raw_match_pairs_v1` (positive raw-match PAIRS, including insufficient
+sets the native verifier rejects). It reports real copying/execution/validation phases
+and elapsed time through existing process polling; no log parser currently claims
+individual pair completion. Counts remain zero until validated terminal success.
+Historical estimates are stage-specific, partitioned by exact matcher/descriptor/
+settings/model/runtime/precision and existing hardware profile. Unclassified GPU
+hardware remains unknown rather than inferred. Cache/failure/cancellation teach no
+history. Neither profile labels nor performance history enter numerical recipes.
+M8 exposes only reliably supported phases and may leave percent/ETA unavailable
 or use wide historical ranges at low/medium confidence. M11 managed trainers report
 iterations/steps and their device/runtime/settings identity. No such backend is added
 by M6.5, and clients must never fabricate progress for it.

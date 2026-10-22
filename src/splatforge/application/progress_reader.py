@@ -8,7 +8,15 @@ from uuid import UUID
 from splatforge.application.eta import zero_eta
 from splatforge.application.progress import RuntimeClock, aggregate_pipeline
 from splatforge.application.progress_contracts import ProgressClock, ProgressRepository
-from splatforge.core.execution import FakeRoute, PairSelectionRoute, SharpestViewPreparationRoute
+from splatforge.core.execution import (
+    FakeRoute,
+    FeatureExtractionRoute,
+    FeatureMatchingRoute,
+    GeometricVerificationRoute,
+    PairSelectionRoute,
+    RetrievalBuildRoute,
+    SharpestViewPreparationRoute,
+)
 from splatforge.core.progress import (
     EtaEstimate,
     PipelineProgressSnapshot,
@@ -31,14 +39,16 @@ class RunProgressService:
         route = evidence.snapshot.route
         if isinstance(route, FakeRoute):
             nodes = (route.sequence, route.scale)
-        elif isinstance(route, PairSelectionRoute):
+        elif isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
+                                FeatureMatchingRoute, GeometricVerificationRoute)):
             nodes = ()
         elif isinstance(route, SharpestViewPreparationRoute):
             nodes = (route.candidate, route.quality, route.selection)
         else:
             nodes = (route.candidate, route.selection)
         descriptions = [(node.node_id, node.method_id) for node in nodes]
-        if isinstance(route, PairSelectionRoute):
+        if isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
+                              FeatureMatchingRoute, GeometricVerificationRoute)):
             descriptions = [(route.node_id, route.settings.method_id)]
         previous = evidence.latest
         snapshots = {stage.work.node_id: stage for stage in previous.stages} if previous else {}

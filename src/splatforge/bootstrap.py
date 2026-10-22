@@ -3,6 +3,8 @@
 from pathlib import Path
 
 from splatforge.adapters.colmap_capabilities import ColmapCapabilityAdapter
+from splatforge.adapters.colmap_features import ColmapFeatureAdapter
+from splatforge.adapters.colmap_matching import ColmapMatchingAdapter
 from splatforge.adapters.execution_storage import LocalExecutionRepository
 from splatforge.adapters.fake_stages import LocalFakeStages
 from splatforge.adapters.ffmpeg import FFmpegAdapter
@@ -19,16 +21,22 @@ from splatforge.adapters.process_runner import ExecutableResolver, LocalProcessR
 from splatforge.adapters.project_backup import LocalMigrationBackupPreparer
 from splatforge.adapters.project_storage import LocalProjectStore
 from splatforge.adapters.quality import PillowQualityAdapter
+from splatforge.adapters.retrieval_artifacts import LocalRetrievalAdapter
 from splatforge.adapters.source_files import LocalSourceFiles
 from splatforge.adapters.state_schema import LocalStateSchemaUpgrader
 from splatforge.adapters.view_workspace import LocalViewWorkspace
 from splatforge.application.doctor import DoctorService
 from splatforge.application.execution import FakeExecutionService
+from splatforge.application.features import FeaturesService
+from splatforge.application.matching import MatchingService
 from splatforge.application.media import MediaService
 from splatforge.application.pairs import PairsService
 from splatforge.application.progress import PerformanceService, ProgressSupport
 from splatforge.application.progress_reader import RunProgressService
 from splatforge.application.projects import ProjectService
+from splatforge.application.retrieval import RetrievalService
+from splatforge.application.retrieval_benchmark import RetrievalBenchmarkService
+from splatforge.application.sfm_profiles import SfmProfileService
 from splatforge.application.views import ViewsService
 from splatforge.core.builtin_methods import build_builtin_registry
 from splatforge.core.progress import ExecutionHardwareProfile
@@ -117,4 +125,36 @@ def build_pairs_service(*, performance_path: Path | None = None) -> PairsService
     return PairsService(
         LocalExecutionRepository(project_store=LocalProjectStore()), LocalPairWorkspace(),
         progress=build_progress_support(performance_path),
+        retrieval_adapter=LocalRetrievalAdapter(),
     )
+
+
+def build_retrieval_service(*, performance_path: Path | None = None) -> RetrievalService:
+    return RetrievalService(LocalExecutionRepository(project_store=LocalProjectStore()),
+                            LocalRetrievalAdapter(),
+                            progress=build_progress_support(performance_path))
+
+
+def build_retrieval_benchmark_service() -> RetrievalBenchmarkService:
+    return RetrievalBenchmarkService(
+        LocalExecutionRepository(), build_retrieval_service(), build_pairs_service(),
+        build_matching_service(),
+    )
+
+
+def build_features_service(*, performance_path: Path | None = None) -> FeaturesService:
+    return FeaturesService(
+        LocalExecutionRepository(project_store=LocalProjectStore()), ColmapFeatureAdapter(),
+        progress=build_progress_support(performance_path),
+    )
+
+
+def build_matching_service(*, performance_path: Path | None = None) -> MatchingService:
+    return MatchingService(
+        LocalExecutionRepository(project_store=LocalProjectStore()), ColmapMatchingAdapter(),
+        progress=build_progress_support(performance_path),
+    )
+
+
+def build_sfm_profile_service() -> SfmProfileService:
+    return SfmProfileService(ColmapFeatureAdapter(), ColmapMatchingAdapter())

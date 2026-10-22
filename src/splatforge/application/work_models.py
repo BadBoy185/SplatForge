@@ -8,12 +8,21 @@ import platform
 from fractions import Fraction
 
 from splatforge.core.execution import (
+    FeatureExtractionRoute,
+    FeatureMatchingRoute,
+    GeometricVerificationRoute,
     PairSelectionRoute,
+    RetrievalBuildRoute,
     SharpestViewPreparationRoute,
     ViewPreparationRoute,
 )
 from splatforge.core.media import MediaType
-from splatforge.core.pairs import ExhaustiveSettings, exhaustive_pair_count
+from splatforge.core.pairs import (
+    ExhaustiveSettings,
+    HybridPairSettings,
+    RetrievalPairSettings,
+    exhaustive_pair_count,
+)
 from splatforge.core.progress import (
     ExecutionHardwareProfile,
     PerformanceBackendIdentity,
@@ -255,17 +264,24 @@ def pairs_progress_plan(
     generated_pair_count: int | None = None,
 ) -> PlannedStage:
     exhaustive = isinstance(route.settings, ExhaustiveSettings)
+    retrieval = route.retrieval is not None
+    query = (route.settings.retrieval if isinstance(route.settings, HybridPairSettings)
+             else route.settings if isinstance(route.settings, RetrievalPairSettings) else None)
     total = (
         exhaustive_pair_count(len(route.universe.views))
         if exhaustive
         else len(route.universe.views)
     )
-    method = "pair_selection.exhaustive" if exhaustive else "pair_selection.sequential"
+    if query:
+        total = len(query.query_view_ids) if query.query_view_ids else len(route.universe.views)
+
+    method = route.settings.method_id
     return _stage(
         node_id=route.node_id,
         stage_id="pair_selection",
         method_id=method,
-        model="pairs.emitted_pairs_v1" if exhaustive else "pairs.selected_views_v1",
+        model="pairs.emitted_pairs_v1" if exhaustive else "retrieval.queried_views_v1"
+        if retrieval else "pairs.selected_views_v1",
         unit=WorkUnit.PAIRS if exhaustive else WorkUnit.VIEWS,
         total=total,
         backend=python_backend("splatforge.pairs_python"),
@@ -273,9 +289,11 @@ def pairs_progress_plan(
         settings={
             "settings": route.settings.model_dump(mode="json"),
             "explicit_pair_count": len(route.explicit_pairs),
+            **({"descriptor_dimension": route.retrieval_descriptor_dimension} if retrieval else {}),
         },
         metrics={
             "views": len(route.universe.views),
+            **({"descriptor_dimension": route.retrieval_descriptor_dimension} if retrieval else {}),
             **(
                 {"pairs": total}
                 if exhaustive
@@ -283,5 +301,85 @@ def pairs_progress_plan(
                 if generated_pair_count is not None
                 else {}
             ),
+        },
+    )
+
+
+def retrieval_progress_plan(
+    route: RetrievalBuildRoute, hardware: ExecutionHardwareProfile,
+) -> PlannedStage:
+    # These are validated/imported views, never claimed as observed model inference.
+    return _stage(
+        node_id=route.node_id, stage_id="retrieval_representation",
+        method_id=route.settings.method_id, model="retrieval.imported_views_v1",
+        unit=WorkUnit.VIEWS, total=len(route.export.views), hardware=hardware,
+        backend=python_backend("splatforge.retrieval_offline"),
+        settings=route.settings.model_dump(mode="json"),
+        metrics={"views": len(route.export.views),
+                 "megapixels": sum(v.width * v.height for v in route.export.views) / 1_000_000,
+                 "descriptor_dimension": route.settings.descriptor_dimension,
+                 "descriptor_bytes": route.export.descriptor_bytes},
+    )
+
+
+def features_progress_plan(
+    route: FeatureExtractionRoute, hardware: ExecutionHardwareProfile,
+) -> PlannedStage:
+    backend = route.backend
+    plan = _stage(
+        node_id=route.node_id, stage_id="feature_extraction", method_id=route.settings.method_id,
+        model="features.selected_views_v1", unit=WorkUnit.VIEWS, total=route.estimate.views,
+        hardware=hardware.model_copy(update={"device": "gpu" if route.settings.use_gpu else "cpu"}),
+        backend=PerformanceBackendIdentity(
+            adapter_id=backend.adapter_id, family="colmap",
+            runtime_version=backend.numerical_identity,
+            executable_sha256=backend.selection.identity.sha256,
+            model_sha256=(performance_settings_key(
+                [m.sha256 for m in backend.model_identities()]) if backend.models else None),
+        ),
+        settings=route.settings.model_dump(mode="json"),
+        metrics={"views": route.estimate.views, "megapixels": route.estimate.source_megapixels},
+    )
+    # The exact VIEWS total permits historical ETA through the unchanged M6.5
+    # estimator. Unknown log formats retain completed=0 until terminal validation;
+    # elapsed time never advances the count. Verified parsers report real views.
+    return plan
+
+
+def matching_progress_plan(
+    route: FeatureMatchingRoute | GeometricVerificationRoute,
+    hardware: ExecutionHardwareProfile,
+) -> PlannedStage:
+    matching = isinstance(route, FeatureMatchingRoute)
+    backend = route.backend
+    settings = route.settings.model_dump(mode="json")
+    settings["actual_precision"] = backend.actual_precision
+    if matching:
+        settings["descriptor"] = route.descriptor.model_dump(mode="json")
+    return _stage(
+        node_id=route.node_id,
+        stage_id="feature_matching" if matching else "geometric_verification",
+        method_id=route.settings.method_id,
+        model="matching.explicit_pairs_v1" if matching else "verification.raw_match_pairs_v1",
+        unit=WorkUnit.PAIRS,
+        total=route.estimate.pair_count,
+        hardware=hardware.model_copy(
+            update={"device": "gpu" if matching and route.settings.use_gpu else "cpu"}
+        ),
+        backend=PerformanceBackendIdentity(
+            adapter_id=backend.adapter_id,
+            family="colmap",
+            runtime_version=backend.numerical_identity,
+            executable_sha256=backend.selection.identity.sha256,
+            model_sha256=performance_settings_key([m.sha256 for m in backend.models])
+            if backend.models
+            else None,
+        ),
+        settings=settings,
+        metrics={
+            "pairs": route.estimate.pair_count,
+            "views": route.estimate.view_count,
+            "features": route.estimate.total_features,
+            "matches": route.estimate.raw_matches,
         },
     )
