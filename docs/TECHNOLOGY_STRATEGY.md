@@ -9,6 +9,13 @@ does not certify any catalog entry as implemented, and does not make a named res
 method a product default. It records how SplatForge should evaluate technology choices
 from M7 onward without destabilizing the implemented M0-M6.5 foundations.
 
+`ARCHITECTURE.md` and `ROADMAP.md` always take precedence over this file. This document
+cannot add acceptance criteria, move functionality between milestones, require an
+additional backend, or authorize implementation of a research candidate. Any such
+change requires a separate explicit architecture/roadmap review and an independently
+bounded implementation task. No implementation work should be added solely because a
+method or idea appears in this document.
+
 The central rule is simple: SplatForge should not chase one supposedly universal
 "best" algorithm, and it should not accumulate a large method zoo. For each important
 stage, keep a small set of materially different, well-tested routes and choose defaults
@@ -20,13 +27,15 @@ from measured end-to-end evidence on representative SplatForge data.
 
 A newer learned method does not remove the need for a robust classical route. Keep a
 well-understood baseline whenever it materially improves diagnosability, portability or
-failure recovery. For local features this means retaining SIFT even when a learned route
-wins the normal quality profile. For mapping this means retaining Incremental Mapper even
-if Global Mapper is preferred for well-connected datasets.
+failure recovery. For local features this means retaining SIFT when it provides genuine
+compatibility/diagnostic value even if a learned route wins the normal quality profile.
+For mapping this means retaining Incremental Mapper as an explicit alternative even if
+Global Mapper is preferred for well-connected datasets.
 
 ### 1.2 Candidate is not default
 
-A method becomes a supported/default route only after all of the following are checked:
+A method becomes a supported/default route only after all applicable checks below are
+completed in the milestone that actually proposes adopting it:
 
 - real executable/model capability on the target Windows environment;
 - exact input/output and descriptor/model compatibility;
@@ -43,10 +52,11 @@ better for the product.
 
 ### 1.3 Keep alternatives only when they serve distinct jobs
 
-Prefer a small profile family such as `compatibility`, `balanced`, `robust`,
-`aerial_rotation`, and `maximum_quality` over exposing every model variant directly to
-ordinary users. Advanced settings may expose the resolved concrete method where useful.
-Do not add two routes whose measured behavior is effectively identical for SplatForge.
+Future profile families may eventually resemble `compatibility`, `balanced`, `robust`,
+`aerial_rotation`, or `maximum_quality`, but these names are illustrative rather than
+reserved product presets. Prefer a small profile family over exposing every model
+variant directly to ordinary users. Do not add two routes whose measured behavior is
+effectively identical for SplatForge.
 
 ### 1.4 Never hide algorithm substitution
 
@@ -58,15 +68,15 @@ attempt.
 ### 1.5 Refresh research at implementation time
 
 Named models in this document are a 2026-10-22 watchlist, not permanent commitments.
-Before implementing a future milestone, re-check the current state of the art and the
-current upstream releases. If a newer method clearly supersedes a listed candidate,
-benchmark the newer method instead of implementing an obsolete placeholder merely
-because it appears here.
+Before implementing a future technology-sensitive milestone, re-check the current state
+of the art and current upstream releases. If a newer method clearly supersedes a listed
+candidate, benchmark the newer method instead of implementing an obsolete placeholder
+merely because it appears here.
 
 ## 2. Benchmark pack before choosing defaults
 
 Build the benchmark pack incrementally from real project data plus small controlled
-fixtures. The pack should contain, where licensing and privacy permit:
+fixtures. Candidate coverage should include, where licensing and privacy permit:
 
 - drone orbit / oblique flight with meaningful image rotation;
 - drone nadir plus oblique views of the same area;
@@ -81,20 +91,21 @@ fixtures. The pack should contain, where licensing and privacy permit:
 - later, 360/fisheye + ordinary-camera material for M14.
 
 Real troublesome datasets are especially valuable. A scene that currently separates
-phone and drone imagery into different reconstruction components should remain as a
-regression case after its source data can be retained legally and privately.
+phone and drone imagery into different reconstruction components is a useful regression
+candidate after its source data can be retained legally and privately.
 
 Do not optimize only for one showcase scene. Keep a small controlled suite that includes
 negative and adversarial cases.
 
-## 3. End-to-end metrics
+## 3. End-to-end research metrics
 
-The paper metric for a stage is useful but insufficient. Measure the stage-specific
-metric and its downstream effect.
+The paper metric for a stage is useful but insufficient. When comparing candidates,
+measure the stage-specific metric and its downstream effect. These metrics guide research
+and do not expand a milestone's acceptance criteria unless `ROADMAP.md` is amended.
 
 ### Frame quality / selection
 
-Track at least:
+Useful comparison evidence includes:
 
 - selected/candidate ratio and temporal coverage;
 - blur/sharpness rejection behavior on labelled fixtures;
@@ -105,7 +116,7 @@ Track at least:
 
 ### Local features and matching
 
-Track at least:
+Useful comparison evidence includes:
 
 - keypoints/features per megapixel and their spatial distribution;
 - attempted pairs, matched pairs and geometrically verified pairs;
@@ -117,7 +128,8 @@ Track at least:
 
 ### Retrieval
 
-Recall@K remains useful for labelled retrieval data, but the primary product metrics are:
+Recall@K remains useful for labelled retrieval data, but important product-oriented
+comparison evidence includes:
 
 - recall of pairs that later pass geometric verification;
 - useful cross-clip edges at a fixed neighbor/pair budget;
@@ -128,7 +140,7 @@ Recall@K remains useful for labelled retrieval data, but the primary product met
 
 ### Mapping
 
-Track at least:
+Useful comparison evidence includes:
 
 - registered-view ratio overall and per source group;
 - component count and component-size distribution;
@@ -141,16 +153,18 @@ Track at least:
 
 ### Gaussian training
 
-Do not select a trainer preset using PSNR alone. Track held-out-view metrics and resource
-costs together, for example PSNR/SSIM/LPIPS, train time, peak VRAM, Gaussian count, scene
-size and render performance. Add geometry/depth/normal metrics only when trustworthy
-reference or priors exist; unavailable evidence stays unknown rather than becoming zero.
+Do not compare trainer candidates using PSNR alone. Useful research evidence includes
+held-out-view metrics and resource costs together, for example PSNR/SSIM/LPIPS, train
+time, peak VRAM, Gaussian count, scene size and render performance. Add geometry/depth/
+normal metrics only when trustworthy reference or priors exist; unavailable evidence
+stays unknown rather than becoming zero.
 
 ## 4. M4 and future frame-selection evolution
 
 The implemented M4 `pillow_edge_dhash` + `sharpest_interval` route is intentionally a
-cheap, deterministic baseline. Keep it. It is valuable for diagnostics and for avoiding
-expensive learned dependencies early in the pipeline.
+cheap, deterministic baseline. Keep it unless a separately reviewed change demonstrates
+a concrete defect. It remains useful for diagnostics and for avoiding expensive learned
+dependencies early in the pipeline.
 
 Do not equate perceptual image quality with SfM usefulness. A visually sharp frame may
 still be redundant because it comes from almost the same pose as its neighbors, while a
@@ -166,49 +180,58 @@ Future quality research may evaluate independent signals such as:
 - local-feature count and spatial coverage;
 - optional learned image-quality estimates as advisory evidence only.
 
-### Geometry-informed refinement: research gate, not an M8 prerequisite
+### Geometry-informed refinement: research gate only
 
-After M7 provides real features/matches/verified geometry, evaluate whether a second,
-bounded selection pass materially improves end-to-end results. Candidate evidence could
-include verified overlap, inlier spatial coverage, parallax/relative rotation proxies,
-view-graph degree, bridge importance, cross-source edges and homography dominance.
+After M7 provides real features/matches/verified geometry, it is worth running a bounded
+experiment to test whether a second selection pass materially improves end-to-end
+results. Candidate evidence could include verified overlap, inlier spatial coverage,
+parallax/relative-rotation proxies, view-graph degree, bridge importance, cross-source
+edges and homography dominance.
 
-If the benchmark shows a clear gain, introduce a new immutable refined-selection
-artifact in a separately scoped milestone/task. It must reference the original selected
-views and verification evidence rather than mutating M4 output. Re-running downstream
-work from the refined selection is acceptable; hidden feedback loops inside one attempt
-are not.
+This experiment does **not** move adaptive selection out of M13b and does not make it an
+M8 prerequisite. If the evidence is unusually strong, propose a separate roadmap change
+that defines the new artifact, invalidation and acceptance boundaries before implementing
+it. Until such a change is approved, advanced adaptive selection remains where the
+current roadmap places it.
 
-If evidence is weak or the added complexity does not improve registration/3DGS quality,
-do not promote this into the main pre-M8 path. Advanced adaptive selection can remain in
-M13. This avoids turning a promising idea into a mandatory dependency without evidence.
+If a later roadmap change does introduce a geometry-informed selector, it should publish
+a new immutable selection artifact referencing the original selected views and relevant
+verification evidence rather than mutating M4 output. Hidden feedback loops inside one
+attempt remain out of scope.
 
 ## 5. M7a/M7b: local features, matching and geometric verification
 
 The current architecture choice remains sound: separate feature extraction, matching
 and geometric verification, keep their compatibility explicit, and preserve SIFT as a
-robust baseline.
+robust baseline/fallback where the bounded M7 implementation requires it.
 
-### Current mandatory evaluation set
+### Current recommended research comparison set
 
-At M7 implementation/review time, compare at least the routes below that are actually
-available on the designated test machine:
+Before finalizing M7 implementation choices, re-check the candidates that are practical
+on the designated test machine. The existing `ROADMAP.md` scope remains authoritative:
+it currently calls for ALIKED + compatible LightGlue plus SIFT + compatible brute-force
+matching. Additional candidates below are research inputs, not mandatory M7 deliverables.
 
-1. `SIFT + compatible brute-force matching` as the compatibility/diagnostic baseline.
-2. `SIFT + LightGlue` if the verified backend supports it.
-3. `ALIKED + LightGlue` as the existing preferred learned candidate.
-4. The current COLMAP LoMa family where supported and redistributable.
+A useful comparison set currently includes:
+
+1. `SIFT + compatible brute-force matching` as the planned compatibility baseline.
+2. `ALIKED + LightGlue` as the planned learned route.
+3. `SIFT + LightGlue` only if a verified backend makes it useful and the M7 scope is
+   explicitly amended or the comparison can be done without expanding product scope.
+4. Current COLMAP LoMa variants as research candidates where supported and licensable.
 
 COLMAP 4.2 introduced LoMa extraction/matching via ONNX with `LOMA_B` and `LOMA_B128`
-descriptors. Current COLMAP documentation describes compatible dedicated matcher
-variants including `LOMA_B`, rotation-augmented `LOMA_R`, and progressively heavier
-`LOMA_L` / `LOMA_G` for the 256-dimensional descriptor, while `LOMA_B128` has its own
-lighter matcher. Treat these as benchmark candidates rather than hard-coded product
-profiles until measured.
+descriptors. Current COLMAP documentation describes compatible matcher variants
+including `LOMA_B`, rotation-augmented `LOMA_R`, and progressively heavier `LOMA_L` /
+`LOMA_G` for the 256-dimensional descriptor, while `LOMA_B128` has its own lighter
+matcher. Treat these as benchmark/watchlist candidates rather than product profiles until
+measured and separately adopted.
 
-In particular, explicitly test `LOMA_R` on drone/aerial material containing roll or
-large image rotation. Do not infer superiority from the method name; compare verified
-geometry and downstream mapping under equal pair budgets.
+`LOMA_R` deserves a dedicated drone/aerial experiment containing roll or large image
+rotation. Do not infer superiority from the method name; compare verified geometry and
+downstream mapping under equal pair budgets. If LoMa clearly warrants replacing or
+adding to the planned M7 routes, make that change explicitly in the M7 implementation
+review rather than silently expanding the task.
 
 ### Compatibility must stay structural
 
@@ -219,19 +242,19 @@ database between incompatible feature identities.
 
 ### Detector-free / dense matchers
 
-Do not expand M7 solely to include every detector-free matcher. If a detector-free or
-direct correspondence method clearly solves a benchmark gap that sparse routes cannot,
-add a concrete typed route that represents what the backend actually produces. Do not
-fabricate a FeatureSet just to fit the sparse pipeline. Otherwise keep this class of
-methods for the M13e alternative-method research pass.
+Do not expand M7 solely to include detector-free matchers. If a detector-free or direct
+correspondence method later solves a benchmark gap that sparse routes cannot, add a
+concrete typed route that represents what the backend actually produces. Do not fabricate
+a FeatureSet just to fit the sparse pipeline. Unless a separate scope review says
+otherwise, keep this class of methods for the M13e alternative-method research pass.
 
 ### Verification
 
-Use the supported COLMAP robust two-view geometry route first because it already fits
-the native database/mapping path and has the strongest operational integration. Evaluate
-specialized verification/pose libraries only when a concrete dataset or camera model
-shows a gap. Matching success without robust geometric verification must never count as
-an accepted pair.
+Use the verified COLMAP robust two-view geometry route required by the selected M7
+implementation before adding another verification library. Evaluate specialized
+verification/pose libraries only when a concrete dataset or camera model shows a gap.
+Matching success without robust geometric verification must never count as an accepted
+pair.
 
 ## 6. M7c: cross-clip retrieval and hybrid pairing
 
@@ -247,85 +270,93 @@ identity.
 The 2026 watchlist includes several materially different visual-place-recognition
 families, for example:
 
-- MegaLoc as a broadly targeted image-retrieval/VPR model with a simple global
-  descriptor interface;
-- DINOv2-SALAD as a strong optimal-transport aggregation baseline;
+- MegaLoc as a broadly targeted image-retrieval/VPR candidate;
+- DINOv2-SALAD as a strong learned aggregation candidate;
 - BoQ as a different learned global aggregation approach;
 - AnyLoc / related DINO-based domain-general retrieval approaches for unusual domains.
 
 These names are not a required implementation list. At M7c, refresh the field and choose
 a small comparison set that includes a deployable candidate, a strong current retrieval
-candidate and a domain-general candidate. Benchmark current released weights and exact
-preprocessing rather than paper-only numbers.
+candidate and, when useful, a domain-general candidate. Benchmark current released
+weights and exact preprocessing rather than paper-only numbers. Implement only the one
+verified retrieval route required by the current M7c roadmap unless that roadmap is
+explicitly amended.
 
 ### Pair-budget objective
 
 The optimization target is not "highest Recall@1" in isolation. Prefer the method that
-produces the most useful geometrically verified cross-clip edges and strongest resulting
+produces useful geometrically verified cross-clip edges and a strong resulting
 registration graph for an acceptable pair/index/resource budget.
 
-For very weak graphs, a future explicit rescue pass may expand retrieval only around
-under-connected views/source groups and publish a new PairSet. Such a pass must be an
-inspectable plan/artifact, not hidden retry behavior. GPS/spatial evidence remains a
-separate M13a source of pair proposals.
+For very weak graphs, a future explicit rescue pass may be researched that expands
+retrieval only around under-connected views/source groups and publishes a new PairSet.
+It is not part of M7c unless separately scoped. Any such pass must be inspectable rather
+than hidden retry behavior. GPS/spatial evidence remains a separate M13a source of pair
+proposals.
 
 ## 7. M8: mapping and calibration
 
 Retain the planned multi-mapper strategy rather than declaring one universal mapper.
+The normative M8 scope remains the one in `ROADMAP.md`: Global Mapper preferred, with
+Incremental/Hierarchical explicit capability-gated alternatives, plus the reconstruction
+reader/contracts described there.
 
-Current COLMAP guidance describes Incremental Mapper as the most robust and well-tested
-route, Global Mapper as potentially faster on larger collections with good matching
-graphs but more sensitive to outliers and focal-length priors, and Hierarchical Mapper
-as a large-scale alternative with its own trade-offs. Therefore:
+Current COLMAP guidance makes it reasonable to research the following routing logic:
 
-- keep Global Mapper as the preferred candidate for well-connected practical datasets;
-- keep Incremental Mapper as an explicit robust alternative;
-- keep Hierarchical Mapper capability-gated for large-scene cases where evidence
-  justifies it;
+- Global Mapper for well-connected practical datasets when its assumptions hold;
+- Incremental Mapper as an explicit robust alternative;
+- Hierarchical Mapper for scale cases where evidence justifies it;
 - never silently retry one mapper with another inside the same attempt.
 
-### Calibration preflight
+These points guide method selection; they do not add new acceptance criteria to M8.
+
+### Calibration preflight research
 
 Global mapping should not assume that EXIF/device metadata means trustworthy intrinsics.
-Where intrinsics are uncertain, evaluate the current COLMAP view-graph calibration route
-before global mapping. The upstream tool mutates its database in place, so SplatForge
-must continue to use a private downstream database copy and preserve published upstream
-artifacts unchanged.
+During M8 planning, evaluate whether current COLMAP view-graph calibration materially
+improves the representative uncertain-intrinsics cases. The upstream operation mutates
+its database in place, so any future integration would have to use a private downstream
+database copy and preserve published upstream artifacts unchanged.
 
-Future learned calibration may be evaluated as a prior/initializer, but a neural focal
-estimate must not silently become ground truth. Multi-view optimization and plausibility
-checks remain authoritative for the supported classical route.
+This section does **not** add a calibration stage to M8. If the experiment shows that a
+view-graph calibration step is necessary for the supported M8 route, amend the roadmap
+and implementation prompt explicitly before adding it. Future learned calibration may
+also be researched as a prior/initializer, but a neural focal estimate must not silently
+become ground truth.
 
 ## 8. M9: view-graph and reconstruction diagnostics
 
 M9 should remain a validation/decision layer, not an algorithm that mutates the
-reconstruction.
+reconstruction. Its normative acceptance remains the one in `ROADMAP.md`.
 
-In addition to the already planned registration, component, reprojection, track and
-camera-plausibility metrics, consume verified-geometry graph evidence where available:
+Where the already-produced M7/M8 evidence makes them cheap and defensible, future M9
+research may consider additional diagnostic signals such as:
 
 - connected components before/after mapping;
 - degree distribution and isolated/weakly connected views;
 - cross-source/cross-clip verified edges;
 - inlier-count/inlier-ratio distributions;
-- likely bridge/articulation views when cheaply measurable;
-- suspicious homography-dominated or low-parallax regions where the backend exposes
-  enough evidence to make the interpretation defensible.
+- likely bridge/articulation views;
+- suspicious homography-dominated or low-parallax regions.
 
-Diagnostics should lead to explicit recommendations such as "expand cross-clip
-retrieval", "inspect calibration", "try Incremental Mapper", or "capture/add wider
-baseline". Recommendations do not automatically rewrite settings or launch a hidden
-fallback run.
+These are candidate diagnostics, not mandatory M9 fields. Add them only when the
+concrete implementation can expose them without fabricating evidence or materially
+expanding M9 scope.
+
+Diagnostics may recommend actions such as "expand cross-clip retrieval", "inspect
+calibration", "try Incremental Mapper", or "capture/add wider baseline". Recommendations
+do not automatically rewrite settings or launch a hidden fallback run.
 
 ## 9. M10: trainer-ready dataset preparation
 
 Keep the first M10 conservative: validated images, camera/pose consistency,
-undistortion/resizing and reproducible export.
+undistortion/resizing and reproducible export as defined by the current roadmap.
 
-Design the dataset contract so later optional evidence can be added without rewriting
-the basic image/camera route, including masks, held-out validation views, depth priors,
-normal priors, confidence maps or exposure metadata. Do not implement these merely to
-reserve fields; add them only when the first concrete consumer needs them.
+Design concrete dataset extensions so later optional evidence can be added without
+rewriting the basic image/camera route, including masks, held-out validation views,
+depth priors, normal priors, confidence maps or exposure metadata. Do not reserve or
+implement these merely because they are listed here; add them when the first concrete
+consumer requires them.
 
 Avoid automatic generative enhancement of source images in the ordinary photogrammetry
 path. Denoising/sharpening/HDR or generative restoration can change correspondence
@@ -334,20 +365,26 @@ benchmarkable and isolated from originals.
 
 ## 10. M11: Gaussian training
 
-A gsplat-based trainer remains a strong current candidate because the project provides
-an efficient CUDA rasterization/training ecosystem and exposes multiple useful
-strategies, including the original-style default densification, AbsGrad-related options,
-anti-aliasing, sparse/distributed capabilities and 3DGS-MCMC-style densification.
+A gsplat-based trainer remains a strong current candidate for the single managed trainer
+adapter contemplated by M11, but `ROADMAP.md` still permits another suitable backend.
+This note does not select gsplat in advance.
 
-This does not mean "gsplat forever" or "one gsplat preset". At M11 implementation time:
+At M11 implementation time:
 
 - re-check current trainers and external LichtFeld requirements;
 - verify checkpoint/export compatibility actually needed by SplatForge;
-- benchmark at least a preview/balanced-quality trade-off rather than one magic preset;
+- compare at least enough candidate recipes externally to avoid adopting a clearly poor
+  default, when that can be done without expanding product scope;
 - measure held-out quality together with runtime, VRAM and Gaussian/scene size;
 - keep SfM artifacts reusable when trainer parameters change.
 
-Depth/normal regularization or other geometry priors belong in later quality profiles
+Current gsplat capabilities worth re-checking include original-style densification,
+AbsGrad-related options, anti-aliasing, sparse/distributed functionality and
+3DGS-MCMC-style densification. These are research options, not a requirement to ship
+multiple M11 trainer profiles. The current roadmap still requires one managed trainer
+adapter after evaluation.
+
+Depth/normal regularization or other geometry priors belong in later quality research
 only after the prior source, confidence semantics and invalidation rules are explicit.
 They must not become mandatory inputs to the basic trainer.
 
@@ -362,19 +399,21 @@ metric scale.
 ### M13b masking and segmentation
 
 Automatic masking should be evaluated as a temporal/geometry-aware tool, not simply
-"segment every object". Current promptable video segmentation families such as SAM 3
-can detect/segment/track objects, but semantic identity alone does not tell whether an
+"segment every object". Current promptable video-segmentation families, including the
+contemporary Segment Anything family, are worth re-checking when M13b starts; do not pin
+M13b to a specific model/version now. Semantic identity alone does not tell whether an
 object is harmful to SfM. A parked vehicle may be static scene content; a moving vehicle
 is dynamic. Keep manual correction and separate SfM/training-mask invalidation.
 
-Advanced adaptive selection may also live here if the earlier geometry-informed
-selection research gate did not justify promotion before M8.
+Advanced adaptive selection remains in M13b unless a separately approved roadmap change
+moves a proven geometry-informed refinement earlier.
 
 ### M13d large scenes
 
-Prefer hierarchical pairing/retrieval, graph partitioning, selective caching and
-trainer-side large-scene strategies over simply raising hard limits. Benchmark memory,
-disk, pair count, interruption recovery and merge quality explicitly.
+Research hierarchical pairing/retrieval, graph partitioning, selective caching and
+trainer-side large-scene strategies rather than simply raising hard limits. Benchmark
+memory, disk, pair count, interruption recovery and merge quality explicitly before
+selecting an approach.
 
 ### M13e alternative/direct geometry routes
 
@@ -384,18 +423,18 @@ as MapAnything that can infer cameras/dense geometry from flexible geometric inp
 These are promising second-route or hybrid candidates, not replacements for the M8
 classical production route without evidence.
 
-If implemented, use a direct typed route such as Views/Priors -> ReconstructionSet when
-that matches the backend. Do not fabricate sparse features, PairSets or two-view
-geometry that the method never actually computes. A hybrid route may use neural depth or
-camera priors to initialize/support classical optimization, but its dependencies and
-uncertainty must be explicit.
+If one is later implemented, use a direct typed route such as
+Views/Priors -> ReconstructionSet when that matches the backend. Do not fabricate sparse
+features, PairSets or two-view geometry that the method never actually computes. A
+hybrid route may use neural depth or camera priors to initialize/support classical
+optimization, but its dependencies and uncertainty must be explicit.
 
 ## 12. M14: 360/fisheye/equirectangular
 
-Keep calibrated perspective projection as the first compatibility route because it
-allows the existing flat-camera SfM/training pipeline to remain valid. Later compare
-native wide-angle/spherical camera support only when a concrete backend and benchmark
-show a real benefit.
+Keep calibrated perspective projection as the first compatibility route because the
+current roadmap intentionally preserves the existing flat-camera SfM/training pipeline.
+Later compare native wide-angle/spherical camera support only when a concrete backend
+and benchmark show a real benefit.
 
 Do not infer that a model supporting a wide camera projection for rendering also solves
 all upstream SfM/calibration problems for that projection.
@@ -403,7 +442,7 @@ all upstream SfM/calibration problems for that projection.
 ## 13. Technology registry evidence
 
 Before a new method is considered production-supported, record enough evidence to make
-its identity and operational status inspectable. Useful fields include:
+its identity and operational status inspectable. Useful evidence may include:
 
 - semantic method ID/version and role;
 - backend/runtime ID and exact version;
@@ -417,46 +456,52 @@ its identity and operational status inspectable. Useful fields include:
 - known limits/failure modes;
 - maturity state such as research candidate, optional, supported, or preferred.
 
-This is not a request for a generic plugin framework. Extend the existing catalog and
-capability/provenance contracts only when a concrete implementation needs the fields.
+This is not a request for a generic plugin framework or for speculative schema fields.
+Extend the existing catalog/capability/provenance contracts only when a concrete bounded
+implementation needs the information.
 
 ## 14. Adoption workflow
 
 For each future technology-sensitive milestone:
 
-1. Refresh upstream state of the art and releases.
-2. Freeze a small candidate list and document why each candidate is materially distinct.
-3. Verify licenses, weights and Windows/runtime feasibility before expensive integration.
-4. Build the thinnest benchmark adapter or external experiment needed for comparison.
-5. Run stage metrics **and** downstream metrics on the benchmark pack.
-6. Select the smallest supported set that covers the real trade-offs.
-7. Implement only the selected route(s) behind existing SplatForge boundaries.
-8. Preserve a robust baseline/fallback when it provides genuine diagnostic value.
-9. Record benchmark evidence and exact model/runtime identity.
-10. Revisit defaults when new evidence appears; do not rewrite old artifact provenance.
+1. Read the current `ARCHITECTURE.md` and `ROADMAP.md` first.
+2. Refresh upstream state of the art and releases.
+3. Freeze a small research candidate list and document why candidates are materially
+   distinct.
+4. Verify licenses, weights and Windows/runtime feasibility before expensive integration.
+5. Build the thinnest benchmark adapter or external experiment needed for comparison.
+6. Run stage metrics **and** downstream metrics on the benchmark pack.
+7. Decide whether the existing roadmap scope is still correct.
+8. If the winning choice requires new scope, change the roadmap explicitly before code.
+9. Implement only the bounded selected route(s) behind existing SplatForge boundaries.
+10. Preserve a robust baseline/fallback when it provides genuine diagnostic value.
+11. Record benchmark evidence and exact model/runtime identity.
+12. Revisit defaults when new evidence appears; do not rewrite old artifact provenance.
 
-## 15. Current 2026-10-22 recommendations
+## 15. Current 2026-10-22 research priorities
 
-These are research priorities, not roadmap contract changes:
+These are research priorities only, not roadmap contract changes:
 
-- M7 should definitely evaluate current COLMAP LoMa variants in addition to the already
-  planned SIFT and ALIKED/LightGlue routes; `LOMA_R` deserves a dedicated drone/rotation
-  benchmark.
-- M7c should select retrieval from an end-to-end cross-clip benchmark rather than from
-  Recall@K alone; MegaLoc, SALAD, BoQ and AnyLoc-style approaches are reasonable current
-  comparison candidates, subject to fresh license/weight/runtime verification.
-- A geometry-informed second-pass frame selector is worth benchmarking after M7, but it
-  should become pre-M8 product scope only if it clearly improves registration/quality
-  enough to justify the added complexity.
-- M8 should remain multi-mapper: Global preferred where the view graph/intrinsics support
-  it, Incremental retained as the robust alternative, Hierarchical evaluated for scale.
-- M9 should become the main source of explainable graph/reconstruction diagnostics and
-  recovery recommendations, without hidden automatic reruns.
-- M11 should benchmark a gsplat-based managed route and more than one training profile,
-  while preserving external LichtFeld handoff and keeping trainer choice replaceable.
-- M13e is the correct place to evaluate direct/neural reconstruction families such as
-  VGGT-like systems and MapAnything-style models, using honest direct contracts rather
-  than forcing them through sparse-feature artifacts.
+- During M7 planning, re-check current COLMAP LoMa variants in addition to the planned
+  SIFT and ALIKED/LightGlue routes; `LOMA_R` deserves a dedicated drone/rotation
+  experiment. Adopt LoMa only through an explicit M7 scope decision.
+- During M7c planning, select the one required retrieval implementation from an end-to-
+  end cross-clip benchmark rather than Recall@K alone. MegaLoc, SALAD, BoQ and AnyLoc-
+  style approaches are reasonable current comparison candidates, subject to fresh
+  license/weight/runtime verification.
+- After M7, a geometry-informed second-pass frame-selector experiment is worthwhile, but
+  adaptive selection remains M13b unless a separate roadmap change is justified.
+- M8 should retain the roadmap's multi-mapper design: Global preferred, Incremental and
+  Hierarchical explicit alternatives. Research calibration preflight separately rather
+  than silently adding a new mandatory stage.
+- M9 can become more explainable by consuming existing graph evidence where practical,
+  but candidate extra metrics do not expand current M9 acceptance automatically.
+- For M11, benchmark a gsplat-based managed route against whatever other candidate is
+  genuinely competitive at that time; the milestone still needs only the selected
+  managed adapter plus external LichtFeld handoff unless the roadmap changes.
+- M13e remains the correct roadmap location to evaluate direct/neural reconstruction
+  families such as VGGT-like systems and MapAnything-style models, using honest direct
+  contracts rather than forcing them through sparse-feature artifacts.
 
 ## 16. Primary references for the current refresh
 
@@ -471,12 +516,12 @@ starts:
 - DINOv2-SALAD VPR: https://github.com/serizba/salad
 - BoQ VPR: https://github.com/amaralibey/Bag-of-Queries
 - AnyLoc: https://github.com/AnyLoc/AnyLoc
-- VPR comparison wrapper (useful for research, not a product dependency): https://github.com/gmberton/VPR-methods-evaluation
+- VPR comparison wrapper (research aid, not a product dependency): https://github.com/gmberton/VPR-methods-evaluation
 - gsplat: https://docs.gsplat.studio/
 - gsplat densification strategies: https://docs.gsplat.studio/main/apis/strategy.html
 - VGGT: https://vgg-t.github.io/
 - MapAnything: https://map-anything.github.io/
-- SAM 3: https://ai.meta.com/research/sam3
+- Segment Anything research: https://ai.meta.com/sam3/
 
 Keep this file concise enough to remain a decision aid. Detailed benchmark results,
 licenses and machine-specific measurements should live in dedicated evidence files when
