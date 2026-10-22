@@ -197,8 +197,11 @@ LoMa, ALIKED + compatible LightGlue and SIFT + brute-force are first-class suppo
 feature/matching families. Versioned Simple profiles express speed/quality intent and
 resolve deterministic candidates before execution; Advanced exposes compatible typed
 choices without fallback. Current saved explicit ALIKED intent remains explicit.
-COLMAP Global Mapper remains the preferred planned mapper, with explicit
-Incremental/Hierarchical alternatives in M8. No profile currently selects a mapper.
+M8a implements COLMAP Global Mapper with all-component ReconstructionSet v1 and a
+backend-neutral reader, tested >=4.2.1 capability gating, private DB isolation and optional
+explicit view-graph calibration. Preserve-priors remains the conservative default.
+Incremental/Caspar-supported Incremental/Hierarchical remain M8b. No profile selects a mapper.
+See [M8a contracts](docs/M8A.md).
 
 The documented COLMAP learned route depends on build options, including ONNX support;
 it is not guaranteed by the executable name or version alone. This motivates probing,
@@ -242,9 +245,10 @@ CLI. GPS/spatial pairing and advanced retrieval optimization remain later.
 COLMAP's database and sparse files are adapter-owned payloads behind manifest contracts.
 Do not force all algorithms into a universal tensor store, or make every consumer
 understand COLMAP internals. Define portable metadata plus versioned payload formats;
-implement conversion only when a real consumer requires it. By M8, a reconstruction
-adapter must expose a small streaming reader for view/camera/pose/component records,
-with optional points/tracks and declared conventions. Validation and dataset preparation
+implement conversion only when a real consumer requires it. M8a exposes a small reconstruction
+adapter reader for view/camera/pose/component records,
+with declared conventions and explicit optional-record availability. M8a point/track streaming
+is not_published; native point counts are measured. Validation and dataset preparation
 must not parse COLMAP files themselves. Do not build a universal feature-array store.
 
 Separate application `state.sqlite` from every COLMAP database. Isolate databases by
@@ -327,8 +331,9 @@ observations without assuming that a desktop client performed the work. This pre
 the deployment options above without adding remote execution or scheduling.
 
 Stages without a defensible total expose indeterminate or phase-scoped work. Mapping
-must not invent linear percentages; future backend evidence may justify wide planning
-ranges at low/medium confidence. M7 features/matching/verification use this foundation;
+must not invent linear percentages. M8a explicitly opts into complete-job historical
+planning ranges at low/medium confidence; ordinary phase totals still do not authorize
+ETA. M7 features/matching/verification use this foundation;
 M11 managed training must integrate with it later. Matching and verification expose
 real phases, exact planned pair totals, observed completion after output validation,
 and separate historical ETA signatures. Backend logs do not fabricate pair percentages.

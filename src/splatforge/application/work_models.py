@@ -11,6 +11,7 @@ from splatforge.core.execution import (
     FeatureExtractionRoute,
     FeatureMatchingRoute,
     GeometricVerificationRoute,
+    MappingRoute,
     PairSelectionRoute,
     RetrievalBuildRoute,
     SharpestViewPreparationRoute,
@@ -383,3 +384,29 @@ def matching_progress_plan(
             "matches": route.estimate.raw_matches,
         },
     )
+
+
+def mapping_progress_plan(route: MappingRoute, hardware: ExecutionHardwareProfile) -> PlannedStage:
+    plan = _stage(
+        node_id=route.node_id, stage_id="mapping", method_id=route.settings.method_id,
+        model="mapping.global_phases_v1", unit=WorkUnit.WORK, total=1.0,
+        hardware=hardware.model_copy(update={"device": "cpu"}),
+        backend=PerformanceBackendIdentity(adapter_id=route.backend.adapter_id, family="colmap",
+            runtime_version=route.backend.numerical_identity,
+            executable_sha256=route.backend.selection.identity.sha256),
+        settings={"mapper": route.settings.model_dump(mode="json"),
+                  "calibration_policy": route.calibration_policy,
+                  "calibration": route.calibration_settings.model_dump(mode="json")
+                  if route.calibration_settings else None},
+        metrics={"views": len(route.mapping_input.view_ids),
+                 "pairs": route.mapping_input.verified_pair_count,
+                 "features": route.mapping_input.keypoint_count,
+                 "matches": route.mapping_input.inlier_count},
+    )
+    # One complete mapping job normalizes historical duration only. It never
+    # supplies a live completion fraction or linear view-registration percentage.
+    return plan.model_copy(update={
+        "work": plan.work.model_copy(update={
+            "mode": ProgressMode.PHASE, "historical_job_duration": True,
+        }),
+    })

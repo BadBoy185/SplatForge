@@ -196,7 +196,7 @@ dispersion, spikes/stalls, unknown stages, cache/skips, monotonic display aggreg
 history privacy/retention/failures, cancellation, old runs and structured FFmpeg progress.
 M7 must report views/MP and pairs; M8 must preserve nonlinear/indeterminate progress;
 M11 managed trainers must report iterations/steps through the same contract. M7a/M7b
-now implement their work models; M8/M11 remain planned. Numerical schema versions remain unchanged.
+now implement their work models; M8a uses phase-only work; M8b/M11 remain planned. Numerical schema versions remain unchanged.
 
 ## M7 — features, matching and geometric verification
 
@@ -285,16 +285,21 @@ GPS/spatial pairing and advanced index/scale optimization remain in M13a.
 
 ## M8 — mapping
 
-Implement Global Mapper as the preferred supported route and Incremental/Hierarchical
-Mapper as explicit capability-gated alternatives. Capture every reconstruction
-component, camera convention and native ID mapping. Add the minimal streaming
-ReconstructionReader so validation/preparation never parse COLMAP directly. Test a
-synthetic reader independent of COLMAP; optional unavailable tracks/points remain
-explicitly unknown. Do not silently choose a component.
+**M8a: implemented reconstruction foundation and Global route.** ReconstructionSet v1
+and a backend-neutral ReconstructionReader preserve all valid components, stable membership
+UUIDs, separate geometry digests, native provenance, explicit camera convention and unknown
+SfM scale. Tested COLMAP >=4.2.1 is required (currently 4.2.1; later builds need positive
+validation). Mapping uses a private database, conservative preserve-priors or explicitly
+requested view-graph calibration, existing containment/publication/recovery/cache and nonlinear
+M6.5 progress. No component selection or mapper/calibration fallback occurs.
+Synthetic reader/isolation/lifecycle tests and tiny real Global transport are covered.
+See [M8a contracts and evidence](docs/M8A.md). M7c production VPR benchmarking remains
+pending independently and does not block M8a. M9 and M10 have not started.
 
-Acceptance: a tiny dataset yields a readable reconstruction on each supported route;
-mapper changes reuse earlier compatible artifacts; invalid/no-component results are
-not successes; cancellation and retries preserve original matching artifacts.
+**M8b: planned.** Incremental Mapper, a Caspar-supported Incremental BA route,
+Hierarchical Mapper and comparative mapper benchmarking. These must converge to the
+same ReconstructionSet/Reader, reuse earlier compatible artifacts and preserve all components.
+Caspar is a BA backend, not a separate mapper. M8 as a whole is not complete.
 
 ## M9 — reconstruction validation and component selection
 

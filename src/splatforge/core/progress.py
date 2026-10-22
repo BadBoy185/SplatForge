@@ -125,9 +125,16 @@ class WorkDescription(ProgressValue):
     mode: ProgressMode = ProgressMode.DETERMINATE
     total: NonNegative | None
     plan_revision: int = Field(default=1, ge=1, strict=True)
+    # Explicit opt-in for one nonlinear complete job; generic phase totals do not
+    # authorize a whole-stage ETA or a linear completion fraction.
+    historical_job_duration: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def total_matches_mode(self) -> WorkDescription:
+        if self.historical_job_duration and (
+            self.mode != ProgressMode.PHASE or self.unit != WorkUnit.WORK or self.total != 1
+        ):
+            raise ValueError("Whole-job history requires phase WORK with normalized total one")
         if self.mode == ProgressMode.DETERMINATE and self.total is None:
             raise ValueError("Determinate work requires a total")
         if self.mode == ProgressMode.INDETERMINATE and self.total is not None:

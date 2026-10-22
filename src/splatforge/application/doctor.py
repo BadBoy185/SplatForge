@@ -200,8 +200,9 @@ class DoctorService:
                 backend_status = statuses[0]
             if report.binary.status != CapabilityStatus.AVAILABLE:
                 backend_status = report.binary.status
-            implemented = method_id.startswith(("feature_extraction.", "feature_matching.",
-                                                "geometric_verification."))
+            implemented = method_id.startswith((
+                "feature_extraction.", "feature_matching.", "geometric_verification.",
+            )) or method_id == "mapping.colmap_global"
             if implemented:
                 backend_status = required_status((backend_status, report.database.evidence.status))
             mapped.append(

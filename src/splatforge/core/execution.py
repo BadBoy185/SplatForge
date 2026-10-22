@@ -58,6 +58,17 @@ from splatforge.core.quality import (
     QualityBackendIdentity,
     SharpestIntervalSettings,
 )
+from splatforge.core.reconstruction import (
+    RECONSTRUCTION_ARTIFACT_TYPE,
+    GlobalMapperSettings,
+    MappingBackend,
+    MappingCalibrationPolicy,
+    MappingInput,
+    MappingResourceEstimate,
+    MappingResourceLimits,
+    ViewGraphCalibrationSettings,
+    mapping_recipe_key,
+)
 from splatforge.core.retrieval import (
     RETRIEVAL_ARTIFACT_TYPE,
     RetrievalExport,
@@ -628,6 +639,56 @@ class GeometricVerificationRoute(FrozenModel):
         return self
 
 
+class MappingRoute(FrozenModel):
+    route_id: Literal["mapping.run"] = "mapping.run"
+    route_version: Literal[1] = 1
+    verification_run_id: UUID
+    verification: ArtifactHandle
+    mapping_input: MappingInput
+    settings: GlobalMapperSettings
+    calibration_policy: MappingCalibrationPolicy = MappingCalibrationPolicy.PRESERVE_PRIORS
+    calibration_settings: ViewGraphCalibrationSettings | None = None
+    backend: MappingBackend
+    resource_limits: MappingResourceLimits
+    estimate: MappingResourceEstimate
+    node_id: Literal["reconstruction"] = "reconstruction"
+    target: OutputReference = OutputReference(
+        node_id="reconstruction", output_name="reconstruction",
+        artifact_type=RECONSTRUCTION_ARTIFACT_TYPE, contract_version=1,
+    )
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return (ArtifactInputLineage(input_name="verified_geometry",
+                **self.verification.model_dump(exclude={"manifest_path"})),)
+
+    def literal_inputs(self) -> dict[str, object]:
+        return {"mapping_input": self.mapping_input.model_dump(mode="json"),
+                "settings": self.settings.model_dump(mode="json"),
+                "calibration_policy": self.calibration_policy,
+                "calibration_settings": self.calibration_settings.model_dump(mode="json")
+                if self.calibration_settings else None,
+                "resource_limits": self.resource_limits.model_dump(mode="json")}
+
+    def recipe_key(self) -> str:
+        return mapping_recipe_key(self.mapping_input.semantic_digest, self.settings,
+                                  self.calibration_policy, self.calibration_settings,
+                                  self.backend.numerical_identity)
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> MappingRoute:
+        if (self.verification.artifact_type != GEOMETRY_ARTIFACT_TYPE
+                or self.verification.contract_version != 1
+                or self.backend.operation != "global_mapper"
+                or self.target != OutputReference(node_id=self.node_id,
+                    output_name="reconstruction", artifact_type=RECONSTRUCTION_ARTIFACT_TYPE,
+                    contract_version=1)):
+            raise ValueError("Mapping requires VerifiedGeometrySet v1 / Global / output contract")
+        if (self.calibration_policy == MappingCalibrationPolicy.VIEW_GRAPH) != (
+                self.calibration_settings is not None):
+            raise ValueError("Explicit calibration policy/settings mismatch")
+        return self
+
+
 class RunSnapshot(FrozenModel):
     schema_version: Literal[1] = 1
     run_id: UUID
@@ -639,7 +700,7 @@ class RunSnapshot(FrozenModel):
     route: Annotated[
         FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute
         | FeatureExtractionRoute | FeatureMatchingRoute | GeometricVerificationRoute
-        | RetrievalBuildRoute,
+        | RetrievalBuildRoute | MappingRoute,
         Field(discriminator="route_id"),
     ]
 

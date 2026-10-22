@@ -58,6 +58,7 @@ from splatforge.core.execution import (
     FeatureExtractionRoute,
     FeatureMatchingRoute,
     GeometricVerificationRoute,
+    MappingRoute,
     PairSelectionRoute,
     RecoveryResult,
     RetrievalBuildRoute,
@@ -102,6 +103,12 @@ from splatforge.core.quality import (
     sharpest_selection_recipe_key,
     validate_quality_against_candidate,
     validate_sharpest_against_inputs,
+)
+from splatforge.core.reconstruction import (
+    MAX_RECONSTRUCTION_METADATA_BYTES,
+    ClassicalMappingReceipt,
+    ReconstructionReader,
+    ReconstructionSet,
 )
 from splatforge.core.retrieval import RetrievalRepresentationSet
 from splatforge.core.views import (
@@ -1095,7 +1102,8 @@ class LocalExecutionRepository:
                        (snapshot.route.selection.node_id, "selected_set")}
         elif isinstance(snapshot.route, (FeatureExtractionRoute, PairSelectionRoute,
                                          RetrievalBuildRoute,
-                                         FeatureMatchingRoute, GeometricVerificationRoute)):
+                                         FeatureMatchingRoute, GeometricVerificationRoute,
+                                         MappingRoute)):
             allowed = {(snapshot.route.node_id, snapshot.route.target.output_name)}
         else:
             allowed = set()
@@ -1222,6 +1230,27 @@ class LocalExecutionRepository:
                 raise ValueError("Camera metadata exceeds structural byte bound")
             self._write_new_file(workspace / "output" / "cameras.json", data)
 
+    def load_reconstruction(self, root: Path, handle: ArtifactHandle) -> ReconstructionSet:
+        parsed = self._validate_indexed_artifact(root, handle, metadata_only=True)[2].parsed
+        if not isinstance(parsed, ReconstructionSet):
+            raise ValueError("Artifact is not a ReconstructionSet")
+        return parsed
+
+    def reconstruction_reader(self, root: Path, handle: ArtifactHandle) -> ReconstructionReader:
+        from splatforge.adapters.colmap_reconstruction import ColmapReconstructionReader
+
+        parsed = self.load_reconstruction(root, handle)
+        return ColmapReconstructionReader(self.artifact_directory(root, handle), parsed)
+
+    def write_reconstruction_metadata(self, workspace: Path, payload: ReconstructionSet,
+                                      receipt: ClassicalMappingReceipt) -> None:
+        receipt.require_output(payload)
+        for name, value in (("reconstruction.json", payload), ("mapping.json", receipt)):
+            data = canonical_json_bytes(value.model_dump(mode="json")) + b"\n"
+            if len(data) > MAX_RECONSTRUCTION_METADATA_BYTES:
+                raise ValueError("Reconstruction metadata exceeds structural byte bound")
+            self._write_new_file(workspace / "output" / name, data)
+
     def load_quality_report(self, root: Path, artifact: ArtifactHandle) -> QualityReport:
         _, _, validated = self._validate_indexed_artifact(root.resolve(), artifact)
         if not isinstance(validated.parsed, QualityReport):
@@ -1260,7 +1289,8 @@ class LocalExecutionRepository:
             raise ProjectError(f"Unknown run {run_id}")
         if run["status"] in {"succeeded", "cancelled"}:
             return RecoveryResult(run_id=run_id, status=RunStatus(run["status"]))
-        if (isinstance(snapshot.route, (FeatureMatchingRoute, GeometricVerificationRoute))
+        if (isinstance(snapshot.route, (FeatureMatchingRoute, GeometricVerificationRoute,
+                                        MappingRoute))
                 and active and os.name != "nt"):
             raise ProjectError("Native M7b recovery requires tested Windows Job Object owner-death "
                                "containment; an OS writer lease alone does not prove teardown")
@@ -1364,7 +1394,8 @@ class LocalExecutionRepository:
             required = {snapshot.route.sequence.node_id, snapshot.route.scale.node_id}
         elif isinstance(snapshot.route, (PairSelectionRoute, FeatureExtractionRoute,
                                          RetrievalBuildRoute,
-                                         FeatureMatchingRoute, GeometricVerificationRoute)):
+                                         FeatureMatchingRoute, GeometricVerificationRoute,
+                                         MappingRoute)):
             required = {snapshot.route.node_id}
         elif isinstance(snapshot.route, SharpestViewPreparationRoute):
             required = {
@@ -1719,10 +1750,21 @@ class LocalExecutionRepository:
                 expected_literal_inputs = {}
             else:
                 raise ValueError("Attempt node is not present in the frozen fake route")
-        elif isinstance(route, (FeatureMatchingRoute, GeometricVerificationRoute)):
+        elif isinstance(route, (FeatureMatchingRoute, GeometricVerificationRoute,
+                                         MappingRoute)):
             if attempt["node_id"] != route.node_id:
                 raise ValueError("Attempt node absent from frozen M7b route")
-            if isinstance(route, FeatureMatchingRoute):
+            if isinstance(route, MappingRoute):
+                self.load_verified_geometry(root, route.verification)
+                from splatforge.adapters.colmap_mapping import mapping_source
+                from splatforge.adapters.mapping_database import inspect_mapping_input
+
+                directory = self.artifact_directory(root, route.verification)
+                mapping, allowed = mapping_source(directory)
+                if inspect_mapping_input(directory / "matches.db", mapping,
+                                         allowed_pairs=allowed) != route.mapping_input:
+                    raise ValueError("mapping.input_mismatch: recovery upstream state differs")
+            elif isinstance(route, FeatureMatchingRoute):
                 self.load_local_features(root, route.features)
                 self.load_pair_set(root, route.pairs)
             else:
@@ -1920,7 +1962,11 @@ class LocalExecutionRepository:
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if isinstance(route, (FeatureMatchingRoute, GeometricVerificationRoute)):
+        if isinstance(route, MappingRoute):
+            from splatforge.application.mapping import require_mapping_payload
+
+            require_mapping_payload(route, validated.parsed)
+        elif isinstance(route, (FeatureMatchingRoute, GeometricVerificationRoute)):
             from splatforge.application.matching import require_route_payload
 
             require_route_payload(route, validated.parsed)
@@ -2258,6 +2304,20 @@ class LocalExecutionRepository:
             self._validate_indexed_artifact(
                 root, upstream_handle, seen, metadata_only=metadata_only, context=context
             )
+        if isinstance(validated.parsed, ReconstructionSet):
+            from splatforge.adapters.colmap_mapping import mapping_source
+            from splatforge.adapters.mapping_artifacts import read_receipt
+            from splatforge.adapters.mapping_database import inspect_mapping_input
+
+            directory = self._owned_path(root, upstream[0]).parent
+            mapping, allowed = mapping_source(directory)
+            receipt = read_receipt(artifact_directory)
+            if inspect_mapping_input(directory / "matches.db", mapping,
+                                     allowed_pairs=allowed) != receipt.mapping_input:
+                raise ValueError("mapping.input_mismatch: numerical input differs from lineage")
+            if ((artifact_directory / "input_cameras.json").read_bytes()
+                    != (directory / "cameras.json").read_bytes()):
+                raise ValueError("mapping.input_mismatch: camera priors differ from lineage")
         context.results[identity] = (strength, manifest, artifact_directory, validated)
         return manifest, artifact_directory, validated
 

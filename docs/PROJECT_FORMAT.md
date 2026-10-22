@@ -496,3 +496,22 @@ If `state.sqlite` is lost, manifests may recover validated artifact inventory, n
 complete attempt history. Say so explicitly; do not infer successful runs from folder
 names. Missing logs reduce diagnostic evidence and must be reported. Disk-full and
 sharing errors must preserve the last committed project and incomplete work for review.
+
+
+## M8a reconstruction publications
+
+RunSnapshot schema 1 adds `mapping.run` / `MappingRoute`; project/config/state schemas
+remain unchanged. The frozen route binds exact verification run/handle, minimal numerical
+MappingInput, Global settings, explicit calibration, backend/DLL identity and refusal limits.
+`mapping.reconstruction_set` v1 publishes bounded reconstruction.json plus the classical
+mapping.json receipt, original input_cameras.json, backend_mapping.json, sealed post-calibration
+mapping.db and all native sparse models. Metadata uses SplatForge component/view UUIDs;
+native camera/image/rig/frame IDs and model numbers remain adapter provenance.
+Native arrays are outside JSON. No selected_component exists.
+
+Existing validation/publication/cache/recovery rechecks complete frozen route/recipe,
+upstream numerical projection, calibration snapshot, all components, native payload hashes
+and semantic digests. Invalid/partial models are not adopted. Recovery uses tested Windows
+owner-death containment, never an OS lock alone on unsupported platforms. Restart is a new
+mapping command from completed M7. Cancellation leaves M7 immutable. History/progress/refusal
+limits do not enter numerical keys. See [M8a](M8A.md) for exact schemas and conventions.

@@ -47,8 +47,8 @@ COLMAP/GPU or local features. M7a extracts SIFT, ALIKED_N16ROT, optional ALIKED_
 LOMA_B and LOMA_B128 through a positively verified native COLMAP process.
 M7b adds explicit PairSet matching and separate geometric verification. LoMa,
 ALIKED/LightGlue and SIFT/brute-force are supported technology families; local
-availability and real integration validation are reported separately. Retrieval,
-mapping, training and GUI remain planned.
+availability and real integration validation are reported separately. M7c offline retrieval and M8a Global mapping are implemented; production VPR inference,
+M8b alternative mappers, training and GUI remain planned.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 Fixed-FPS selection uses an exact ordered sweep with bounded target expansion.
@@ -298,6 +298,32 @@ after compatibility testing and should pin each shipped backend by exact identit
 New upstream binaries are not trusted automatically. A newer tested runtime may be
 shipped side-by-side; it must not reinterpret the concrete provenance of older work.
 
+### Reconstruction foundation and Global mapping (M8a)
+
+```powershell
+splatforge mapping run "C:\Scenes\Example" --verification-run <uuid> --method global --calibration preserve-priors --colmap "C:\COLMAP\bin\colmap.exe" --json
+splatforge mapping run "C:\Scenes\Example" --verification-run <uuid> --calibration view-graph --min-model-size 3 --num-threads 1 --json
+splatforge mapping show "C:\Scenes\Example" <mapping-run-id> --json
+```
+
+The tested production floor is COLMAP >=4.2.1 (currently positively validated 4.2.1;
+4.2.0 and untested later versions are refused). Mapping publishes every valid disconnected
+component in immutable ReconstructionSet v1, with stable SplatForge component UUIDs and
+separate geometry digests. It never selects model 0/largest/first or retries another mapper.
+The backend-neutral reader exposes cameras, registered views/poses and unregistered UUIDs;
+point/track streaming is unavailable (`not_published`), while native files/counts are preserved.
+Coordinates are right-handed camera-from-world, X right/Y down/Z forward, wxyz quaternion;
+SfM scale is unknown/arbitrary. M10 will own consumer-specific conversion.
+
+Calibration defaults to preserve-priors. Explicit view-graph calibration modifies only an
+independent private DB, preserves original priors and records its estimator result separately
+from final optimized intrinsics. It is never selected automatically from device/EXIF type.
+M7 artifacts remain byte-identical. Existing progress/cancel/recover/cache machinery is reused;
+nonlinear mapping has phase-only progress without an invented percentage. M8b Incremental,
+Caspar-supported Incremental, Hierarchical and comparative benchmarking remain future.
+M7c's production VPR benchmark remains pending independently; M9/M10 have not started.
+See [M8a contracts and verification](docs/M8A.md).
+
 ## Intended workflow
 
 Create project -> register sources -> decode/preprocess candidate views -> assess
@@ -311,8 +337,8 @@ dataset for use in an external trainer.
 
 - Feature technology ladder: LoMa, ALIKED + compatible LightGlue, and SIFT + brute-force;
   all remain supported. Simple profiles resolve a recorded route before execution;
-  Advanced selection does not fall back. COLMAP Global Mapper remains a planned preferred
-  mapper, with explicit Incremental/Hierarchical alternatives in M8.
+  Advanced selection does not fall back. COLMAP Global Mapper is the implemented M8a preferred
+  mapper; explicit Incremental/Caspar-supported Incremental/Hierarchical alternatives remain M8b.
 - Ordered video starts with within-clip Sequential pairs. Practical multi-video
   support combines these with cross-clip retrieval from M7c, before the complete CLI.
   Retrieval has explicit representation/index requirements independent of ALIKED.

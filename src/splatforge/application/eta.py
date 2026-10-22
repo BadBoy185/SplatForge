@@ -115,14 +115,15 @@ class HybridThroughputEstimator:
 
     def estimate(self) -> EtaEstimate:
         work = self.stage.work
-        if work.mode != ProgressMode.DETERMINATE or work.total is None:
+        phase_job = work.mode == ProgressMode.PHASE and work.historical_job_duration
+        if (work.mode != ProgressMode.DETERMINATE and not phase_job) or work.total is None:
             return EtaEstimate(reasons=("unknown_total",))
         observation = self._last
         completed = observation.completed if observation is not None else 0
         if completed >= work.total:
             return zero_eta()
         fraction = completed / work.total if work.total else 0
-        live = self.throughput
+        live = self.throughput if work.mode == ProgressMode.DETERMINATE else None
         count = len(self._matched)
         similarity = median([score for _, score in self._matched]) if count else 0
         rates = [sample.throughput for sample, _ in self._matched]
@@ -195,6 +196,11 @@ class HybridThroughputEstimator:
         ):
             confidence = Confidence.LOW
             reasons.append("hardware_unknown")
+        if work.mode == ProgressMode.PHASE:
+            confidence = min(confidence, Confidence.MEDIUM,
+                             key=(Confidence.UNAVAILABLE, Confidence.LOW, Confidence.MEDIUM,
+                                  Confidence.HIGH).index)
+            reasons.append("phase_only_historical_planning")
         return EtaEstimate(
             likely_seconds=likely,
             lower_seconds=min(likely, remaining / upper_rate),

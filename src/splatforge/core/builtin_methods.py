@@ -85,7 +85,9 @@ def build_builtin_registry() -> MethodRegistry:
             accepts_descriptor_families=frozenset({"sift"}),
         ),
         MethodSpec(
-            id="mapping.colmap_global", display_name="COLMAP Global Mapper", stage=StageKind.MAPPING
+            id="mapping.colmap_global", display_name="COLMAP Global Mapper",
+            stage=StageKind.MAPPING,
+            notes="Implemented M8a: tested COLMAP >=4.2.1, all components, explicit calibration"
         ),
         MethodSpec(
             id="feature_matching.sift_bruteforce", display_name="SIFT brute-force",

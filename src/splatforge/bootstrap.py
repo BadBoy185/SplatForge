@@ -4,6 +4,7 @@ from pathlib import Path
 
 from splatforge.adapters.colmap_capabilities import ColmapCapabilityAdapter
 from splatforge.adapters.colmap_features import ColmapFeatureAdapter
+from splatforge.adapters.colmap_mapping import ColmapMappingAdapter
 from splatforge.adapters.colmap_matching import ColmapMatchingAdapter
 from splatforge.adapters.execution_storage import LocalExecutionRepository
 from splatforge.adapters.fake_stages import LocalFakeStages
@@ -28,6 +29,7 @@ from splatforge.adapters.view_workspace import LocalViewWorkspace
 from splatforge.application.doctor import DoctorService
 from splatforge.application.execution import FakeExecutionService
 from splatforge.application.features import FeaturesService
+from splatforge.application.mapping import MappingService
 from splatforge.application.matching import MatchingService
 from splatforge.application.media import MediaService
 from splatforge.application.pairs import PairsService
@@ -158,3 +160,8 @@ def build_matching_service(*, performance_path: Path | None = None) -> MatchingS
 
 def build_sfm_profile_service() -> SfmProfileService:
     return SfmProfileService(ColmapFeatureAdapter(), ColmapMatchingAdapter())
+
+
+def build_mapping_service(*, performance_path: Path | None = None) -> MappingService:
+    return MappingService(LocalExecutionRepository(project_store=LocalProjectStore()),
+                          ColmapMappingAdapter(), progress=build_progress_support(performance_path))

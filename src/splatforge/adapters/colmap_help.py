@@ -56,6 +56,14 @@ def parse_option_help(text: str, option: str) -> ParsedOptionHelp:
             if default and len(default.group(1)) <= 1024:
                 defaults.append((name, default.group(1).strip()))
     selected = [block for name, block in blocks if name == option]
+    if option in {"GlobalMapper", "ViewGraphCalibration"}:
+        required = ({"database_path", "image_path", "output_path", "GlobalMapper.multiple_models",
+                     "GlobalMapper.min_model_size", "GlobalMapper.min_num_matches"}
+                    if option == "GlobalMapper" else
+                    {"database_path", "cross_validate_prior_focal_lengths",
+                     "reestimate_relative_pose", "relpose_min_num_inliers"})
+        return ParsedOptionHelp("-h [ --help ]" in text and required <= set(names), (), names,
+                                tuple(defaults), "mapping_options_v1")
     if option == "TwoViewGeometry" and "-h [ --help ]" in text and {
         "database_path", "TwoViewGeometry.min_num_inliers", "batch_size", "num_threads",
     } <= set(names):

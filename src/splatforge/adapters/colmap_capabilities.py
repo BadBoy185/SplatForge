@@ -70,6 +70,7 @@ _REQUIRED_COMMANDS = (
     "exhaustive_matcher",
     "sequential_matcher",
     "global_mapper",
+    "view_graph_calibrator",
     "mapper",
     "hierarchical_mapper",
     "model_converter",
@@ -116,6 +117,9 @@ _CAPABILITY_IDS = (
     ) for device in ("cpu", "gpu")),
     "colmap.verification.standalone",
     "colmap.mapper.global",
+    "colmap.mapper.global.version",
+    "colmap.mapper.global.integration",
+    "colmap.calibration.view_graph",
     "colmap.mapper.incremental",
     "colmap.mapper.hierarchical",
 )
@@ -356,12 +360,16 @@ class ColmapCapabilityAdapter:
             identity,
             details=(("top_level_excerpt", self._excerpt(combined)),),
         )
+        from splatforge.adapters.mapping_capabilities import supported_global_version
+
         help_results = tuple(
             self._probe_subcommand_help(
                 identity, command, commands, listing_ok, observed_at, freshness, environment
             )
             for command in ("feature_extractor", "exhaustive_matcher", "sequential_matcher",
-                            "matches_importer", "geometric_verifier")
+                            "matches_importer", "geometric_verifier") +
+                           (("global_mapper", "view_graph_calibrator")
+                            if supported_global_version(version_line) else ())
         )
         feature_parsed = help_results[0][2]
         matcher_parsed = next(
@@ -430,6 +438,10 @@ class ColmapCapabilityAdapter:
             build_text=combined,
             environment=environment,
         )
+        from splatforge.adapters.mapping_capabilities import mapping_evidence
+
+        capabilities = mapping_evidence(self, capabilities, help_results, identity,
+                                        observed_at, freshness)
         # M7a extends the existing discovery/probe lifecycle, including containment.
         from splatforge.adapters.learned_feature_probe import probe_feature_routes
         from splatforge.core.features import SiftExtractionSettings
@@ -810,10 +822,13 @@ class ColmapCapabilityAdapter:
                 elif problem is not None:
                     status, code, message = problem
                 else:
-                    option = "TwoViewGeometry" if command == "geometric_verifier" else (
+                    option = ("GlobalMapper" if command == "global_mapper" else
+                              "ViewGraphCalibration" if command == "view_graph_calibrator" else
+                              "TwoViewGeometry" if command == "geometric_verifier" else (
                         "FeatureExtraction.type"
                         if command == "feature_extractor"
                         else "FeatureMatching.type"
+                    )
                     )
                     parsed = parse_option_help(text, option)
                     status = (

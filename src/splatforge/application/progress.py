@@ -98,7 +98,8 @@ def aggregate_pipeline(
             duration = stage.elapsed_seconds + stage.eta.likely_seconds
             total += duration
             credited += duration * (stage.fraction or 0)
-    raw = None if unknown or total <= 0 else min(1, credited / total)
+    no_fraction = any(stage.status not in _DONE and stage.fraction is None for stage in stages)
+    raw = None if unknown or no_fraction or total <= 0 else min(1, credited / total)
     if stages and all(stage.status in _DONE for stage in stages):
         raw = 1.0
     fraction = (

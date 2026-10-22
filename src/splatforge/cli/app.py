@@ -15,6 +15,7 @@ from splatforge.bootstrap import (
     build_doctor_service,
     build_execution_service,
     build_features_service,
+    build_mapping_service,
     build_matching_service,
     build_media_service,
     build_pairs_service,
@@ -52,6 +53,12 @@ from splatforge.core.quality import (
     QualityAnalysisSettings,
     SharpestIntervalSettings,
     parse_non_negative_rational,
+)
+from splatforge.core.reconstruction import (
+    GlobalMapperSettings,
+    MappingCalibrationPolicy,
+    MappingResourceLimits,
+    ViewGraphCalibrationSettings,
 )
 from splatforge.core.retrieval import RetrievalResourceLimits
 from splatforge.core.sfm_profiles import (
@@ -95,6 +102,8 @@ matches_app = typer.Typer(no_args_is_help=True, help="Raw matching of an exact P
 app.add_typer(matches_app, name="matches")
 verification_app = typer.Typer(no_args_is_help=True, help="Standalone geometric verification")
 app.add_typer(verification_app, name="verification")
+mapping_app = typer.Typer(no_args_is_help=True, help="Global reconstruction; all components")
+app.add_typer(mapping_app, name="mapping")
 sfm_app = typer.Typer(no_args_is_help=True, help="Feature/matching profile and Advanced planning")
 app.add_typer(sfm_app, name="sfm")
 performance_app = typer.Typer(no_args_is_help=True, help="Private local runtime history")
@@ -109,6 +118,79 @@ def _typed_settings(path: Path, annotation):
     if len(data) > limit:
         raise ValueError(f"Typed settings input exceeds its {limit}-byte bound")
     return TypeAdapter(annotation).validate_json(data)
+
+
+@mapping_app.command("run")
+def mapping_run(
+    project: Path,
+    verification_run: Annotated[UUID, typer.Option("--verification-run")],
+    method: str = typer.Option("global", "--method"),
+    calibration: str = typer.Option("preserve-priors", "--calibration"),
+    settings: Annotated[Path | None, typer.Option("--settings")] = None,
+    calibration_settings: Annotated[Path | None, typer.Option("--calibration-settings")] = None,
+    min_model_size: int | None = typer.Option(None, "--min-model-size"),
+    num_threads: int | None = typer.Option(None, "--num-threads"),
+    max_views: int = typer.Option(10000, "--max-views"),
+    max_pairs: int = typer.Option(100000, "--max-pairs"),
+    max_workspace_gib: str = typer.Option("128", "--max-workspace-gib"),
+    max_output_gib: str = typer.Option("16", "--max-output-gib"),
+    timeout: int = typer.Option(7200, "--timeout"),
+    colmap: Annotated[Path | None, typer.Option("--colmap")] = None,
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    try:
+        if method != "global":
+            raise ValueError("M8a implements only explicit Global mapping")
+        if settings and (min_model_size is not None or num_threads is not None):
+            raise ValueError("Choose typed --settings or individual mapper settings")
+        numerical = (_typed_settings(settings, GlobalMapperSettings) if settings else
+                     GlobalMapperSettings(**({"min_model_size": min_model_size}
+                        if min_model_size is not None else {}),
+                        **({"num_threads": num_threads} if num_threads is not None else {})))
+        policy = MappingCalibrationPolicy(calibration.replace("-", "_"))
+        result = build_mapping_service().run(
+            project, verification_run_id=verification_run, settings=numerical,
+            calibration_policy=policy,
+            calibration_settings=_typed_settings(calibration_settings, ViewGraphCalibrationSettings)
+            if calibration_settings else None,
+            resource_limits=MappingResourceLimits(max_views=max_views, max_pairs=max_pairs,
+                max_workspace_bytes=parse_gib_bytes(max_workspace_gib),
+                max_output_bytes=parse_gib_bytes(max_output_gib), timeout_seconds=timeout),
+            colmap=colmap,
+        )
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    if json_output:
+        typer.echo(result.model_dump_json(indent=2))
+    else:
+        typer.echo(f"{result.status}: {result.run_id}; cache_hit={result.cache_hit}")
+        if result.reconstruction:
+            _mapping_summary(result.reconstruction)
+
+
+@mapping_app.command("show")
+def mapping_show(project: Path, run_id: UUID,
+                 json_output: bool = typer.Option(False, "--json")) -> None:
+    try:
+        value = build_mapping_service().inspect(project, run_id)
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    if json_output:
+        typer.echo(value.model_dump_json(indent=2))
+    else:
+        _mapping_summary(value)
+
+
+def _mapping_summary(value) -> None:
+    typer.echo(f"Mapper: {value.method_id}; calibration: {value.calibration.policy}; "
+               f"components: {value.component_count}; registered: {value.registered_view_count}; "
+               f"unregistered: {value.unregistered_view_count}; scale: {value.scale}")
+    for component in value.components:
+        typer.echo(f"{component.component_id}: views={component.registered_view_count}, "
+                   f"cameras={component.camera_count}, native_points={component.point_count}; "
+                   f"points={component.points}, tracks={component.tracks}")
 
 
 @sfm_app.command("resolve")

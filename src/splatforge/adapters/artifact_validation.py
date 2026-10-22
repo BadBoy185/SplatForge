@@ -37,6 +37,7 @@ from splatforge.core.quality import (
     quality_semantic_digest,
     sharpest_selected_semantic_digest,
 )
+from splatforge.core.reconstruction import RECONSTRUCTION_ARTIFACT_TYPE, ReconstructionSet
 from splatforge.core.retrieval import RETRIEVAL_ARTIFACT_TYPE, RetrievalRepresentationSet
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
@@ -62,7 +63,8 @@ class ValidatedArtifact:
     payloads: tuple[PayloadFile, ...]
     semantic_digest: str
     parsed: (
-        PairSet
+        ReconstructionSet
+        | PairSet
         | RetrievalRepresentationSet
         | LocalFeatureSet
         | MatchSet
@@ -114,6 +116,10 @@ def validate_workspace_output(
                                    verified_payloads=verified_payloads)
     if artifact_type == PAIR_ARTIFACT_TYPE:
         return _validate_pairs(output, verified_payloads)
+    if artifact_type == RECONSTRUCTION_ARTIFACT_TYPE:
+        from splatforge.adapters.mapping_artifacts import validate_mapping_output
+
+        return validate_mapping_output(output, verified_payloads)
     if artifact_type == RETRIEVAL_ARTIFACT_TYPE:
         from splatforge.adapters.retrieval_artifacts import validate_retrieval_output
 
@@ -188,6 +194,10 @@ def validate_published_artifact(
             raise ValueError("Sharpest selection provenance differs from lineage")
     if isinstance(validated.parsed, PairSet):
         validate_pair_lineage(validated.parsed, manifest)
+    if isinstance(validated.parsed, ReconstructionSet):
+        from splatforge.adapters.mapping_artifacts import validate_mapping_lineage
+
+        validate_mapping_lineage(validated.parsed, manifest)
     if isinstance(validated.parsed, RetrievalRepresentationSet):
         from splatforge.adapters.retrieval_artifacts import validate_retrieval_lineage
 

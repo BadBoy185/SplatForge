@@ -463,7 +463,7 @@ class ColmapMatchingAdapter:
                     request,
                     executable=backend.selection.identity,
                     diagnostic_argv=argv,
-                    tool_role="colmap." + backend.operation,
+                    tool_role="colmap." + argv[0],
                     source_id=None,
                     elapsed_seconds=time.monotonic() - started,
                     result=result,

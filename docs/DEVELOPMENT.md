@@ -543,3 +543,25 @@ change. Inspect the final diff for unrelated files and generated data. Documenta
 work checks links, terminology, milestone/prompt alignment and implemented/planned
 claims; run code checks when needed to verify such claims or explicitly requested.
 No automatic commit or dependency/model installation.
+
+
+## M8a verification
+
+M8a tests use synthetic sparse binary files and fake contained native requests independently
+of installed COLMAP. They exercise component/set identity, camera/pose convention, legacy and
+current rig/frame transport, unavailable points/tracks, all-component publication, numerical
+mapping projection, private DB byte integrity, calibration failures, resource gates,
+cancellation, malformed cache/orphan refusal, recovery, CLI and phase-only M6.5 history.
+`test_mapping_integration.py` is an opt-in M7a -> matching -> verification -> Global route
+on deterministic tiny perspective patches with real parallax. Use the provisioned runtime
+and optional explicit calibration smoke described in [M8A.md](M8A.md); no installation,
+download or system PATH changes occur. Tiny transport does not establish scene quality.
+
+`mapping.global_phases_v1` normalizes historical work as one complete mapping job and
+retains phase mode with explicit `historical_job_duration` opt-in. Generic phase totals
+retain unavailable ETA. M6.5's existing estimator permits explicit whole-job phase historical planning
+at low/medium confidence, with no live rate/percentage. The display aggregate keeps an
+unknown fraction even when historical duration is available. Determinate estimator rules
+are unchanged. Only committed successful uncached jobs teach history. Actual observable
+phases are preparation, optional calibration, input validation, native mapping and output
+validation; no Global rotation/positioning/BA log parser is claimed.

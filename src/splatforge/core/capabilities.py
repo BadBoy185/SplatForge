@@ -134,7 +134,8 @@ class SubcommandDiscovery(BaseModel):
     command: str = Field(min_length=1, max_length=128)
     evidence: CapabilityEvidence
     parser_profile: Literal[
-        "typed_enum_v1", "native_options_v2", "legacy_sift_v1", "options_v1", "unknown",
+        "typed_enum_v1", "native_options_v2", "legacy_sift_v1",
+        "options_v1", "mapping_options_v1", "unknown",
     ]
     tokens: tuple[str, ...] = Field(default=(), max_length=128)
     option_names: tuple[str, ...] = Field(default=(), max_length=512)

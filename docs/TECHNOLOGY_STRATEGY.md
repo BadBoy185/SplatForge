@@ -297,9 +297,8 @@ proposals.
 ## 7. M8: mapping and calibration
 
 Retain the planned multi-mapper strategy rather than declaring one universal mapper.
-The normative M8 scope remains the one in `ROADMAP.md`: Global Mapper preferred, with
-Incremental/Hierarchical explicit capability-gated alternatives, plus the reconstruction
-reader/contracts described there.
+The roadmap splits implemented M8a Global/reader contracts from future M8b
+Incremental/Caspar-supported Incremental/Hierarchical alternatives and comparative benchmarks.
 
 Current COLMAP guidance makes it reasonable to research the following routing logic:
 
@@ -310,19 +309,17 @@ Current COLMAP guidance makes it reasonable to research the following routing lo
 
 These points guide method selection; they do not add new acceptance criteria to M8.
 
-### Calibration preflight research
+### M8a explicit calibration policy
 
-Global mapping should not assume that EXIF/device metadata means trustworthy intrinsics.
-During M8 planning, evaluate whether current COLMAP view-graph calibration materially
-improves the representative uncertain-intrinsics cases. The upstream operation mutates
-its database in place, so any future integration would have to use a private downstream
-database copy and preserve published upstream artifacts unchanged.
-
-This section does **not** add a calibration stage to M8. If the experiment shows that a
-view-graph calibration step is necessary for the supported M8 route, amend the roadmap
-and implementation prompt explicitly before adding it. Future learned calibration may
-also be researched as a prior/initializer, but a neural focal estimate must not silently
-become ground truth.
+M8a implements the tested COLMAP >=4.2.1 Global route and ReconstructionSet/Reader;
+M8b retains Incremental, Caspar-supported Incremental BA, Hierarchical and comparative
+benchmarking. The explicit M8a scope authorizes optional view_graph calibration only on
+a private mapping DB, with validated finite numerical state and deterministic result identity.
+The default remains preserve_priors. Device/EXIF/scene classification never enables it.
+Representative uncertain-intrinsics benchmarks must justify any future default change.
+Calibration estimates are distinct from original priors and final optimized intrinsics;
+none is automatically called ground truth. Learned calibration remains out of scope.
+See [M8a contracts](M8A.md). M7c production VPR benchmarking proceeds independently.
 
 ## 8. M9: view-graph and reconstruction diagnostics
 

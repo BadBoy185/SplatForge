@@ -145,10 +145,12 @@ State scale units as known or unknown; include any applied similarity/alignment 
 Sparse points/tracks are optional capabilities, not a universal prerequisite for SfM.
 A dataset target states which records it requires and fails clearly when unavailable.
 
-Component IDs are scoped to a ReconstructionSet and cannot identify numerical content
-across reruns. A component digest covers the consumed cameras/poses/geometry and view
-mapping; do not key datasets only by labels such as component 0 or image count. Start
-with conservative payload digests if a trustworthy semantic digest is unavailable.
+M8a component IDs are SplatForge UUIDv5 values derived from canonical registered-view
+membership and remain stable across reruns with that membership. They do not identify
+numerical geometry. A component digest covers the consumed cameras/poses/geometry and view
+mapping; do not key datasets only by labels such as component 0 or image count.
+M8a computes canonical camera/pose/count semantics, independent of native IDs/folder
+numbering. Detailed point/track streaming is explicitly not_published. See [M8a](M8A.md).
 Camera/GPS/LiDAR metadata must carry frame/units, timing and uncertainty where relevant;
 convert explicitly or reject unsupported combinations. Add concrete schemas only when
 implementing a consumer, not a universal sensor framework in M1a1.
@@ -172,11 +174,12 @@ The [development contract](DEVELOPMENT.md#progress-and-eta-foundation) freezes e
 history/privacy and throttling rules. SQLite status remains authoritative after crashes.
 
 M7a extraction reports selected VIEWS/megapixels and observed feature counts; M7b matching
-and verification use separate exact PAIRS work models. Future M8 may expose reliably parsed loading,
+and verification use separate exact PAIRS work models. M8a exposes preparation, calibration,
+native execution and validation phases. Future M8b may parse
 initialization, registration, triangulation, bundle-adjustment and finalization phases,
 but nonlinear work must retain absent/phase-scoped percent and unavailable or wide
 low/medium-confidence ETA. Future M11 trainers use completed/total iterations or steps.
-M7a/M7b use this boundary; M8/training backends remain planned.
+M7a/M7b/M8a use this boundary; M8b/training remain planned.
 
 M1b1 implements one concrete deterministic route for contract testing:
 `fake.sequence` consumes literal `start` plus resolved `count` and publishes
@@ -560,3 +563,19 @@ is recorded. It never erases historical results.
 Reproducibility records explain cache misses and numerical limits. Nondeterministic
 backends must declare that limitation; a cache hit reuses a specific prior result,
 not a promise that repeating the computation will produce identical bytes.
+
+
+## M8a implemented mapping contract
+
+The classical route consumes exact M7b accepted geometry plus actual camera/share/dimension
+and indexed x/y keypoint state, not the whole verifier ancestry. MappingInput v1 freezes
+that minimal numerical projection; MappingRoute retains exact upstream handles separately.
+Only COLMAP Global is implemented, requiring tested >=4.2.1 (currently positively tested
+4.2.1). Multiple models is forced true with explicit minimum size. Private DB copying,
+optional explicit view-graph calibration and Global execution preserve all valid models.
+ReconstructionSet v1 is neutral; the M7-specific receipt is separate so future direct
+geometry need not fabricate M7 artifacts. Reader contracts own M9/M10 interchange.
+Coordinate convention is right-handed camera_from_world, x right/y down/z forward,
+wxyz quaternion and pixel centers at (.5,.5); scale is unknown_arbitrary. No component
+is selected. Full identities, optional-record states, settings, cache and failure contracts
+are in [M8A.md](M8A.md). M9/M10 remain future; the M7c production benchmark is independent.

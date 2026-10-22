@@ -143,7 +143,7 @@ def test_official_windows_layout_scopes_every_probe(
         assert layout.qt_platform_plugin_directory is None
         assert "QT_PLUGIN_PATH" not in expected
         assert "QT_QPA_PLATFORM_PLUGIN_PATH" not in expected
-    assert len(runner.requests) == 9  # help x4, database x3, CPU/GPU SIFT x2
+    assert len(runner.requests) == 10  # help x5 (including Global), database x3, SIFT x2
     assert all(dict(request.environment) == expected for request in runner.requests)
     assert all(Path(request.executable).suffix == ".exe" for request in runner.requests)
     assert inherited_path not in report.model_dump_json()
@@ -327,8 +327,13 @@ class FakeRunner:
 
     def run(self, request: ProcessRequest, *, cancellation=None) -> ProcessResult:
         self.requests.append(request)
+        if request.argv in (("global_mapper", "-h"), ("view_graph_calibrator", "-h")):
+            return process_result(request, stdout=b"unrecognized mapping help",
+                                  identity=getattr(self, "observed_identity", IDENTITY))
         if self.callback is not None:
-            return self.callback(request)
+            result = self.callback(request)
+            self.observed_identity = result.executable
+            return result
         if request.argv == ("help",):
             return process_result(request, stdout=TOP_HELP.encode())
         if request.argv == ("feature_extractor", "-h"):
@@ -492,7 +497,7 @@ def test_lightweight_discovery_maps_static_capabilities_without_functional_probe
     assert report.selected_executable is not None
     assert report.selected_executable.identity.version_line.startswith("COLMAP 4.2.1")
     assert "LOMA_B128" in report.command_discovery.feature_tokens
-    assert report.capability("colmap.mapper.global").status == CapabilityStatus.AVAILABLE
+    assert report.capability("colmap.mapper.global").status == CapabilityStatus.UNKNOWN
     assert report.capability("colmap.feature.sift.cpu").status == CapabilityStatus.UNKNOWN
     assert report.capability("colmap.feature.sift.gpu").status == CapabilityStatus.UNKNOWN
     assert report.capability("colmap.onnx").status == CapabilityStatus.AVAILABLE
