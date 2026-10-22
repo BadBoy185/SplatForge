@@ -75,6 +75,15 @@ class MaterializedFile:
     sha256: str
 
 
+@dataclass(frozen=True)
+class MaterializationProgress:
+    """Structured source-duration evidence from the owned FFmpeg process."""
+
+    processed_source_seconds: float
+    total_source_seconds: float
+    elapsed_seconds: float
+
+
 class CancellationSignal(Protocol):
     def is_cancelled(self) -> bool: ...
 
@@ -93,6 +102,7 @@ class CandidateMaterializer(Protocol):
         expected_backend: ExecutableIdentity,
         cancellation: CancellationSignal | None = None,
         evidence_sink: Callable[[ProcessInvocationEvidence], None] | None = None,
+        progress_sink: Callable[[MaterializationProgress], None] | None = None,
     ) -> tuple[MaterializedFrame, ...]: ...
 
 

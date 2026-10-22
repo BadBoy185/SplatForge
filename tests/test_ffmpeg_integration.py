@@ -180,6 +180,7 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
         ),
     )
     decoded = tmp_path / "decoded"
+    progress_observations = []
     materialized = adapter.materialize(
         video,
         source,
@@ -187,8 +188,12 @@ def test_real_ffmpeg_preserves_vfr_pts_explicit_rotation_and_original_bytes(
         settings,
         timeout_seconds=30,
         expected_backend=backend,
+        progress_sink=progress_observations.append,
     )
     assert len(materialized) >= 3
+    assert progress_observations
+    assert progress_observations[-1].processed_source_seconds == .8
+    assert all(0 <= item.processed_source_seconds <= .8 for item in progress_observations)
     actual_times = [frame.pts * frame.time_base.as_fraction() for frame in materialized]
     assert actual_times == source_times
     assert actual_times[0] != 0

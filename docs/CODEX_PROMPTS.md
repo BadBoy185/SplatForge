@@ -18,6 +18,12 @@ validation, linear producer provenance and bounded optional attempt diagnostics 
 later milestones. Numerical keys and existing project/state/artifact versions are
 unchanged. M7 remains a separate, unimplemented task.
 
+M6.5 progress/ETA foundation is implemented. Later backends must integrate
+with the [progress contract](DEVELOPMENT.md#progress-and-eta-foundation), preserving
+diagnostic-only estimates, worker-local private history, deterministic clock tests,
+bounded events and absent percentages for unknown/nonlinear work. Do not rebuild
+estimation in CLI/GUI or include performance history in numerical identity.
+
 ## Common instructions for every task
 
 Prepend this to the selected task:

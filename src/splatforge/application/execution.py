@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from splatforge.application.progress_contracts import RunProgressEvidence
+from splatforge.application.progress_reader import RunProgressService
 from splatforge.application.projects import ProjectError
 from splatforge.core.execution import (
     ArtifactHandle,
@@ -97,6 +100,8 @@ class FakeStageMethods(Protocol):
 
 
 class ExecutionRepository(Protocol):
+    def read_progress_evidence(self, root: Path, run_id: UUID) -> RunProgressEvidence: ...
+
     # One writer lease owns one fresh artifact-validation operation. Implementations
     # discard its memo on exit, including failure/cancellation/recovery exits.
     def writer(
@@ -360,7 +365,11 @@ class FakeExecutionService:
         )
 
     def show(self, root: Path, run_id: UUID) -> str:
-        return self._repository.show_run(root, run_id)
+        rendered = json.loads(self._repository.show_run(root, run_id))
+        rendered["progress"] = RunProgressService(self._repository).get(root, run_id).model_dump(
+            mode="json"
+        )
+        return json.dumps(rendered, ensure_ascii=False, indent=2)
 
     def cancel(self, root: Path, run_id: UUID) -> CancellationRequestResult:
         self._require_v3(root)

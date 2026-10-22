@@ -10,6 +10,11 @@ from splatforge.adapters.ffprobe import FFprobeAdapter
 from splatforge.adapters.gpu_capabilities import NvidiaSmiCapabilityAdapter
 from splatforge.adapters.media_storage import LocalMediaRepository
 from splatforge.adapters.pair_workspace import LocalPairWorkspace
+from splatforge.adapters.performance import (
+    LocalHardwareObserver,
+    LocalPerformanceHistory,
+    default_performance_path,
+)
 from splatforge.adapters.process_runner import ExecutableResolver, LocalProcessRunner
 from splatforge.adapters.project_backup import LocalMigrationBackupPreparer
 from splatforge.adapters.project_storage import LocalProjectStore
@@ -21,9 +26,32 @@ from splatforge.application.doctor import DoctorService
 from splatforge.application.execution import FakeExecutionService
 from splatforge.application.media import MediaService
 from splatforge.application.pairs import PairsService
+from splatforge.application.progress import PerformanceService, ProgressSupport
+from splatforge.application.progress_reader import RunProgressService
 from splatforge.application.projects import ProjectService
 from splatforge.application.views import ViewsService
 from splatforge.core.builtin_methods import build_builtin_registry
+from splatforge.core.progress import ExecutionHardwareProfile
+
+
+def build_performance_history(path: Path | None = None) -> LocalPerformanceHistory:
+    return LocalPerformanceHistory(path if path is not None else default_performance_path())
+
+
+def build_performance_service(path: Path | None = None) -> PerformanceService:
+    return PerformanceService(build_performance_history(path))
+
+
+def build_progress_support(performance_path: Path | None = None) -> ProgressSupport:
+    try:
+        hardware = LocalHardwareObserver().observe()
+    except Exception:
+        hardware = ExecutionHardwareProfile()
+    return ProgressSupport(history=build_performance_history(performance_path), hardware=hardware)
+
+
+def build_run_progress_service() -> RunProgressService:
+    return RunProgressService(LocalExecutionRepository(project_store=LocalProjectStore()))
 
 
 def build_doctor_service(
@@ -68,7 +96,9 @@ def build_media_service(*, ffprobe_path: str | None = None) -> MediaService:
     )
 
 
-def build_views_service(*, ffmpeg_path: str | None = None) -> ViewsService:
+def build_views_service(
+    *, ffmpeg_path: str | None = None, performance_path: Path | None = None,
+) -> ViewsService:
     store = LocalProjectStore()
     execution_repository = LocalExecutionRepository(project_store=store)
     media_repository = LocalMediaRepository(project_store=store)
@@ -79,10 +109,12 @@ def build_views_service(*, ffmpeg_path: str | None = None) -> ViewsService:
         FFmpegAdapter(executable=ffmpeg_path),
         LocalViewWorkspace(),
         PillowQualityAdapter(),
+        progress=build_progress_support(performance_path),
     )
 
 
-def build_pairs_service() -> PairsService:
+def build_pairs_service(*, performance_path: Path | None = None) -> PairsService:
     return PairsService(
-        LocalExecutionRepository(project_store=LocalProjectStore()), LocalPairWorkspace()
+        LocalExecutionRepository(project_store=LocalProjectStore()), LocalPairWorkspace(),
+        progress=build_progress_support(performance_path),
     )

@@ -37,6 +37,11 @@ from splatforge.application.execution import (
     RetryNotAllowedError,
     UnresolvedExecutionError,
 )
+from splatforge.application.progress_contracts import (
+    AttemptLifecycle,
+    OutputBinding,
+    RunProgressEvidence,
+)
 from splatforge.application.projects import ProjectError
 from splatforge.core.execution import (
     ArtifactHandle,
@@ -76,6 +81,7 @@ from splatforge.core.pairs import (
     sequential_recipe_key,
 )
 from splatforge.core.process import MAX_PROCESS_RECORD_BYTES, ProcessInvocationEvidence
+from splatforge.core.progress import PipelineProgressSnapshot
 from splatforge.core.project import ProjectDocument
 from splatforge.core.quality import (
     QualityReport,
@@ -1470,6 +1476,79 @@ class LocalExecutionRepository:
             "outputs": [dict(row) for row in outputs],
         }
         return json.dumps(rendered, ensure_ascii=False, indent=2)
+
+    def read_progress_evidence(self, root: Path, run_id: UUID) -> RunProgressEvidence:
+        """No writer lock, mutation, source access or artifact validation required."""
+        root = root.resolve()
+        with self._read_connection(root) as connection:
+            connection.row_factory = sqlite3.Row
+            run = connection.execute("SELECT * FROM runs WHERE run_id=?", (str(run_id),)).fetchone()
+            if run is None:
+                raise ProjectError(f"Unknown run {run_id}")
+            attempts = connection.execute(
+                "SELECT * FROM attempts WHERE run_id=? ORDER BY created_at, attempt_id",
+                (str(run_id),),
+            ).fetchall()
+            outputs = connection.execute(
+                "SELECT node_id, binding_kind FROM run_outputs WHERE run_id=?", (str(run_id),),
+            ).fetchall()
+        snapshot = self._load_run_snapshot(root, run_id)
+        requested = False
+        try:
+            request, _ = self._read_cancellation_request(root, run_id)
+            requested = request.run_owner_token == snapshot.owner_token
+        except (OSError, ValueError):
+            pass
+        latest, warnings = self._latest_progress(root, run_id)
+        return RunProgressEvidence(
+            snapshot=snapshot, status=run["status"],
+            started_at=datetime.fromisoformat(run["started_at"]),
+            finished_at=datetime.fromisoformat(run["finished_at"]) if run["finished_at"] else None,
+            cancellation_requested=requested,
+            cancellation_accepted=bool(dict(run).get("cancellation_accepted_at")),
+            attempts=tuple(AttemptLifecycle(
+                node_id=row["node_id"], attempt_id=UUID(row["attempt_id"]), status=row["status"],
+                started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
+                finished_at=(datetime.fromisoformat(row["finished_at"])
+                             if row["finished_at"] else None),
+            ) for row in attempts),
+            outputs=tuple(OutputBinding(row["node_id"], row["binding_kind"]) for row in outputs),
+            latest=latest, warnings=warnings,
+        )
+
+    def _latest_progress(
+        self, root: Path, run_id: UUID,
+    ) -> tuple[PipelineProgressSnapshot | None, tuple[str, ...]]:
+        """Read at most 4 MiB from the JSONL tail; ignore partial/old event kinds."""
+        warnings = set()
+        try:
+            path = self._owned_path(root, f"runs/{run_id}/events.jsonl")
+            with path.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                offset = max(0, stream.tell() - 4 * 1024 * 1024)
+                stream.seek(offset)
+                payload = stream.read(4 * 1024 * 1024)
+            lines = payload.splitlines()
+            if offset:
+                lines = lines[1:]
+            for line in reversed(lines):
+                if len(line) > 1024 * 1024:
+                    continue
+                try:
+                    event = json.loads(line)
+                    if event.get("code") != "progress.snapshot":
+                        continue
+                    snapshot = PipelineProgressSnapshot.model_validate_json(
+                        json.dumps(event["details"]["snapshot"])
+                    )
+                    if snapshot.run_id != run_id:
+                        raise ValueError("Mismatched progress run")
+                    return snapshot, tuple(sorted(warnings))
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    warnings.add("progress.malformed_event")
+        except (OSError, ValueError):
+            warnings.add("progress.unavailable")
+        return None, tuple(sorted(warnings))
 
     def _adopt_orphan(
         self,

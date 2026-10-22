@@ -205,6 +205,104 @@ working directory first. Capture worker exit/crash and last durable events. Trea
 as a resource failure, not a transient retry loop; changing batch/image/device settings
 creates a new resolved plan. Free-VRAM estimates cannot guarantee allocation.
 
+## Progress and ETA foundation
+
+M6.5 diagnostic contracts are independent v1 models in `core/progress.py`. Work units
+require a stage/method and versioned work model; quality MP and feature MP are not
+interchangeable. Stable plans reject regressing work/elapsed evidence and work above
+the total. A changed total requires an explicit plan revision. Determinate, phase and
+indeterminate work are distinct; a phase total never implies a whole-stage fraction.
+Core imports no storage, process or backend implementation.
+
+`ProgressSession` owns one execution's observations, estimates and aggregation.
+`estimate_plan` accepts resolved stage descriptions and explicit cache/skip decisions;
+it does no numerical processing or method selection. Pipeline weights use actual
+completed durations and estimated active/future durations, excluding cached/skipped
+work. Only the display aggregate is clamped monotonically; recalculated evidence and
+ETA can change independently. Unknown remaining stages are listed, with a partial
+known range at low confidence, or unavailable ETA if nothing can be estimated.
+
+`eta.hybrid_throughput_v1` uses exact categorical stage, method, work-model, backend,
+settings and hardware compatibility. Numeric similarity is `1/(1+mean(log2 distance)/4)`
+over total work and workload metrics (absolute distances; zero/zero contributes none).
+Scores below .25 are excluded; scale mismatch widens the range and reduces confidence.
+History uses median throughput and interpolated empirical q10/q90. Range widening is
+at least 2x for one sample, 1.5x for 2–4, 1.1x for 5+, and inverse similarity. History
+confidence becomes medium at 3 samples, similarity >= .65 and q90/q10 <= 2; high needs
+8 samples, similarity >= .9 and spread <= 1.3. Unknown hardware classification caps
+confidence at low. Different backend binaries, runtime/model identities or hardware
+profiles are not pooled in v1.
+
+Live rates require at least one monotonic second and positive completed work. Use
+50/50 cumulative throughput and recent EWMA(alpha=.2); interval rate changes clamp
+to a factor of four and recent contribution clamps to half/twice cumulative rate.
+Live blending weight is `min(.95,1.5*fraction)*min(1,elapsed/5)*min(1,intervals/3)`;
+without history the live weight is one. Recent variability uses at most 16 intervals.
+Four stable intervals and >=20% completion permit medium confidence; eight intervals,
+>=60% completion and spread <=1.2 permit high confidence. Live stalls exceeding
+`max(5s,10% elapsed)` lower confidence and widen the range. Exact rules and boundaries
+are frozen in deterministic tests; changing them requires a new estimator version.
+These ranges are planning aids, not statistical confidence intervals. No cold speed
+is hard-coded: zero history starts unavailable, then uses live evidence.
+
+| Implemented stage | Work model / useful observations |
+| --- | --- |
+| Candidate preparation | `candidate.output_megapixels_v1`: output MP upper plan, explicit actual-MP revision at validated completion; workload includes retained views, duration, output MP, photo fraction; FPS/encoding/codecs/container families and source-verification policy affect the separate performance settings key |
+| Quality | `quality.analyzed_megapixels_v1`: exact bounded analysis MP and completed views; workload also includes full-resolution MP and view count |
+| Fixed/sharpest selectors | `selection.candidate_views_v1`: processed candidate views, bounded per-source/slot/interval callbacks |
+| Exhaustive pairs | `pairs.emitted_pairs_v1`: known `n*(n-1)/2` total; bounded generation batches |
+| Sequential pairs | `pairs.selected_views_v1`: known selected views classified/processed, including photos without invented chronology; successful samples additionally retain actual generated pair count |
+
+FFmpeg uses `-progress` in a private scratch file and generic owner-loop polling (at
+most 4 Hz); ProcessRunner knows no FFmpeg syntax. Parsing reads at most 64 KiB per
+poll, bounds partial lines/fields and uses complete structured records only. Source
+duration progress normalizes integer `out_time_us` to its first report, conservatively
+omitting work before that report until `progress=end`. VFR and non-zero/negative PTS
+do not become filename-based progress. `showinfo`, pixels, timestamps and recipes are
+unchanged. Poll/callback failures disable or degrade telemetry without altering process
+containment, timeout, cancellation or numerical output. Scratch is removed after the
+owned invocation when possible; it is not an artifact or prediction-history payload.
+
+Persist `progress.snapshot` events at most twice per monotonic second: at least .5s
+between updates plus 1% progress, phase change, or a 1s heartbeat. Initial, stage-start,
+explicit-plan-revision, cache and terminal boundaries are additive (not per item).
+M4's legacy summary is terminal-only. A six-hour stage has at most 43,200 regular
+progress snapshots, not millions. Readers inspect at most the last 4 MiB of JSONL,
+ignore partial/malformed/old events and reconcile with committed SQLite lifecycle.
+Progress older than 5s is marked stale and loses active rate/ETA. Requested/accepted
+cancellation immediately suppresses active ETA. An old run with no progress remains
+inspectable. Progress never authorizes success, recovery or partial-stage resume.
+
+The executing worker's separate `%LOCALAPPDATA%/SplatForge/performance.sqlite` has
+`performance_schema_version=1` (SQLite user_version); it is never project state.
+Inject its path in tests; an autouse fixture isolates CLI/integration tests from real
+AppData. Retain at most 64 recent samples per exact signature and 4096 globally,
+oldest timestamp then insertion order first. Record only committed successful complete
+executions with positive work/duration. Cache, failure, cancellation, interruption,
+unresolved teardown, Doctor and ingest do not teach this estimator. Missing/empty,
+corrupt, locked (50ms busy timeout), malformed, unsupported or unwritable history
+degrades to live/unavailable with bounded reason codes. Newer databases are preserved.
+`performance show [--json]` returns bounded signature aggregates; explicit
+`performance reset` clears samples only, without project/cache changes.
+
+History contains only allowlisted numeric workload, semantic method/work-model,
+performance-settings hash, backend adapter/runtime/binary/model identity, OS family,
+CPU classification/logical count, RAM bucket, device and optional future GPU/driver
+classification, timestamp, successful duration/work/rate. Current hardware observation
+uses CPU/RAM facts only, without GPU probes. Never record source/project IDs or labels,
+filenames, paths, usernames, hostname, serial/SID/MAC, arbitrary identifiers, raw logs,
+environment or secrets. No upload, network, heavy dependency or opaque learned model.
+
+All new estimator/history/progress correctness tests use injected monotonic and UTC
+clocks, never sleep thresholds. Cover privacy, retention, exact incompatibility, scale,
+dispersion, transient spikes and stalls, learning across executions, terminal/cache
+eligibility, history/event failures, cancellation, crash/recovery and old-event reads.
+Future M7 extraction must report views/MP/features; matching and verification report
+pairs. M8 exposes only reliably supported phases and may leave percent/ETA unavailable
+or use wide historical ranges at low/medium confidence. M11 managed trainers report
+iterations/steps and their device/runtime/settings identity. No such backend is added
+by M6.5, and clients must never fabricate progress for it.
+
 ## Structured events and diagnostics
 
 The pre-M7 pass keeps artifact validation operation-scoped. A repository writer lease

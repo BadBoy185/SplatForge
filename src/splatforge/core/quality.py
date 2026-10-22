@@ -543,6 +543,7 @@ def select_sharpest_interval(
     quality_artifact: ArtifactHandle,
     settings: SharpestIntervalSettings,
     checkpoint: Callable[[], None] | None = None,
+    progress: Callable[[int], None] | None = None,
 ) -> SharpestSelectedViewSet:
     if candidate_artifact.artifact_type != CANDIDATE_ARTIFACT_TYPE:
         raise ValueError("sharpest selection requires a CandidateViewSet artifact")
@@ -560,6 +561,7 @@ def select_sharpest_interval(
         quality_artifact=quality_artifact,
         settings=settings,
         checkpoint=checkpoint,
+        progress=progress,
     )
 
 
@@ -571,6 +573,7 @@ def _select_sharpest_interval(
     quality_artifact: ArtifactHandle,
     settings: SharpestIntervalSettings,
     checkpoint: Callable[[], None] | None,
+    progress: Callable[[int], None] | None = None,
 ) -> SharpestSelectedViewSet:
     measurements = {item.view_id: item for item in quality.measurements}
     grouped: dict[tuple[str, int], list[CandidateView]] = {}
@@ -654,6 +657,8 @@ def _select_sharpest_interval(
             for interval_index in range(interval_count):
                 if checkpoint is not None and interval_index % 32 == 0:
                     checkpoint()
+                if progress is not None and interval_index % 32 == 0:
+                    progress(len(decisions))
                 interval_start = anchor + interval_index * step
                 interval_end = interval_start + step
                 interval_views = by_interval.get(interval_index, [])
@@ -816,6 +821,8 @@ def _select_sharpest_interval(
                     for view in sorted(interval_views, key=lambda item: str(item.view_id))
                 )
 
+        if progress is not None:
+            progress(len(decisions))
         first = source_views[0]
         source_selected = len(selected) - source_selected_start
         source_decisions = len(decisions) - source_decision_start

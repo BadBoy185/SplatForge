@@ -160,6 +160,23 @@ structured events and resource limits. Input handles refer only to validated art
 methods return candidate output manifests and diagnostics. The application validates
 and publishes them through storage. Adapters do not mark their own attempts successful.
 
+M6.5 supplies `StageProgressObservation` v1 and `PipelineProgressSnapshot` v1 for
+backend-neutral work units, explicit stable work plans/revisions, phases and monotonic
+elapsed evidence. Application computes throughput, ETA planning ranges/confidence and
+duration-weighted pipeline progress; backend ETA is not authoritative. These diagnostics
+and machine-local history never enter numerical recipes or artifact eligibility.
+Unknown/phase-only totals do not imply whole-stage percentages. Cached/skipped stages
+have zero remaining execution duration and never produce successful runtime samples.
+The [development contract](DEVELOPMENT.md#progress-and-eta-foundation) freezes estimator,
+history/privacy and throttling rules. SQLite status remains authoritative after crashes.
+
+Future M7 extraction reports completed views/MP and optional feature counts; matching
+and verification report completed pairs. Future M8 may expose reliably parsed loading,
+initialization, registration, triangulation, bundle-adjustment and finalization phases,
+but nonlinear work must retain absent/phase-scoped percent and unavailable or wide
+low/medium-confidence ETA. Future M11 trainers use completed/total iterations or steps.
+These requirements prepare the boundary; no M7/M8/training backend is implemented here.
+
 M1b1 implements one concrete deterministic route for contract testing:
 `fake.sequence` consumes literal `start` plus resolved `count` and publishes
 `fake.numbers`; `fake.scale` consumes that typed output plus resolved `factor` and

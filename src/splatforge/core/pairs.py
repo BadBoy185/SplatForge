@@ -494,6 +494,7 @@ def generate_pairs(
     explicit_pairs: tuple[PairEndpoints, ...] = (),
     checkpoint: Callable[[], None] = lambda: None,
     progress: Callable[[int], None] = lambda _count: None,
+    view_progress: Callable[[int], None] = lambda _count: None,
 ) -> tuple[PairRecord, ...]:
     """Bounded sparse traversal; exhaustive refuses before allocating any edges."""
     checkpoint()
@@ -532,6 +533,9 @@ def generate_pairs(
                 right = universe.views[right_index]
                 add(canonical_pair(left.view_id, right.view_id), ExhaustiveReason())
     else:
+        # Photos are classified as non-timeline inputs; they gain no chronology.
+        processed_views = sum(view.media_type != MediaType.VIDEO for view in universe.views)
+        view_progress(processed_views)
         for timeline, views in _timelines(universe).items():
             checkpoint()
             for index, left in enumerate(views):
@@ -556,6 +560,9 @@ def generate_pairs(
                     )
                 if index % 256 == 0:
                     checkpoint()
+                    view_progress(processed_views + index + 1)
+            processed_views += len(views)
+            view_progress(processed_views)
     if not edges:
         raise ValueError(
             "Sequential requires video chronology producing an edge; "

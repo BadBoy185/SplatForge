@@ -21,14 +21,21 @@ from splatforge.application.media_contracts import (
     SourceUnstableError,
     StrictSourceUnavailableError,
 )
+from splatforge.application.progress import ProgressSession, ProgressSupport
 from splatforge.application.projects import ProjectError
 from splatforge.application.views_contracts import (
     CandidateMaterializer,
     FFmpegCancelledError,
     FFmpegTeardownError,
+    MaterializationProgress,
     MaterializedFrame,
     QualityAssessor,
     ViewWorkspace,
+)
+from splatforge.application.work_models import (
+    analyzed_megapixels,
+    candidate_source_work,
+    views_progress_plan,
 )
 from splatforge.core.execution import (
     ArtifactHandle,
@@ -59,6 +66,7 @@ from splatforge.core.media import (
     VerificationResult,
 )
 from splatforge.core.process import ProcessInvocationEvidence
+from splatforge.core.progress import WorkMetric
 from splatforge.core.project import ProjectDocument
 from splatforge.core.quality import (
     QUALITY_ARTIFACT_CONTRACT_VERSION,
@@ -180,6 +188,8 @@ class ViewsService:
         materializer: CandidateMaterializer,
         workspace: ViewWorkspace,
         quality_assessor: QualityAssessor | None = None,
+        *,
+        progress: ProgressSupport | None = None,
     ) -> None:
         self._execution = execution_repository
         self._media = media_repository
@@ -187,6 +197,7 @@ class ViewsService:
         self._materializer = materializer
         self._workspace = workspace
         self._quality_assessor = quality_assessor
+        self._progress = progress or ProgressSupport()
 
     def prepare(
         self,
@@ -288,10 +299,17 @@ class ViewsService:
             )
             self._execution.create_run(root, snapshot)
             self._event(warnings, root, run_id, code="run.started")
+            progress = self._progress.session(
+                run_id, views_progress_plan(route, self._progress.hardware),
+                emit=lambda node, attempt, details: self._execution.append_event(
+                    root, run_id, code="progress.snapshot", node_id=node,
+                    attempt_id=attempt, details=details,
+                ),
+            )
             try:
                 self._checkpoint(root, snapshot, None)
                 candidate_handle, candidate = self._run_candidate(
-                    root, snapshot, warnings, cache_hits
+                    root, snapshot, warnings, cache_hits, progress
                 )
                 candidate_count = len(candidate.views)
                 self._checkpoint(root, snapshot, None)
@@ -303,6 +321,7 @@ class ViewsService:
                         candidate,
                         warnings,
                         cache_hits,
+                        progress,
                     )
                     quality_measured_count = sum(
                         item.sharpness.availability == MeasurementAvailability.AVAILABLE
@@ -319,6 +338,7 @@ class ViewsService:
                         quality,
                         warnings,
                         cache_hits,
+                        progress,
                     )
                     selected_count = selected.total_selected_count
                     rejected_count = selected.total_rejected_count
@@ -331,6 +351,7 @@ class ViewsService:
                         candidate,
                         warnings,
                         cache_hits,
+                        progress,
                     )
                     selected_count = selected.total_selected_count
                 self._checkpoint(root, snapshot, None)
@@ -407,7 +428,9 @@ class ViewsService:
             selected_count=selected_count,
             rejected_count=rejected_count,
             unsatisfied_interval_count=unsatisfied_interval_count,
-            warnings=tuple(warnings),
+            warnings=tuple(warnings) + tuple(
+                RunWarning(code=code, message=code) for code in progress.snapshot().warnings
+            ),
         )
 
     def _run_candidate(
@@ -416,6 +439,7 @@ class ViewsService:
         snapshot: RunSnapshot,
         warnings: list[RunWarning],
         cache_hits: list[str],
+        progress: ProgressSession,
     ) -> tuple[ArtifactHandle, CandidateViewSet]:
         route = self._view_route(snapshot)
         node = route.candidate
@@ -454,6 +478,7 @@ class ViewsService:
                     "fresh_source_verification": False,
                 },
             )
+            progress.cached(node.node_id)
             return cached.artifact, candidate
 
         self._event(
@@ -486,6 +511,7 @@ class ViewsService:
         bridge = _OwnerCancellationBridge(
             self._execution, root, snapshot.run_id, attempt.attempt_id
         )
+        progress.start(node.node_id, attempt.attempt_id)
         verification_entries: list[dict[str, object]] = []
         invocation_index = 0
 
@@ -524,6 +550,7 @@ class ViewsService:
                 verification_entries,
                 warnings,
                 record_process,
+                progress,
             )
             bridge.checkpoint()
             self._execution.update_attempt_provenance(
@@ -602,6 +629,10 @@ class ViewsService:
                 "candidate_count": len(candidate.views),
             },
         )
+        progress.complete(
+            node.node_id,
+            actual_plan=views_progress_plan(route, self._progress.hardware, candidate)[0],
+        )
         return artifact, candidate
 
     def _materialize_candidate_set(
@@ -615,12 +646,15 @@ class ViewsService:
         verification_entries: list[dict[str, object]],
         warnings: list[RunWarning],
         evidence_sink: Callable[[ProcessInvocationEvidence], None],
+        progress: ProgressSession,
     ) -> CandidateViewSet:
         route = self._view_route(snapshot)
         self._workspace.prepare_candidate(workspace)
         source_estimates = {item.source_id: item for item in estimate.sources}
         views: list[CandidateView] = []
         payload_bytes = 0
+        source_work = candidate_source_work(route)
+        completed_work = 0.0
         for source_index, source in enumerate(route.sources):
             bridge.checkpoint()
             self._event(
@@ -637,6 +671,17 @@ class ViewsService:
                 },
             )
             source_output = self._workspace.source_output_directory(workspace, source_index)
+
+            def source_progress(
+                observation: MaterializationProgress, *, base: float = completed_work,
+                amount: float = source_work[source_index],
+            ) -> None:
+                fraction = min(1, max(0, observation.processed_source_seconds / (
+                    observation.total_source_seconds or 1
+                )))
+                progress.report(route.candidate.node_id,
+                                base + amount * fraction)
+
             frames = self._consume_verified_source(
                 root,
                 snapshot,
@@ -646,6 +691,7 @@ class ViewsService:
                 bridge,
                 verification_entries,
                 evidence_sink,
+                source_progress,
             )
             source_estimate = source_estimates[source.source_id]
             if len(frames) > source_estimate.candidate_count:
@@ -735,6 +781,8 @@ class ViewsService:
                 raise ValueError("Actual candidate count exceeds max_candidates")
             if payload_bytes > route.resource_limits.max_candidate_bytes:
                 raise ValueError("Actual candidate payload bytes exceed max_candidate_bytes")
+            completed_work += source_work[source_index]
+            progress.report(route.candidate.node_id, completed_work)
             self._event(
                 warnings,
                 root,
@@ -785,6 +833,7 @@ class ViewsService:
         bridge: _OwnerCancellationBridge,
         verification_entries: list[dict[str, object]],
         evidence_sink: Callable[[ProcessInvocationEvidence], None],
+        progress_sink: Callable[[MaterializationProgress], None],
     ) -> tuple[MaterializedFrame, ...]:
         route = self._view_route(snapshot)
         path = Path(source.external_locator)
@@ -889,6 +938,7 @@ class ViewsService:
                     expected_backend=route.ffmpeg_backend,
                     cancellation=bridge,
                     evidence_sink=evidence_sink,
+                    progress_sink=progress_sink,
                 )
                 lease_after = lease.current_evidence()
                 path_after = self._sources.evidence(path)
@@ -1007,6 +1057,7 @@ class ViewsService:
         candidate: CandidateViewSet,
         warnings: list[RunWarning],
         cache_hits: list[str],
+        progress: ProgressSession,
     ) -> tuple[ArtifactHandle, QualityReport]:
         route = snapshot.route
         if not isinstance(route, SharpestViewPreparationRoute):
@@ -1045,6 +1096,7 @@ class ViewsService:
                 node_id=node.node_id,
                 details={"artifact_id": str(cached.artifact.artifact_id)},
             )
+            progress.cached(node.node_id)
             return cached.artifact, quality
 
         self._event(
@@ -1084,8 +1136,12 @@ class ViewsService:
         if self._quality_assessor is None:
             raise AssertionError("M4 route was built without a quality assessor")
         candidate_directory = self._execution.artifact_directory(root, candidate_artifact)
+        progress.start(node.node_id, attempt.attempt_id, views_progress_plan(
+            route, self._progress.hardware, candidate
+        )[1])
         measurements = []
         unavailable = 0
+        completed_mp = 0.0
         try:
             for index, view in enumerate(candidate.views):
                 self._checkpoint(root, snapshot, attempt.attempt_id)
@@ -1098,7 +1154,13 @@ class ViewsService:
                 if measurement.sharpness.availability == MeasurementAvailability.UNAVAILABLE:
                     unavailable += 1
                 completed = index + 1
-                if completed == len(candidate.views) or completed % 50 == 0:
+                completed_mp += analyzed_megapixels(
+                    view.width, view.height, node.settings.quality_max_side
+                )
+                progress.report(node.node_id, completed_mp, diagnostics=(
+                    WorkMetric(name="completed_views", value=completed),
+                ))
+                if completed == len(candidate.views):
                     self._event(
                         warnings,
                         root,
@@ -1157,6 +1219,7 @@ class ViewsService:
                 "unavailable_count": unavailable,
             },
         )
+        progress.complete(node.node_id)
         return artifact, quality
 
     def _run_sharpest_selection(
@@ -1169,6 +1232,7 @@ class ViewsService:
         quality: QualityReport,
         warnings: list[RunWarning],
         cache_hits: list[str],
+        progress: ProgressSession,
     ) -> tuple[ArtifactHandle, SharpestSelectedViewSet]:
         route = snapshot.route
         if not isinstance(route, SharpestViewPreparationRoute):
@@ -1214,6 +1278,7 @@ class ViewsService:
                 node_id=node.node_id,
                 details={"artifact_id": str(cached.artifact.artifact_id)},
             )
+            progress.cached(node.node_id)
             return cached.artifact, selected
 
         self._event(
@@ -1258,6 +1323,9 @@ class ViewsService:
                 recipe_key=quality_artifact.recipe_key,
             ),
         )
+        progress.start(node.node_id, attempt.attempt_id, views_progress_plan(
+            route, self._progress.hardware, candidate
+        )[-1])
         try:
             selected = select_sharpest_interval(
                 candidate,
@@ -1266,6 +1334,7 @@ class ViewsService:
                 quality_artifact=quality_artifact,
                 settings=node.settings,
                 checkpoint=lambda: self._checkpoint(root, snapshot, attempt.attempt_id),
+                progress=lambda count: progress.report(node.node_id, count),
             )
             self._workspace.write_selected_metadata(Path(attempt.workspace), selected)
             self._checkpoint(root, snapshot, attempt.attempt_id)
@@ -1312,6 +1381,7 @@ class ViewsService:
             attempt_id=attempt.attempt_id,
             details={"artifact_id": str(artifact.artifact_id)},
         )
+        progress.complete(node.node_id)
         return artifact, selected
 
     def _run_selection(
@@ -1322,6 +1392,7 @@ class ViewsService:
         candidate: CandidateViewSet,
         warnings: list[RunWarning],
         cache_hits: list[str],
+        progress: ProgressSession,
     ) -> tuple[ArtifactHandle, SelectedViewSet]:
         route = self._view_route(snapshot)
         node = route.selection
@@ -1357,6 +1428,7 @@ class ViewsService:
                 node_id=node.node_id,
                 details={"artifact_id": str(cached.artifact.artifact_id)},
             )
+            progress.cached(node.node_id)
             return cached.artifact, selected
         self._event(
             warnings,
@@ -1389,11 +1461,16 @@ class ViewsService:
                 recipe_key=candidate_artifact.recipe_key,
             ),
         )
+        progress.start(node.node_id, attempt.attempt_id, views_progress_plan(
+            route, self._progress.hardware, candidate
+        )[-1])
         try:
             selected = select_fixed_fps(
                 candidate,
                 candidate_artifact=candidate_artifact,
                 settings=node.settings,
+                checkpoint=lambda: self._checkpoint(root, snapshot, attempt.attempt_id),
+                progress=lambda count: progress.report(node.node_id, count),
             )
             self._workspace.write_selected_metadata(Path(attempt.workspace), selected)
             self._checkpoint(root, snapshot, attempt.attempt_id)
@@ -1430,6 +1507,7 @@ class ViewsService:
                 "selected_count": selected.total_selected_count,
             },
         )
+        progress.complete(node.node_id)
         return artifact, selected
 
     def _checkpoint(self, root: Path, snapshot: RunSnapshot, attempt_id: UUID | None) -> None:

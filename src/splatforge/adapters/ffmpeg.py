@@ -7,10 +7,12 @@ import re
 import sys
 import time
 import warnings
+from collections.abc import Callable
 from contextlib import suppress
 from fractions import Fraction
 from pathlib import Path
 from typing import Never
+from uuid import uuid4
 
 from splatforge.adapters.process_diagnostics import ProcessEvidenceSink, invocation_evidence
 from splatforge.adapters.process_runner import (
@@ -29,6 +31,7 @@ from splatforge.application.views_contracts import (
     FFmpegOutputError,
     FFmpegTeardownError,
     FFmpegTimeoutError,
+    MaterializationProgress,
     MaterializedFrame,
 )
 from splatforge.core.media import ExecutableIdentity, MediaType, SourceOccurrence
@@ -68,11 +71,13 @@ class FFmpegAdapter:
         executable: str | None = None,
         version_timeout_seconds: float = 10.0,
         max_metadata_bytes: int = 8 * 1024 * 1024,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._runner = runner or LocalProcessRunner()
         self._executable = executable or os.environ.get("SPLATFORGE_FFMPEG") or "ffmpeg"
         self._version_timeout_seconds = version_timeout_seconds
         self._max_metadata_bytes = max_metadata_bytes
+        self._monotonic = monotonic
         self._backend: ExecutableIdentity | None = None
 
     def identity(
@@ -119,6 +124,7 @@ class FFmpegAdapter:
         expected_backend: ExecutableIdentity,
         cancellation: ProcessCancellation | None = None,
         evidence_sink: ProcessEvidenceSink | None = None,
+        progress_sink: Callable[[MaterializationProgress], None] | None = None,
     ) -> tuple[MaterializedFrame, ...]:
         absolute = source_path.absolute()
         output_directory.mkdir(parents=True, exist_ok=False)
@@ -179,6 +185,14 @@ class FFmpegAdapter:
                     str(settings.encoding.png_compression_level),
                 )
             )
+        progress_path = output_directory.parent / f".ffmpeg-progress-{uuid4().hex}"
+        progress_reader = None
+        if progress_sink is not None and source.media_type == MediaType.VIDEO:
+            progress_reader = FFmpegProgressReader(
+                progress_path, float(Fraction(source.probe.duration)), progress_sink,
+                monotonic=self._monotonic,
+            )
+            argv.extend(("-nostats", "-progress", str(progress_path)))
         argv.append(str(pattern))
         request = ProcessRequest(
             executable=expected_backend.resolved_path,
@@ -217,7 +231,12 @@ class FFmpegAdapter:
                     )
 
         try:
-            result = self._runner.run(request, cancellation=cancellation)
+            if progress_reader is None:
+                result = self._runner.run(request, cancellation=cancellation)
+            else:
+                result = self._runner.run(
+                    request, cancellation=cancellation, poll=progress_reader.poll,
+                )
         except ExecutableNotFoundError as exc:
             record(error=exc)
             raise FFmpegMissingError(
@@ -232,6 +251,11 @@ class FFmpegAdapter:
         except Exception as exc:
             record(error=exc)
             raise
+        finally:
+            if progress_reader is not None:
+                progress_reader.poll_safely()
+                with suppress(OSError):
+                    progress_path.unlink(missing_ok=True)
         record(result=result)
         self._require_success(result, version_probe=False)
         if not self._same_binary(expected_backend, result.executable):
@@ -324,6 +348,79 @@ class FFmpegAdapter:
             raise FFmpegBackendError(
                 f"FFmpeg {action} exited with code {result.exit_code}{detail}"
             )
+
+
+class FFmpegProgressReader:
+    """Bounded structured -progress parser; never reads human stats or frame names.
+
+    out_time is normalized to the first reported output time: -copyts/non-zero PTS
+    cannot turn a source origin into completed work. This deliberately undercounts
+    work before the first observation. Only progress=end fills that conservative gap.
+    VFR is measured in presentation duration, never nominal frame count.
+    """
+
+    def __init__(
+        self, path: Path, total_seconds: float,
+        sink: Callable[[MaterializationProgress], None], *,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.path = path
+        self.total = total_seconds
+        self._sink = sink
+        self._clock = monotonic
+        self._started = monotonic()
+        self._offset = 0
+        self._pending = b""
+        self._fields: dict[bytes, bytes] = {}
+        self._origin: int | None = None
+        self._completed = 0.0
+        self._warned = False
+
+    def poll_safely(self) -> None:
+        try:
+            self.poll()
+        except Exception:
+            if not self._warned:
+                self._warned = True
+                with suppress(RuntimeWarning):
+                    warnings.warn("FFmpeg progress unavailable", RuntimeWarning, stacklevel=2)
+
+    def poll(self) -> None:
+        if not self.path.exists():
+            return
+        with self.path.open("rb") as stream:
+            stream.seek(self._offset)
+            data = stream.read(64 * 1024)
+        self._offset += len(data)
+        self.feed(data)
+
+    def feed(self, data: bytes) -> None:
+        lines = (self._pending + data[:64 * 1024]).split(b"\n")
+        self._pending = lines.pop()[-1024:]
+        for line in lines:
+            key, separator, value = line.rstrip(b"\r").partition(b"=")
+            if not separator or len(key) > 64 or len(value) > 256:
+                continue
+            if key != b"progress":
+                if len(self._fields) < 32:
+                    self._fields[key] = value
+                continue
+            raw = self._fields.get(b"out_time_us")
+            self._fields.clear()
+            try:
+                microseconds = int(raw)
+            except (ValueError, TypeError, OverflowError):
+                continue
+            if self._origin is None:
+                self._origin = microseconds
+            completed = max(0, min(self.total, (microseconds - self._origin) / 1_000_000))
+            if value == b"end":
+                completed = self.total
+            self._completed = max(self._completed, completed)
+            self._sink(MaterializationProgress(
+                processed_source_seconds=self._completed, total_source_seconds=self.total,
+                elapsed_seconds=max(0, self._clock() - self._started),
+            ))
 
 
 class FractionText:

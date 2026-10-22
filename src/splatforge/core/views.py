@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from enum import StrEnum
 from fractions import Fraction
 from pathlib import PurePosixPath, PureWindowsPath
@@ -724,6 +724,8 @@ def select_fixed_fps(
     *,
     candidate_artifact: ArtifactHandle,
     settings: FixedFpsSettings,
+    checkpoint: Callable[[], None] | None = None,
+    progress: Callable[[int], None] | None = None,
 ) -> SelectedViewSet:
     """Select photos once and video candidates nearest independent per-source grids."""
 
@@ -739,8 +741,11 @@ def select_fixed_fps(
     unsatisfied: list[UnsatisfiedSlot] = []
     counts: list[SourceSelectionCount] = []
     target_step = Fraction(1, 1) / settings.target_fps.as_fraction()
+    processed_views = 0
 
     for source_key in sorted(grouped):
+        if checkpoint is not None:
+            checkpoint()
         source_views = grouped[source_key]
         photos = sorted(
             (view for view in source_views if view.media_type == MediaType.PHOTO),
@@ -789,6 +794,11 @@ def select_fixed_fps(
                 (first_time + index * target_step for index in range(slot_count)),
             )
             for slot_index, nearest_index in enumerate(nearest_indices):
+                if slot_index % 256 == 0:
+                    if checkpoint is not None:
+                        checkpoint()
+                    if progress is not None:
+                        progress(processed_views + len(photos) + nearest_index + 1)
                 target = first_time + slot_index * target_step
                 actual, nearest = timeline[nearest_index]
                 if nearest.view_id in used:
@@ -818,6 +828,9 @@ def select_fixed_fps(
                     )
                 )
                 source_selected += 1
+        processed_views += len(source_views)
+        if progress is not None:
+            progress(processed_views)
         first = source_views[0]
         counts.append(
             SourceSelectionCount(

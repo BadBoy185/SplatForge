@@ -3,7 +3,7 @@
 ## Status and product boundary
 
 This document describes the target architecture and the boundaries that implemented
-milestones must preserve. M0-M6 provide the current local persistence, media, execution,
+milestones must preserve. M0-M6.5 provide the current local persistence, media, execution,
 view/quality selection, capability-diagnostic and PairSet foundations; later contracts
 remain staged by the [roadmap](ROADMAP.md). The historical
 [review](docs/ARCHITECTURE_REVIEW.md) records the reasoning behind the foundation and
@@ -277,6 +277,28 @@ process or lock implementation. No service, distributed scheduler, event-sourcin
 platform or cross-project cache is required now.
 Stage-boundary restart is required from the first processing milestone. Backend
 checkpoint resume is an additional capability, not a universal promise.
+
+## Progress and runtime estimation
+
+M6.5 makes semantic progress application/execution state shared by CLI, future desktop,
+API and web clients. Core owns immutable versioned work descriptions, observations,
+snapshots, ETA/confidence and performance signatures. Application owns live estimation,
+duration-weighted pipeline aggregation and successful-sample eligibility. Adapters own
+hardware classification, private history persistence and backend progress extraction.
+Clients only render these values; no widget or transport belongs to the contracts.
+
+ETA is derived diagnostic evidence, never numerical identity. History cannot select a
+method, change settings, recipe keys, semantic digests, outputs or cache eligibility.
+Deleting it only removes prediction evidence. The executing worker's hardware/runtime
+classifies each sample; today's worker is local. Future remote workers can emit the same
+observations without assuming that a desktop client performed the work. This preserves
+the deployment options above without adding remote execution or scheduling.
+
+Stages without a defensible total expose indeterminate or phase-scoped work. Mapping
+must not invent linear percentages; future backend evidence may justify wide planning
+ranges at low/medium confidence. M7 feature/matching/verification and M11 managed training
+must integrate with this foundation. Their backends and estimates remain unimplemented.
+See [work models and estimator rules](docs/DEVELOPMENT.md#progress-and-eta-foundation).
 
 ## Training, legacy work and future inputs
 

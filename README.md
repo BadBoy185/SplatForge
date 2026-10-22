@@ -16,7 +16,8 @@ inputs come later through preprocessing into perspective views.
 
 The repository contains configuration models, a method catalog, safe local project
 persistence, the M1b2 fake-stage execution/recovery slice, M2 media ingest, the M3
-candidate-view/fixed-FPS route, M4 quality-aware selection and M6 deterministic PairSet construction. The CLI
+candidate-view/fixed-FPS route, M4 quality-aware selection, M6 deterministic PairSet
+construction and the M6.5 progress/ETA foundation. The CLI
 can create/show projects, upgrade historical state v1/v2/v3 to v4, register/list/verify/
 relink ordinary JPEG/PNG/MP4/MOV sources, and execute or inspect the deterministic fake
 route. `views prepare` materializes bounded JPEG/PNG candidate pixels from registered
@@ -49,6 +50,17 @@ Fixed-FPS selection uses an exact ordered sweep with bounded target expansion.
 Artifact integrity checks share results only within one command. M3 attempts retain
 bounded local FFmpeg invocation diagnostics; `run show` lists their path, retained
 invocation count and truncation status without printing backend logs.
+
+M6.5 adds application-owned stage/pipeline progress, throughput, elapsed time and
+versioned ETA planning ranges/confidence. `run progress <project> <run-id> [--json]`
+reads current committed lifecycle plus bounded progress evidence without a writer lock.
+FFmpeg emits structured live progress; quality, selectors and pairs share the same
+contract. Cached/skipped stages have zero remaining execution time. Without history,
+ETA starts unavailable and refines from live throughput; unknown totals stay explicit.
+Private successful runtime history lives outside projects in
+`%LOCALAPPDATA%/SplatForge/performance.sqlite`. `performance show [--json]` inspects its
+anonymous signature aggregates; `performance reset` clears samples without changing
+project artifacts or cache. History failure only reduces prediction evidence.
 
 These commands work in the foundation:
 

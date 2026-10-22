@@ -190,6 +190,7 @@ class FakeMaterializer:
         expected_backend: ExecutableIdentity,
         cancellation=None,
         evidence_sink=None,
+        progress_sink=None,
     ) -> tuple[MaterializedFrame, ...]:
         absolute = source_path.absolute()
         assert absolute in self.source_files.active
@@ -362,7 +363,7 @@ def test_same_service_reobserves_ffmpeg_before_cache_lookup(
     probes = []
 
     class VersionRunner:
-        def run(self, request, *, cancellation=None):  # type: ignore[no-untyped-def]
+        def run(self, request, *, cancellation=None, poll=None):  # type: ignore[no-untyped-def]
             identity = value.materializer.backend
             probes.append(identity)
             return ProcessResult(

@@ -64,7 +64,7 @@ def setup_route(tmp_path: Path, *, mode: str = "succeeded"):
         )
 
     class CapturingRunner(FakeRunner):
-        def run(self, request, *, cancellation=None):
+        def run(self, request, *, cancellation=None, poll=None):
             nonlocal active_cancellation
             active_cancellation = cancellation
             return super().run(request, cancellation=cancellation)

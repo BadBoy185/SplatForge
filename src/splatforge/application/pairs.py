@@ -13,6 +13,8 @@ from splatforge.application.execution import (
     PublicationUnresolvedError,
     StateUpgradeRequiredError,
 )
+from splatforge.application.progress import ProgressSupport
+from splatforge.application.work_models import pairs_progress_plan
 from splatforge.core.execution import (
     ArtifactHandle,
     FailureCategory,
@@ -78,9 +80,13 @@ class PairsRunResult(FrozenModel):
 
 
 class PairsService:
-    def __init__(self, repository: PairRepository, workspace: PairWorkspace) -> None:
+    def __init__(
+        self, repository: PairRepository, workspace: PairWorkspace, *,
+        progress: ProgressSupport | None = None,
+    ) -> None:
         self._repository = repository
         self._workspace = workspace
+        self._progress = progress or ProgressSupport()
 
     def build(
         self,
@@ -140,6 +146,13 @@ class PairsService:
             )
             key = key_function(universe, settings, explicit_pairs)
             repo.create_run(root, snapshot)
+            progress = self._progress.session(
+                run_id, (pairs_progress_plan(route, self._progress.hardware),),
+                emit=lambda node, attempt, details: repo.append_event(
+                    root, run_id, code="progress.snapshot", node_id=node,
+                    attempt_id=attempt, details=details,
+                ),
+            )
 
             def event(code: str, **details: object) -> None:
                 warning = repo.append_event(
@@ -191,6 +204,7 @@ class PairsService:
                     handle = cached.artifact
                     cache_hit = True
                     event("pairs.stage.cache_hit", artifact_id=str(handle.artifact_id))
+                    progress.cached(route.node_id)
                 else:
                     event("pairs.stage.cache_miss", reasons=[v.reason for v in cached.ineligible])
                     attempt = repo.begin_attempt(
@@ -208,13 +222,17 @@ class PairsService:
                         source_verification={"policy": "not_applicable", "evidence": []},
                     )
                     event("pairs.stage.started")
+                    progress.start(route.node_id, attempt.attempt_id)
                     pairs = generate_pairs(
                         universe,
                         settings=settings,
                         limits=resource_limits,
                         explicit_pairs=explicit_pairs,
                         checkpoint=checkpoint,
-                        progress=lambda count: event("pairs.stage.progress", pair_count=count),
+                        progress=(lambda count: progress.report(route.node_id, count))
+                        if isinstance(settings, ExhaustiveSettings) else lambda _count: None,
+                        view_progress=(lambda count: progress.report(route.node_id, count))
+                        if isinstance(settings, SequentialSettings) else lambda _count: None,
                     )
                     event("pairs.stage.progress", pair_count=len(pairs))
                     checkpoint()
@@ -246,6 +264,9 @@ class PairsService:
                         input_lineage=route.input_lineage(),
                     )
                     event("pairs.stage.published", artifact_id=str(handle.artifact_id))
+                    progress.complete(route.node_id, actual_plan=pairs_progress_plan(
+                        route, self._progress.hardware, generated_pair_count=len(pairs),
+                    ))
                 checkpoint()
                 repo.mark_run_succeeded(root, run_id=run_id)
                 status = "succeeded"
@@ -293,6 +314,8 @@ class PairsService:
             pair_set_artifact=handle,
             cache_hit=cache_hit,
             selected_view_count=len(universe.views),
-            warnings=tuple(event_warnings) + (() if payload is None else payload.coverage.warnings),
+            warnings=tuple(event_warnings) + progress.snapshot().warnings + (
+                () if payload is None else payload.coverage.warnings
+            ),
             **counts,
         )

@@ -178,6 +178,23 @@ is independent of local features. Retrieval remains M7c; spatial pairing remains
 The dedicated pre-M7 scalability/operability pass is complete. Its regression and
 diagnostic contracts are documented in [DEVELOPMENT.md](docs/DEVELOPMENT.md#structured-events-and-diagnostics).
 
+## M6.5 — Progress and ETA foundation
+
+Status: implemented. This cross-cutting foundation follows M6
+and the completed pre-M7 scalability/operability pass. It adds typed backend-neutral
+progress, monotonic runtime measurement, duration-weighted pipeline aggregation,
+pre-run estimation of resolved plans, private machine-local history and versioned
+hybrid throughput ETA with planning ranges and explainable confidence. M3 FFmpeg,
+M4 quality/fixed/sharpest selection and M6 Sequential/Exhaustive pair generation use it.
+CLI inspection is one-shot; no GUI, service or remote execution is added.
+
+Acceptance covers deterministic clocks, cold/live/historical learning, compatibility,
+dispersion, spikes/stalls, unknown stages, cache/skips, monotonic display aggregation,
+history privacy/retention/failures, cancellation, old runs and structured FFmpeg progress.
+M7 must report views/MP and pairs; M8 must preserve nonlinear/indeterminate progress;
+M11 managed trainers must report iterations/steps through the same contract. Their
+backends and estimates are still planned. Numerical schema versions remain unchanged.
+
 ## M7 — features, matching and geometric verification
 
 Deliver feature extraction as M7a and matching/verification as M7b, followed by M7c.

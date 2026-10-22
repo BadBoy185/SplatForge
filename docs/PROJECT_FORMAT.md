@@ -78,6 +78,21 @@ indexes and their relationships at M1b. Do not put descriptor arrays, media or r
 log streams into application state. JSONL events support diagnosis, not event-sourced
 reconstruction of the whole database.
 
+M6.5 adds diagnostic `progress.snapshot` events with independently versioned immutable
+observations and `PipelineProgressSnapshot` v1. They contain derived ETA/range/confidence
+and display aggregation, not authoritative stage success. Read-only clients reconcile
+the latest bounded event evidence with SQLite run/attempt/output status; stale or
+accepted-cancellation evidence cannot keep an active ETA or authorize recovery.
+Existing JSONL is never rewritten; runs without progress report it unavailable.
+
+Machine-local performance history is outside the project, normally
+`%LOCALAPPDATA%/SplatForge/performance.sqlite`, with independent performance schema v1.
+It belongs to the executing worker, contains no source/project identity or paths and
+is best-effort. Removing/resetting it cannot change artifacts, recipes or cache reuse.
+It is absent from `project.json`, `state.sqlite`, manifests and run recipes. Numerical
+project/config/state/CandidateViewSet/QualityReport/SelectedViewSet/PairSet versions
+are unchanged. See [progress rules](DEVELOPMENT.md#progress-and-eta-foundation).
+
 ### Implemented project and state formats through M4
 
 `project.json` uses `project_format_version: 1`, a UUID `project_id`, `revision`,

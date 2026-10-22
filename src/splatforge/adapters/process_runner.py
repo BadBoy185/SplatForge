@@ -11,7 +11,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -418,6 +418,7 @@ class LocalProcessRunner:
         request: ProcessRequest,
         *,
         cancellation: ProcessCancellation | None = None,
+        poll: Callable[[], None] | None = None,
     ) -> ProcessResult:
         if request.timeout_seconds <= 0 or request.teardown_timeout_seconds <= 0:
             raise ValueError("Process timeouts must be positive")
@@ -516,6 +517,7 @@ class LocalProcessRunner:
             process.stdin.flush()
             process.stdin.close()
             deadline = started + request.timeout_seconds
+            next_poll = started
             while process.poll() is None:
                 if cancellation is not None and cancellation.is_cancelled():
                     cancelled = True
@@ -527,6 +529,10 @@ class LocalProcessRunner:
                     forced_tree_termination = True
                     self._terminate(process, job)
                     break
+                if poll is not None and time.monotonic() >= next_poll:
+                    if not self._poll_safely(poll):
+                        poll = None
+                    next_poll = time.monotonic() + .25
                 time.sleep(0.02)
             process.wait(timeout=request.teardown_timeout_seconds)
             if not timed_out and not cancelled:
@@ -609,6 +615,19 @@ class LocalProcessRunner:
             teardown_confirmed=teardown_confirmed,
             forced_tree_termination=forced_tree_termination,
         )
+
+    @staticmethod
+    def _poll_safely(poll: Callable[[], None]) -> bool:
+        try:
+            poll()
+            return True
+        except Exception:
+            # Optional telemetry must not interrupt owned-process teardown or output.
+            import warnings
+
+            with suppress(RuntimeWarning):
+                warnings.warn("Process progress callback failed", RuntimeWarning, stacklevel=2)
+            return False
 
     @staticmethod
     def _terminate(process: subprocess.Popen[bytes], job: _WindowsJob | None) -> None:

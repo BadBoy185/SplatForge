@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -14,7 +15,9 @@ from splatforge.bootstrap import (
     build_execution_service,
     build_media_service,
     build_pairs_service,
+    build_performance_service,
     build_project_service,
+    build_run_progress_service,
     build_views_service,
 )
 from splatforge.core import build_builtin_registry, recommended_flat_video_profile
@@ -25,6 +28,7 @@ from splatforge.core.pairs import (
     SequentialSettings,
     parse_explicit_pair,
 )
+from splatforge.core.progress import EtaEstimate
 from splatforge.core.quality import (
     QualityAnalysisSettings,
     SharpestIntervalSettings,
@@ -54,6 +58,82 @@ app.add_typer(views_app, name="views")
 
 pairs_app = typer.Typer(no_args_is_help=True, help="Deterministic candidate view graphs")
 app.add_typer(pairs_app, name="pairs")
+performance_app = typer.Typer(no_args_is_help=True, help="Private local runtime history")
+app.add_typer(performance_app, name="performance")
+
+
+def _eta_text(eta: EtaEstimate) -> str:
+    if eta.likely_seconds is None:
+        return "ETA unavailable"
+    if eta.likely_seconds == 0:
+        return "0s"
+    divisor, unit = (60, "min") if eta.upper_seconds >= 120 else (1, "s")
+    lower = math.floor(eta.lower_seconds / divisor)
+    upper = math.ceil(eta.upper_seconds / divisor)
+    return f"~{lower}–{upper} {unit} · {eta.confidence.value} confidence"
+
+
+@run_app.command("progress")
+def run_progress(
+    path: Path, run_id: UUID, json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    try:
+        snapshot = build_run_progress_service().get(path, run_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(snapshot.model_dump_json(indent=2))
+        return
+    typer.echo(f"Run {snapshot.run_id}: {snapshot.status} · "
+               f"elapsed {snapshot.elapsed_seconds:.0f}s")
+    stage = snapshot.current_stage
+    if stage is not None:
+        total = "unknown" if stage.work.total is None else f"{stage.work.total:.1f}"
+        fraction = "unavailable" if stage.fraction is None else f"{stage.fraction:.0%}"
+        speed = "unavailable" if stage.throughput is None else (
+            f"{stage.throughput:.3g} {stage.throughput_unit.value}/s"
+        )
+        typer.echo(f"Stage {stage.work.stage_id} / {stage.phase_code or 'unknown phase'}: "
+                   f"{stage.completed:.1f}/{total} {stage.work.unit.value} · {fraction}")
+        typer.echo(f"Speed {speed} · elapsed {stage.elapsed_seconds:.0f}s · {_eta_text(stage.eta)}")
+        if stage.stale:
+            typer.echo(f"Last observation is stale ({stage.observation_age_seconds:.0f}s old)")
+    else:
+        typer.echo("Current stage: unavailable")
+    fraction = "unavailable" if snapshot.fraction is None else f"{snapshot.fraction:.0%}"
+    typer.echo(f"Pipeline {fraction} · {_eta_text(snapshot.eta)}")
+    typer.echo(f"Cached: {', '.join(snapshot.cached_stages) or 'none'}")
+    typer.echo(f"Skipped: {', '.join(snapshot.skipped_stages) or 'none'}")
+    typer.echo(f"Unknown ETA stages: {', '.join(snapshot.unknown_stages) or 'none'}")
+    if snapshot.warnings:
+        typer.echo(f"Warnings: {', '.join(snapshot.warnings)}")
+
+
+@performance_app.command("show")
+def performance_show(json_output: bool = typer.Option(False, "--json")) -> None:
+    statistics = build_performance_service().show()
+    if json_output:
+        typer.echo(statistics.model_dump_json(indent=2))
+    else:
+        typer.echo(f"Performance schema v1 · {statistics.sample_count} successful samples")
+        for signature in statistics.signatures:
+            typer.echo(f"{signature.signature_key[:12]} {signature.signature.method_id}: "
+                       f"{signature.count} samples · "
+                       f"median {signature.median_throughput:.3g} "
+                       f"{signature.signature.unit.value}/s · "
+                       f"range {signature.lower_throughput:.3g}–{signature.upper_throughput:.3g}")
+        for warning in statistics.warnings:
+            typer.echo(warning, err=True)
+
+
+@performance_app.command("reset")
+def performance_reset() -> None:
+    warnings = build_performance_service().reset()
+    if warnings:
+        typer.echo(", ".join(warnings), err=True)
+        raise typer.Exit(code=1)
+    typer.echo("Local performance samples cleared")
 
 
 @project_app.command("create")
