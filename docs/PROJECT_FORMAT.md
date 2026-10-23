@@ -524,3 +524,24 @@ Incremental fixes one model, records all unregistered UUIDs and refuses multiple
 models. Caspar device identity and separate local/global BA choices are frozen producer
 provenance and recipe inputs. Recovery requires the exact route, recipe and lineage;
 matching output semantic digests do not authorize cross-mapper adoption. See [M8b1](M8B1.md).
+
+
+## M8b2 routes and comparison reports
+
+RunSnapshot schema 1 additionally supports mapping.hierarchical.run and
+mapping.global_accelerated.run. Existing mapping.run Global CPU v1 snapshots and recipe
+keys remain unchanged. No project/state or ReconstructionSet/Reader migration occurs.
+Hierarchy settings freeze internal Mapper controls separately from hierarchy controls;
+internal clusters/IDs are never persisted as public components. Final overlapping models
+fail publication/cache/recovery validation. Global v2 explicitly freezes independent GP/BA
+acceleration and concrete device/runtime identity; method remains mapping.colmap_global.
+Normal M8 publication/cache/lineage/recovery remains canonical across all mapper routes.
+
+Comparison plan/report schema 1 is small JSON containing exact M7 input digest, requested
+routes, normal run/artifact references, recipes, settings/calibration/backend/device/hardware,
+status, factual counts/durations/cache and refusal/failure evidence. Save CLI --json output
+explicitly; reports neither copy sparse payloads nor create a second cache. Benchmark labels,
+ordering, times, performance history and refusal limits do not affect numerical recipes.
+No selected winner/component or universal quality ranking is persisted. Native phase/GPU
+logs remain bounded attempt diagnostics outside immutable reconstruction payloads.
+See [M8b2](M8B2.md).

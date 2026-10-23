@@ -60,7 +60,11 @@ from splatforge.core.quality import (
 )
 from splatforge.core.reconstruction import (
     RECONSTRUCTION_ARTIFACT_TYPE,
+    GlobalAcceleratedBackend,
+    GlobalAcceleratedSettings,
     GlobalMapperSettings,
+    HierarchicalMapperSettings,
+    HierarchicalMappingBackend,
     IncrementalMapperSettings,
     IncrementalMappingBackend,
     MappingBackend,
@@ -724,6 +728,41 @@ class IncrementalMappingRoute(MappingRoute):
         return self
 
 
+class HierarchicalMappingRoute(IncrementalMappingRoute):
+    route_id: Literal["mapping.hierarchical.run"] = "mapping.hierarchical.run"
+    settings: HierarchicalMapperSettings
+    backend: HierarchicalMappingBackend
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> HierarchicalMappingRoute:
+        if (self.verification.artifact_type != GEOMETRY_ARTIFACT_TYPE
+                or self.verification.contract_version != 1
+                or self.backend.operation != "hierarchical_mapper"
+                or self.target != OutputReference(node_id=self.node_id,
+                    output_name="reconstruction", artifact_type=RECONSTRUCTION_ARTIFACT_TYPE,
+                    contract_version=1)):
+            raise ValueError("Hierarchical requires VerifiedGeometrySet v1 / final manager")
+        return self
+
+
+class GlobalAcceleratedRoute(MappingRoute):
+    route_id: Literal["mapping.global_accelerated.run"] = "mapping.global_accelerated.run"
+    settings: GlobalAcceleratedSettings
+    backend: GlobalAcceleratedBackend
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> GlobalAcceleratedRoute:
+        super().exact_contracts()
+        for requested, device in (
+            (self.settings.acceleration.positioning_device, self.backend.positioning_device),
+            (self.settings.acceleration.ba_device, self.backend.ba_device),
+        ):
+            if (requested != "cpu") != (device is not None) or (
+                    device is not None and device.index != requested):
+                raise ValueError("mapping.gpu_unresolved: frozen Global GPU differs")
+        return self
+
+
 class RunSnapshot(FrozenModel):
     schema_version: Literal[1] = 1
     run_id: UUID
@@ -735,7 +774,8 @@ class RunSnapshot(FrozenModel):
     route: Annotated[
         FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute
         | FeatureExtractionRoute | FeatureMatchingRoute | GeometricVerificationRoute
-        | RetrievalBuildRoute | MappingRoute | IncrementalMappingRoute,
+        | RetrievalBuildRoute | MappingRoute | IncrementalMappingRoute
+        | HierarchicalMappingRoute | GlobalAcceleratedRoute,
         Field(discriminator="route_id"),
     ]
 

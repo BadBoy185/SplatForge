@@ -341,7 +341,7 @@ def read_components(
         raise ValueError("mapping.zero_components: mapper returned no reconstruction components")
     members = [v for c in components for v in c.registered_view_ids]
     if len(members) != len(set(members)):
-        raise ValueError("mapping.universe_violation: Global components overlap")
+        raise ValueError("mapping.universe_violation: reconstruction components overlap")
     return tuple(sorted(components, key=lambda c: c.component_id.int))
 
 

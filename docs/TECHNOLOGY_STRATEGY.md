@@ -298,7 +298,9 @@ proposals.
 
 Retain the planned multi-mapper strategy rather than declaring one universal mapper.
 The roadmap splits implemented M8a Global/reader contracts and M8b1 explicit Incremental
-Ceres / capability-gated Caspar BA from future M8b2 Hierarchical, Global GPU and comparisons.
+Ceres / capability-gated Caspar BA, plus implemented M8b2 Hierarchical, separate Global
+GP/BA GPU capability routes and sequential comparisons. Technical M8 is complete;
+representative recommendation benchmarking remains pending.
 Incremental M8b1 fixes native multi-model false to preserve disjoint component semantics;
 it retains explicit unregistered views in the unchanged ReconstructionSet v1.
 
@@ -315,7 +317,7 @@ These points guide method selection; they do not add new acceptance criteria to 
 
 M8a implements the tested COLMAP >=4.2.1 Global route and ReconstructionSet/Reader;
 M8b1 adds Incremental/Caspar BA using verified cameras directly, without calibration.
-M8b2 retains Hierarchical, Global GPU and comparative benchmarking. The explicit M8a
+M8b2 implements Hierarchical, explicit Global GP/BA GPU routes and comparison infrastructure. The explicit M8a
 scope authorizes optional view_graph calibration only on
 a private mapping DB, with validated finite numerical state and deterministic result identity.
 The default remains preserve_priors. Device/EXIF/scene classification never enables it.
@@ -324,7 +326,11 @@ Calibration estimates are distinct from original priors and final optimized intr
 none is automatically called ground truth. Learned calibration remains out of scope.
 See [M8a contracts](M8A.md) and [M8b1](M8B1.md). Caspar is implemented but not compiled
 in the locally tested runtime; real Caspar validation remains false. GPU inventory is
-insufficient. M7c production VPR benchmarking proceeds independently.
+insufficient. The local Ceres build also lacks CUDA/cuDSS, so Global GPU remains
+unavailable and real validation false. Hierarchical overlapping internal clusters publish
+only through final native merging and disjoint membership validation. Tiny transport
+fixtures do not establish a mapper quality winner. See [M8b2](M8B2.md). M7c production
+VPR benchmarking proceeds independently.
 
 ## 8. M9: view-graph and reconstruction diagnostics
 

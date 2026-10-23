@@ -49,8 +49,8 @@ M7b adds explicit PairSet matching and separate geometric verification. LoMa,
 ALIKED/LightGlue and SIFT/brute-force are supported technology families; local
 availability and real integration validation are reported separately. M7c offline retrieval,
 M8a Global mapping and M8b1 single-model Incremental Ceres / capability-gated Caspar BA
-are implemented. Production VPR inference, M8b2 Hierarchical/Global GPU/comparison,
-training and GUI remain planned.
+and M8b2 Hierarchical / capability-gated Global GPU / mapper comparison are implemented.
+Production VPR inference, representative mapper recommendation, training and GUI remain pending.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 Fixed-FPS selection uses an exact ordered sweep with bounded target expansion.
@@ -330,9 +330,11 @@ unregistered views, disables sparse color extraction and uses verified cameras d
 Caspar is capability-gated Incremental BA, not a mapper, with PINHOLE/SIMPLE_RADIAL-only
 cameras and no Ceres fallback. The route is implemented; the existing local runtime lacks
 compiled Caspar, so real Caspar validation remains false. There is no automatic build/install.
-Hierarchical, Global GPU and comparative mapper benchmarks remain M8b2.
+M8b2 adds Hierarchical internal clustering/native merging, separate explicit Global GP/BA GPU
+gates and sequential mapper comparison. Final Hierarchical overlaps and requested GPU CPU
+fallback are refused. Technical M8 is complete; representative recommendation remains pending.
 M7c's production VPR benchmark remains pending independently; M9/M10 have not started.
-See [M8a contracts and verification](docs/M8A.md) and [M8b1](docs/M8B1.md).
+See [M8a](docs/M8A.md), [M8b1](docs/M8B1.md) and [M8b2 contracts/evidence](docs/M8B2.md).
 
 ## Intended workflow
 
@@ -348,8 +350,9 @@ dataset for use in an external trainer.
 - Feature technology ladder: LoMa, ALIKED + compatible LightGlue, and SIFT + brute-force;
   all remain supported. Simple profiles resolve a recorded route before execution;
   Advanced selection does not fall back. COLMAP Global Mapper is the implemented M8a preferred
-  mapper; M8b1 adds explicit Incremental Ceres / capability-gated Caspar BA. Hierarchical
-  and mapper recommendation research remain M8b2.
+  mapper; M8b1 adds explicit Incremental Ceres / capability-gated Caspar BA and M8b2
+  implements Hierarchical / explicit Global acceleration. Representative recommendation
+  benchmarking remains pending; no automatic fallback or universal winner is added.
 - Ordered video starts with within-clip Sequential pairs. Practical multi-video
   support combines these with cross-clip retrieval from M7c, before the complete CLI.
   Retrieval has explicit representation/index requirements independent of ALIKED.

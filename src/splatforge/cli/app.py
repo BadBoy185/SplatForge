@@ -55,7 +55,11 @@ from splatforge.core.quality import (
     parse_non_negative_rational,
 )
 from splatforge.core.reconstruction import (
+    GlobalAcceleratedSettings,
+    GlobalAccelerationSettings,
     GlobalMapperSettings,
+    HierarchicalClusterSettings,
+    HierarchicalMapperSettings,
     IncrementalMapperSettings,
     MappingCalibrationPolicy,
     MappingResourceLimits,
@@ -103,7 +107,8 @@ matches_app = typer.Typer(no_args_is_help=True, help="Raw matching of an exact P
 app.add_typer(matches_app, name="matches")
 verification_app = typer.Typer(no_args_is_help=True, help="Standalone geometric verification")
 app.add_typer(verification_app, name="verification")
-mapping_app = typer.Typer(no_args_is_help=True, help="Explicit Global or single-model Incremental")
+mapping_app = typer.Typer(
+    no_args_is_help=True, help="Explicit Global, Incremental or Hierarchical mapping")
 app.add_typer(mapping_app, name="mapping")
 sfm_app = typer.Typer(no_args_is_help=True, help="Feature/matching profile and Advanced planning")
 app.add_typer(sfm_app, name="sfm")
@@ -130,6 +135,11 @@ def mapping_run(
         None, "--ba-backend", help="Incremental: ceres or caspar"),
     gpu_index: int | None = typer.Option(
         None, "--gpu-index", help="Caspar concrete CUDA device index"),
+    global_positioning_device: str | None = typer.Option(None, "--global-positioning-device"),
+    global_ba_device: str | None = typer.Option(None, "--global-ba-device"),
+    num_workers: int | None = typer.Option(None, "--num-workers"),
+    image_overlap: int | None = typer.Option(None, "--image-overlap"),
+    leaf_max_num_images: int | None = typer.Option(None, "--leaf-max-num-images"),
     calibration: str = typer.Option("preserve-priors", "--calibration"),
     settings: Annotated[Path | None, typer.Option("--settings")] = None,
     calibration_settings: Annotated[Path | None, typer.Option("--calibration-settings")] = None,
@@ -144,17 +154,26 @@ def mapping_run(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     try:
-        if method not in {"global", "incremental"}:
+        if method not in {"global", "incremental", "hierarchical"}:
             raise ValueError(
-                "Choose explicit global or incremental mapping; Hierarchical is planned")
-        if method == "global" and (ba_backend is not None or gpu_index is not None):
+                "Choose explicit global, incremental or hierarchical mapping")
+        if method != "incremental" and (ba_backend is not None or gpu_index is not None):
             raise ValueError("--ba-backend and --gpu-index are Incremental-only settings")
         if settings and any(v is not None for v in (
-            min_model_size, num_threads, ba_backend, gpu_index,
+            min_model_size, num_threads, ba_backend, gpu_index, num_workers, image_overlap,
+            leaf_max_num_images, global_positioning_device, global_ba_device,
         )):
             raise ValueError("Choose typed --settings or individual mapper settings")
-        settings_type = (IncrementalMapperSettings if method == "incremental"
-                         else GlobalMapperSettings)
+        if method != "hierarchical" and any(v is not None for v in (
+                num_workers, image_overlap, leaf_max_num_images)):
+            raise ValueError("Hierarchy options require --method hierarchical")
+        if method != "global" and any(v is not None for v in (
+                global_positioning_device, global_ba_device)):
+            raise ValueError("Global subsystem devices require --method global")
+        accelerated = any(v is not None for v in (global_positioning_device, global_ba_device))
+        settings_type = (HierarchicalMapperSettings if method == "hierarchical" else
+                         IncrementalMapperSettings if method == "incremental" else
+                         GlobalAcceleratedSettings if accelerated else GlobalMapperSettings)
         values = {k: v for k, v in (
             ("min_model_size", min_model_size), ("num_threads", num_threads))
                   if v is not None}
@@ -167,6 +186,20 @@ def mapping_run(
             values.update(ba_local_backend=backend, ba_global_backend=backend)
             if gpu_index is not None or backend == "CASPAR":
                 values["ba_gpu_index"] = gpu_index if gpu_index is not None else 0
+        if method == "hierarchical":
+            values.pop("min_model_size", None)
+            values["cluster"] = HierarchicalClusterSettings(
+                **({"min_model_size": min_model_size} if min_model_size is not None else {}))
+            values.update({key: value for key, value in (
+                ("num_workers", num_workers), ("image_overlap", image_overlap),
+                ("leaf_max_num_images", leaf_max_num_images)) if value is not None})
+        if accelerated:
+            values["acceleration"] = GlobalAccelerationSettings(
+                positioning_device=_global_device(global_positioning_device or "cpu"),
+                ba_device=_global_device(global_ba_device or "cpu"))
+        if settings and method == "global":
+            # Legacy minimal CPU settings files need no newly required discriminator.
+            settings_type = GlobalMapperSettings | GlobalAcceleratedSettings
         numerical = (_typed_settings(settings, settings_type) if settings
                      else settings_type(**values))
         policy = MappingCalibrationPolicy(calibration.replace("-", "_"))
@@ -189,6 +222,41 @@ def mapping_run(
         typer.echo(f"{result.status}: {result.run_id}; cache_hit={result.cache_hit}")
         if result.reconstruction:
             _mapping_summary(result.reconstruction)
+
+
+def _global_device(value: str) -> str | int:
+    if value == "cpu":
+        return value
+    if value.startswith("gpu:") and value[4:].isascii() and value[4:].isdecimal():
+        return int(value[4:])
+    raise ValueError("Global devices require cpu or gpu:<concrete CUDA ordinal>")
+
+
+@mapping_app.command("compare")
+def mapping_compare(
+    project: Path,
+    verification_run: Annotated[UUID, typer.Option("--verification-run")],
+    routes: Annotated[Path, typer.Option("--routes", help="Typed explicit comparison plan JSON")],
+    colmap: Annotated[Path | None, typer.Option("--colmap")] = None,
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    from splatforge.application.mapping_comparison import MappingComparisonService
+    from splatforge.core.mapping_comparison import MappingComparisonPlan
+
+    try:
+        plan = _typed_settings(routes, MappingComparisonPlan)
+        report = MappingComparisonService(build_mapping_service()).compare(
+            project, verification_run_id=verification_run, plan=plan, colmap=colmap)
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        for entry in report.routes:
+            typer.echo(f"{entry.label}: {entry.status}; cache_hit={entry.cache_hit}; "
+                       f"{entry.reason or entry.semantic_digest}")
+        typer.echo("No universal mapper recommendation: representative M9 evidence pending")
 
 
 @mapping_app.command("show")

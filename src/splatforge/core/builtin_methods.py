@@ -87,7 +87,8 @@ def build_builtin_registry() -> MethodRegistry:
         MethodSpec(
             id="mapping.colmap_global", display_name="COLMAP Global Mapper",
             stage=StageKind.MAPPING,
-            notes="Implemented M8a: tested COLMAP >=4.2.1, all components, explicit calibration"
+            notes=("Implemented M8a/M8b2: tested 4.2.1, explicit calibration "
+                   "and separate GP/BA GPU gates")
         ),
         MethodSpec(
             id="feature_matching.sift_bruteforce", display_name="SIFT brute-force",
@@ -119,6 +120,7 @@ def build_builtin_registry() -> MethodRegistry:
             id="mapping.colmap_hierarchical",
             display_name="COLMAP Hierarchical Mapper",
             stage=StageKind.MAPPING,
+            notes="Implemented M8b2: internal clusters, native merge, disjoint final components",
         ),
         MethodSpec(
             id="training.none",

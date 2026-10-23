@@ -9,6 +9,7 @@ from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.reconstruction import (
     CalibrationResult,
     GlobalMapperSettings,
+    HierarchicalMapperSettings,
     IncrementalMapperSettings,
     MappingBackend,
     MappingCalibrationPolicy,
@@ -26,7 +27,7 @@ class MappingAdapter(Protocol):
         policy: MappingCalibrationPolicy,
         *,
         colmap: Path | None = None,
-        settings: GlobalMapperSettings | IncrementalMapperSettings,
+        settings: GlobalMapperSettings | IncrementalMapperSettings | HierarchicalMapperSettings,
         calibration: ViewGraphCalibrationSettings | None,
     ) -> MappingBackend: ...
 
@@ -43,7 +44,7 @@ class MappingAdapter(Protocol):
         directory: Path,
         mapping_input: MappingInput,
         backend: MappingBackend,
-        settings: GlobalMapperSettings | IncrementalMapperSettings,
+        settings: GlobalMapperSettings | IncrementalMapperSettings | HierarchicalMapperSettings,
         policy: MappingCalibrationPolicy,
         calibration: ViewGraphCalibrationSettings | None,
         limits: MappingResourceLimits,
@@ -51,4 +52,5 @@ class MappingAdapter(Protocol):
         cancellation: FeatureCancellation,
         evidence_sink: Callable[[ProcessInvocationEvidence], None],
         phase_sink: Callable[[str], None],
+        diagnostics_sink: Callable[[dict[str, object]], None],
     ) -> tuple[CalibrationResult, tuple[ReconstructionComponent, ...]]: ...

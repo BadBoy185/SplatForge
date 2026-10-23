@@ -1,4 +1,4 @@
-"""Explicit Global or single-model Incremental over the same private verified DB."""
+"""Explicit classical mapper routes over the same immutable verified DB boundary."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from splatforge.adapters.artifact_validation import _read_bounded
 from splatforge.adapters.colmap_features import native_transport_path, runtime_files
 from splatforge.adapters.colmap_mapping_options import (
     calibration_arguments,
+    hierarchical_arguments,
     incremental_arguments,
     mapping_arguments,
 )
@@ -37,7 +38,11 @@ from splatforge.core.incremental import require_caspar_compatibility
 from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.reconstruction import (
     CalibrationResult,
+    GlobalAcceleratedBackend,
+    GlobalAcceleratedSettings,
     GlobalMapperSettings,
+    HierarchicalMapperSettings,
+    HierarchicalMappingBackend,
     IncrementalMapperSettings,
     IncrementalMappingBackend,
     MappingBackend,
@@ -75,13 +80,16 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         policy: MappingCalibrationPolicy,
         *,
         colmap: Path | None = None,
-        settings: GlobalMapperSettings | IncrementalMapperSettings,
+        settings: GlobalMapperSettings | IncrementalMapperSettings | HierarchicalMapperSettings,
         calibration: ViewGraphCalibrationSettings | None,
     ) -> MappingBackend:
         incremental = isinstance(settings, IncrementalMapperSettings)
-        if incremental and (policy != MappingCalibrationPolicy.PRESERVE_PRIORS or calibration):
-            raise ValueError("Incremental v1 does not support view-graph calibration")
-        route = "incremental" if incremental else "global"
+        hierarchical = isinstance(settings, HierarchicalMapperSettings)
+        accelerated = isinstance(settings, GlobalAcceleratedSettings)
+        if (incremental or hierarchical) and (
+                policy != MappingCalibrationPolicy.PRESERVE_PRIORS or calibration):
+            raise ValueError("Incremental/Hierarchical use verified cameras without calibration")
+        route = "hierarchical" if hierarchical else "incremental" if incremental else "global"
         report = self._capabilities.probe(
             explicit_executable=colmap.absolute() if colmap else None,
             explicit_model_directory=None,
@@ -147,20 +155,54 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
                 **({"caspar_device": device.model_dump()} if device else {}),
             }
         )
-        backend_type = IncrementalMappingBackend if incremental else MappingBackend
+        gpu_devices = {}
+        if accelerated:
+            from splatforge.adapters.global_gpu import probe_global_ceres_gpu
+
+            for subsystem, index in (("positioning", settings.acceleration.positioning_device),
+                                     ("ba", settings.acceleration.ba_device)):
+                if index == "cpu":
+                    gpu_devices[subsystem + "_device"] = None
+                    continue
+                fact = report.capability(f"colmap.global_gpu.{subsystem}.options")
+                if fact.status != CapabilityStatus.AVAILABLE:
+                    raise FeatureCapabilityError(fact.message, evidence=(fact,))
+                try:
+                    gpu_devices[subsystem + "_device"] = probe_global_ceres_gpu(
+                        self._capabilities, selection, index)
+                except FeatureCapabilityError as exc:
+                    observed = getattr(exc, "global_gpu_device", None)
+                    exc.mapping_backend = {
+                        "selection": selection.model_dump(mode="json"),
+                        "cpu_runtime_numerical_identity": identity,
+                        "requested_subsystem": subsystem,
+                        "device": observed.model_dump() if observed else None,
+                        "gpu_validation": "unavailable_or_unverified",
+                    }
+                    raise
+            if runtime_files(selection) != runtime:
+                raise FeatureCapabilityError("mapping.runtime_changed: Global GPU probe changed")
+            identity = digest_json({"global_cpu_identity": identity,
+                                    "global_devices": {k: v.model_dump() if v else None
+                                                       for k, v in gpu_devices.items()}})
+        backend_type = (HierarchicalMappingBackend if hierarchical else
+                        IncrementalMappingBackend if incremental else
+                        GlobalAcceleratedBackend if accelerated else MappingBackend)
         backend = backend_type(
             selection=selection,
             database=report.database,
-            option_names=options["mapper" if incremental else "global_mapper"],
+            option_names=options["hierarchical_mapper" if hierarchical else
+                                 "mapper" if incremental else "global_mapper"],
             calibration_option_names=(
-                () if incremental else options.get("view_graph_calibrator", ())
+                () if incremental or hierarchical else options.get("view_graph_calibrator", ())
             ),
             numerical_identity=identity,
             runtime_files=runtime,
             capability_evidence=tuple(required[-2:]) + extra_evidence,
-            **({"device": device} if incremental else {}),
+            **({"device": device} if incremental else gpu_devices),
         )
-        arguments = incremental_arguments if incremental else mapping_arguments
+        arguments = (hierarchical_arguments if hierarchical else
+                     incremental_arguments if incremental else mapping_arguments)
         arguments(
             settings,
             backend.option_names,
@@ -203,7 +245,7 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         directory: Path,
         mapping_input: MappingInput,
         backend: MappingBackend,
-        settings: GlobalMapperSettings | IncrementalMapperSettings,
+        settings: GlobalMapperSettings | IncrementalMapperSettings | HierarchicalMapperSettings,
         policy: MappingCalibrationPolicy,
         calibration: ViewGraphCalibrationSettings | None,
         limits: MappingResourceLimits,
@@ -211,9 +253,28 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         cancellation: FeatureCancellation,
         evidence_sink: Callable[[ProcessInvocationEvidence], None],
         phase_sink: Callable[[str], None],
+        diagnostics_sink: Callable[[dict[str, object]], None] = lambda _: None,
     ) -> tuple[CalibrationResult, tuple[ReconstructionComponent, ...]]:
         phase_sink("preparing_database")
         incremental = isinstance(settings, IncrementalMapperSettings)
+        hierarchical = isinstance(settings, HierarchicalMapperSettings)
+        accelerated = isinstance(settings, GlobalAcceleratedSettings)
+        if hierarchical and (policy != MappingCalibrationPolicy.PRESERVE_PRIORS or calibration):
+            raise ValueError("Hierarchical uses verified cameras without calibration")
+        if accelerated:
+            from splatforge.adapters.caspar_probe import observe_caspar_device
+            from splatforge.application.doctor_contracts import DoctorTeardownError
+
+            for device in (backend.positioning_device, backend.ba_device):
+                if device is None:
+                    continue
+                try:
+                    actual = observe_caspar_device(self._capabilities, backend.selection,
+                                                  device.index, workspace)
+                except DoctorTeardownError as exc:
+                    raise FeatureTeardownError(str(exc)) from exc
+                if actual != device:
+                    raise FeatureCapabilityError("mapping.gpu_changed: frozen Global GPU differs")
         if incremental:
             if policy != MappingCalibrationPolicy.PRESERVE_PRIORS or calibration:
                 raise ValueError("Incremental v1 does not support calibration")
@@ -283,6 +344,8 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
 
         budget = WorkspaceBudget()
 
+        native_log = None
+
         def invoke(argv, phase):
             try:
                 # M7b's native runner already owns Windows Job/process tree lifetime,
@@ -296,7 +359,7 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
                     estimate.model_copy(update={"database_bytes": limits.max_database_bytes}),
                     budget,
                     evidence_sink,
-                    lambda _name: phase_sink(phase),
+                    lambda _name: native_log.poll() if native_log else phase_sink(phase),
                 )
                 if incremental and settings.uses_caspar:
                     from splatforge.adapters.caspar_probe import require_caspar_execution
@@ -365,19 +428,38 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         images.mkdir()
         sparse = output / "sparse"
         sparse.mkdir()
-        native_phase = "incremental_mapping" if incremental else "global_mapping"
+        native_phase = ("hierarchical_mapping" if hierarchical else
+                        "incremental_mapping" if incremental else "global_mapping")
         phase_sink(native_phase)
-        arguments = incremental_arguments if incremental else mapping_arguments
-        invoke(
-            arguments(
-                settings,
-                backend.option_names,
-                database=native_transport_path(database),
-                images=native_transport_path(images),
-                output=native_transport_path(sparse),
-            ),
-            native_phase,
-        )
+        arguments = (hierarchical_arguments if hierarchical else
+                     incremental_arguments if incremental else mapping_arguments)
+        argv = arguments(
+            settings, backend.option_names, database=native_transport_path(database),
+            images=native_transport_path(images), output=native_transport_path(sparse))
+        if hierarchical or (accelerated and settings.acceleration.uses_gpu):
+            from splatforge.adapters.mapping_logs import MappingLogReader
+
+            logs = workspace / "mapping-progress"
+            logs.mkdir()
+            if "log_path" not in backend.option_names:
+                raise FeatureCapabilityError("mapping.missing_options: log_path")
+            argv = tuple("stderr_and_file" if i > 0 and argv[i - 1] == "--log_target"
+                         else arg for i, arg in enumerate(argv))
+            argv += ("--log_path", str(native_transport_path(logs)))
+            native_log = MappingLogReader(logs, phase_sink if hierarchical else lambda _: None)
+        invoke(argv, native_phase)
+        if native_log:
+            native_log.poll()
+            text = native_log.complete_text()
+            if hierarchical:
+                diagnostics_sink(native_log.diagnostics())
+            elif settings.acceleration.uses_gpu:
+                from splatforge.adapters.global_gpu import require_global_gpu_execution
+
+                require_global_gpu_execution(text, settings.acceleration)
+                diagnostics_sink({"gp_gpu_validated": settings.acceleration.positioning_device
+                                  != "cpu", "ba_gpu_validated": settings.acceleration.ba_device
+                                  != "cpu", "fallback_evidence_absent": True})
         if incremental:
             from splatforge.adapters.colmap_incremental import normalize_incremental_output
 
@@ -393,13 +475,17 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
 
         used_bytes = sum(p.stat().st_size for p in workspace.rglob("*") if p.is_file())
         validation_budget = max(0, limits.max_workspace_bytes - used_bytes)
-        components = read_components(
-            output,
-            mapping,
-            maximum_validation_bytes=validation_budget,
-            checkpoint=validation_checkpoint,
-            maximum_components=1 if incremental else None,
-        )
+        try:
+            components = read_components(
+                output, mapping, maximum_validation_bytes=validation_budget,
+                checkpoint=validation_checkpoint, maximum_components=1 if incremental else None)
+        except ValueError as exc:
+            if hierarchical and "reconstruction components overlap" in str(exc):
+                raise ValueError(
+                    "mapping.hierarchical_overlap: Hierarchical native merging left overlapping "
+                    "reconstruction hypotheses which cannot be represented by ReconstructionSet v1"
+                ) from exc
+            raise
         if any(c.registered_view_count < settings.min_model_size for c in components):
             raise ValueError("mapping.malformed_output: backend violated minimum model size")
         # Dimensions/models remain those of their explicit input cameras; intrinsics optimize.

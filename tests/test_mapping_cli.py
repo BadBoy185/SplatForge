@@ -53,8 +53,8 @@ def test_mapping_cli_delegates_global_and_explicit_calibration(tmp_path, monkeyp
 def test_unsupported_mapper_raw_flags_and_settings_refused(tmp_path):
     base = ["mapping", "run", str(tmp_path), "--verification-run", str(UUID(int=1))]
     runner = CliRunner()
-    result = runner.invoke(cli.app, [*base, "--method", "hierarchical"])
-    assert result.exit_code == 1 and "Hierarchical is planned" in result.output
+    result = runner.invoke(cli.app, [*base, "--method", "unknown"])
+    assert result.exit_code == 1 and "Choose explicit" in result.output
     assert runner.invoke(cli.app, [*base, "--GlobalMapper.multiple_models", "0"]).exit_code == 2
     settings = tmp_path / "unknown.json"
     settings.write_text('{"unknown_backend_flag":1}', encoding="utf-8")
@@ -128,3 +128,59 @@ def test_cli_refuses_unsupported_ba_flags_without_substitution(tmp_path, flags):
         cli.app, ["mapping", "run", str(tmp_path), "--verification-run", str(UUID(int=1)), *flags]
     )
     assert result.exit_code in {1, 2}
+
+
+@pytest.mark.parametrize("method,flags", [
+    ("hierarchical", ["--num-threads", "4", "--num-workers", "2", "--image-overlap", "4",
+                      "--leaf-max-num-images", "6"]),
+    ("global", ["--global-positioning-device", "gpu:0", "--global-ba-device", "cpu"]),
+    ("global", ["--global-positioning-device", "cpu", "--global-ba-device", "gpu:1"]),
+])
+def test_m8b2_cli_typed_routes(tmp_path, monkeypatch, method, flags):
+    calls = []
+    class Service:
+        def run(self, root, **kwargs):
+            calls.append(kwargs)
+            return MappingRunResult(run_id=UUID(int=9), status="cancelled", artifact=None,
+                                     reconstruction=None, cache_hit=False)
+    monkeypatch.setattr(cli, "build_mapping_service", lambda: Service())
+    result = CliRunner().invoke(cli.app, ["mapping", "run", str(tmp_path),
+        "--verification-run", str(UUID(int=1)), "--method", method, *flags, "--json"])
+    assert result.exit_code == 0, result.output
+    numerical = calls[0]["settings"]
+    if method == "hierarchical":
+        assert numerical.num_threads == 4 and numerical.num_workers == 2
+        assert numerical.leaf_max_num_images == 6 and numerical.image_overlap == 4
+    else:
+        assert numerical.method_id == "mapping.colmap_global" and numerical.settings_version == 2
+        assert (numerical.acceleration.positioning_device == 0
+                or numerical.acceleration.ba_device == 1)
+
+
+@pytest.mark.parametrize("flags", [
+    ["--method", "incremental", "--global-ba-device", "gpu:0"],
+    ["--method", "global", "--num-workers", "2"],
+    ["--method", "global", "--global-ba-device", "auto"],
+    ["--method", "hierarchical", "--num-workers", "4", "--num-threads", "2"],
+])
+def test_m8b2_cli_refuses_incompatible_flags(tmp_path, flags):
+    result = CliRunner().invoke(cli.app, ["mapping", "run", str(tmp_path),
+        "--verification-run", str(UUID(int=1)), *flags])
+    assert result.exit_code == 1
+
+
+def test_old_minimal_global_settings_file_remains_accepted(tmp_path, monkeypatch):
+    calls = []
+    class Service:
+        def run(self, root, **kwargs):
+            calls.append(kwargs)
+            return MappingRunResult(run_id=UUID(int=9), status="cancelled", artifact=None,
+                                     reconstruction=None, cache_hit=False)
+    monkeypatch.setattr(cli, "build_mapping_service", lambda: Service())
+    path = tmp_path / "old-settings.json"
+    path.write_text('{"min_model_size":4}', encoding="utf8")
+    result = CliRunner().invoke(cli.app, ["mapping", "run", str(tmp_path),
+        "--verification-run", str(UUID(int=1)), "--settings", str(path), "--json"])
+    assert result.exit_code == 0, result.output
+    assert calls[0]["settings"].settings_version == 1
+    assert calls[0]["settings"].min_model_size == 4

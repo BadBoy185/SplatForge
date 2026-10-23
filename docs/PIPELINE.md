@@ -179,7 +179,7 @@ native execution and validation phases. A later mapping milestone may parse
 initialization, registration, triangulation, bundle-adjustment and finalization phases,
 but nonlinear work must retain absent/phase-scoped percent and unavailable or wide
 low/medium-confidence ETA. Future M11 trainers use completed/total iterations or steps.
-M7a/M7b/M8a/M8b1 use this boundary; M8b2/training remain planned.
+M7a/M7b/M8a/M8b1/M8b2 use this boundary; training remains planned.
 
 M1b1 implements one concrete deterministic route for contract testing:
 `fake.sequence` consumes literal `start` plus resolved `count` and publishes
@@ -588,4 +588,15 @@ multiple-model output fails. Incremental uses verified cameras directly, without
 optional calibration, and reuses the same private DB/publication/Reader boundary.
 Caspar requires compiled support, a concrete validated CUDA device, PINHOLE/SIMPLE_RADIAL
 input and compatible refinement settings; no mapper/BA fallback occurs. No portable
-ReconstructionSet semantics change. See [M8b1](M8B1.md). M8b2 remains planned.
+ReconstructionSet semantics change. See [M8b1](M8B1.md).
+
+M8b2 Hierarchical starts from the same M7 projection, uses overlapping internal clusters,
+Incremental cluster reconstruction and one native Hierarchical merge process. Internal
+clusters are never public components. Preserve all valid disjoint final models; fail final
+overlap without selection, deduplication or custom merge. Explicit Global acceleration
+keeps mapping.colmap_global and separates GP GPU from Ceres BA GPU, with concrete
+device/runtime identity, bounded positive evidence and CPU-fallback refusal. Old Global
+v1 snapshots/recipes remain unchanged. Comparison runs normal M8 routes sequentially
+from the same M7 artifact; report metadata never enters numerical mapping identities.
+No automatic mapper fallback, quality score or universal recommendation is introduced.
+See [M8b2](M8B2.md). Technical M8 is complete; representative recommendation is pending.

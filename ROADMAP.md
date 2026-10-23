@@ -21,8 +21,8 @@ fixed-FPS selection and early slot/interval bounds, operation-scoped typed artif
 validation, one complete candidate provenance write and bounded durable FFmpeg attempt
 diagnostics. Numerical identities and project/state/artifact versions stay unchanged.
 M7a extraction and M7b matching/geometric verification are implemented with real
-CPU validation of the thirteen-combination SIFT/ALIKED/LoMa matrix. M7c remains
-planned. GPU availability is route-specific; learned execution still requires
+CPU validation of the thirteen-combination SIFT/ALIKED/LoMa matrix. M7c has offline
+foundations; its production VPR benchmark remains pending. GPU availability is route-specific; learned execution still requires
 positive local model/runtime evidence and must not be claimed from mocks.
 
 ## M0 — existing foundation and architecture review
@@ -196,7 +196,7 @@ dispersion, spikes/stalls, unknown stages, cache/skips, monotonic display aggreg
 history privacy/retention/failures, cancellation, old runs and structured FFmpeg progress.
 M7 must report views/MP and pairs; M8 must preserve nonlinear/indeterminate progress;
 M11 managed trainers must report iterations/steps through the same contract. M7a/M7b
-now implement their work models; M8a/M8b1 use phase-only work; M8b2/M11 remain planned.
+now implement their work models; M8a/M8b1/M8b2 use phase-only work; M11 remains planned.
 Numerical schema versions remain unchanged.
 
 ## M7 — features, matching and geometric verification
@@ -306,10 +306,18 @@ locally compiled/available: **no**, real-backend validated locally: **false** (t
 4.2.1 runtime lacks CASPAR_ENABLED). NVIDIA inventory is separate evidence. Real tiny
 Incremental Ceres transport/cache/cancellation passes. See [M8b1](docs/M8B1.md).
 
-**M8b2: planned.** Hierarchical Mapper, Global GPU route/capability, comparative mapper
-benchmarks and eventual product-level recommendation policy. Preserve the same portable
-contracts; internal Hierarchical overlapping clusters must be merged natively before
-publication. No automatic fallback is introduced. M8 as a whole is not complete.
+**M8b2: implemented.** Hierarchical Mapper, independent explicit Global Positioning GPU /
+Ceres BA GPU gates, concrete GPU identity and bounded sequential mapper comparisons share
+ReconstructionSet v1/Reader and ordinary M8 artifacts. Internal overlapping clusters remain
+private; only native final disjoint models publish. Final overlap and requested GPU CPU
+fallback fail. Real multi-leaf Hierarchical transport passes; local Ceres lacks CUDA/cuDSS,
+so Global GPU real validation is false. See [M8b2](docs/M8B2.md).
+
+**Technical M8 implementation is complete. Representative mapper recommendation benchmark
+remains pending** across drone, phone, mixed/multi-clip/unordered/difficult/larger scenes.
+No universal winner, automatic fallback or production default change follows from tiny
+fixtures. M7c production VPR benchmarking remains independently pending. M9 may begin
+after architecture/review; M9 and M10 have not started.
 
 ## M9 — reconstruction validation and component selection
 

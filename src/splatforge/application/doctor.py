@@ -202,7 +202,8 @@ class DoctorService:
                 backend_status = report.binary.status
             implemented = method_id.startswith((
                 "feature_extraction.", "feature_matching.", "geometric_verification.",
-            )) or method_id in {"mapping.colmap_global", "mapping.colmap_incremental"}
+            )) or method_id in {"mapping.colmap_global", "mapping.colmap_incremental",
+                                "mapping.colmap_hierarchical"}
             if implemented:
                 backend_status = required_status((backend_status, report.database.evidence.status))
             mapped.append(
@@ -261,6 +262,21 @@ def render_doctor_report(report: DoctorReport) -> str:
     ):
         item = report.colmap.capability(capability_id)
         lines.append(f"{label}: {item.status.value} — {item.message}")
+    def status(capability_id: str) -> str:
+        try:
+            return report.colmap.capability(capability_id).status.value
+        except KeyError:
+            return "unknown"  # Older/injected reports need not contain M8b2 facts.
+
+    for subsystem, label in (("positioning", "Global Positioning GPU"),
+                             ("ba", "Global Ceres BA GPU")):
+        prefix = "colmap.global_gpu." + subsystem + "."
+        facts = "; ".join(name + "=" + status(prefix + name)
+                          for name in ("options", "cuda", "cudss", "runtime", "integration"))
+        lines.append(label + ": " + facts)
+    lines.append("Hierarchical: options=" + status("colmap.mapper.hierarchical")
+                 + "; version=" + status("colmap.mapper.hierarchical.version")
+                 + "; integration=" + status("colmap.mapper.hierarchical.integration"))
     model_counts = {
         status.value: sum(item.evidence.status == status for item in report.colmap.models)
         for status in CapabilityStatus

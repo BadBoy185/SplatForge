@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "data_kind": "unspecified",
+  "routes": [
+    {
+      "label": "Global CPU preserve priors",
+      "settings": {
+        "method_id": "mapping.colmap_global",
+        "settings_version": 1
+      }
+    },
+    {
+      "label": "Global CPU view graph",
+      "settings": {
+        "method_id": "mapping.colmap_global",
+        "settings_version": 1
+      },
+      "calibration_policy": "view_graph"
+    },
+    {
+      "label": "Global GP GPU",
+      "settings": {
+        "method_id": "mapping.colmap_global",
+        "settings_version": 2,
+        "acceleration": {
+          "positioning_device": 0,
+          "ba_device": "cpu"
+        }
+      }
+    },
+    {
+      "label": "Global BA GPU",
+      "settings": {
+        "method_id": "mapping.colmap_global",
+        "settings_version": 2,
+        "acceleration": {
+          "positioning_device": "cpu",
+          "ba_device": 0
+        }
+      }
+    },
+    {
+      "label": "Global GP and BA GPU",
+      "settings": {
+        "method_id": "mapping.colmap_global",
+        "settings_version": 2,
+        "acceleration": {
+          "positioning_device": 0,
+          "ba_device": 0
+        }
+      }
+    },
+    {
+      "label": "Incremental Ceres",
+      "settings": {
+        "method_id": "mapping.colmap_incremental"
+      }
+    },
+    {
+      "label": "Incremental Caspar",
+      "settings": {
+        "method_id": "mapping.colmap_incremental",
+        "ba_local_backend": "CASPAR",
+        "ba_global_backend": "CASPAR",
+        "ba_gpu_index": 0
+      }
+    },
+    {
+      "label": "Hierarchical",
+      "settings": {
+        "method_id": "mapping.colmap_hierarchical"
+      }
+    }
+  ]
+}

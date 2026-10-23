@@ -181,7 +181,8 @@ def test_no_colmap_is_a_valid_report_and_planned_methods_are_not_runnable() -> N
     assert all(method.implementation_status == (
         "implemented" if method.method_id.startswith(("feature_extraction.", "feature_matching.",
                                                      "geometric_verification."))
-        or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental"}
+        or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental",
+                                "mapping.colmap_hierarchical"}
         else "planned"
     ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)
@@ -202,7 +203,8 @@ def test_deep_flag_is_forwarded_and_backend_status_never_marks_stage_runnable() 
     assert all(method.backend_capability_status == (
         CapabilityStatus.UNKNOWN if method.method_id.startswith(("feature_extraction.",
             "feature_matching.", "geometric_verification."))
-        or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental"}
+        or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental",
+                                "mapping.colmap_hierarchical"}
         else CapabilityStatus.AVAILABLE
     ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)
@@ -236,7 +238,7 @@ def test_process_local_freshness_cache_expires_and_identity_change_invalidates()
     assert (colmap.calls, gpu.calls) == (3, 3)
 
 
-def test_human_report_is_concise_and_explicit_about_planned_methods() -> None:
+def test_human_report_distinguishes_implementation_from_runtime_availability() -> None:
     report = DoctorService(
         FakeColmap(),
         FakeGpu(),
@@ -245,7 +247,10 @@ def test_human_report_is_concise_and_explicit_about_planned_methods() -> None:
     ).report()
     rendered = render_doctor_report(report)
     assert "COLMAP 4.2.1" in rendered
-    assert "implemented=planned, runnable=no" in rendered
+    assert ("mapping.colmap_hierarchical: backend=unknown, "
+            "implemented=implemented, runnable=no") in rendered
+    assert "Global Positioning GPU: options=unknown; cuda=unknown" in rendered
+    assert "Global Ceres BA GPU: options=unknown; cuda=unknown" in rendered
     assert len(rendered.splitlines()) < 40
 
 

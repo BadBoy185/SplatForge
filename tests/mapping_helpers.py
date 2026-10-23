@@ -20,13 +20,16 @@ from splatforge.application.mapping import MappingService
 from splatforge.core.pairs import ExhaustiveSettings
 from splatforge.core.reconstruction import (
     GlobalMapperSettings,
+    HierarchicalClusterSettings,
+    HierarchicalMapperSettings,
     IncrementalMapperSettings,
     ViewGraphCalibrationSettings,
 )
 
 
 def mapping_help():
-    names = {"database_path", "image_path", "output_path", "default_random_seed", "log_target"}
+    names = {"database_path", "image_path", "output_path", "default_random_seed", "log_target",
+             "log_path", "log_level", "GlobalMapper.gp_gpu_index", "GlobalMapper.ba_gpu_index"}
     names |= {
         "GlobalMapper." + k
         for k in GlobalMapperSettings.model_fields
@@ -46,6 +49,16 @@ def incremental_help():
              "log_level"}
     names |= {"Mapper." + k for k in IncrementalMapperSettings.model_fields
               if k not in {"method_id", "settings_version"}}
+    return "-h [ --help ]\n" + "".join("--" + n + " arg\n" for n in sorted(names))
+
+
+def hierarchical_help():
+    names = {"database_path", "image_path", "output_path", "default_random_seed", "log_target",
+             "log_path"}
+    names |= {"HierarchicalMapper." + k for k in HierarchicalMapperSettings.model_fields
+              if k not in {"method_id", "settings_version", "cluster"}}
+    names |= {"Mapper." + k for k in HierarchicalClusterSettings.model_fields
+              if k not in {"method_id", "settings_version", "num_threads", "init_num_trials"}}
     return "-h [ --help ]\n" + "".join("--" + n + " arg\n" for n in sorted(names))
 
 
@@ -155,6 +168,8 @@ class MappingFixture(MatchingFixture):
             self.top_help += "global_mapper\n"
         self.map_help, self.cal_help = mapping_help(), calibration_help()
         self.incremental_help = incremental_help()
+        self.hier_help = hierarchical_help()
+        self.gpu_log = ""
         self.caspar_compiled = False
         self.caspar_evidence = True
         self.mapping_mode = "success"
@@ -179,14 +194,17 @@ class MappingFixture(MatchingFixture):
             return process_result(request, identity=self.identity, stdout=(
                 self.incremental_help if argv[0] == "mapper" else
                 bundle_adjustment_help(compiled=self.caspar_compiled)).encode())
-        if argv[0] not in {"global_mapper", "mapper", "view_graph_calibrator"}:
+        if argv[0] not in {"global_mapper", "mapper", "view_graph_calibrator",
+                           "hierarchical_mapper"}:
             return super().run(request, cancellation=cancellation, poll=poll)
         self.requests.append(request)
         if argv[-1] == "-h":
             return process_result(
                 request,
                 identity=self.identity,
-                stdout=(self.map_help if argv[0] == "global_mapper" else self.cal_help).encode(),
+                stdout=(self.map_help if argv[0] == "global_mapper" else
+                        self.hier_help if argv[0] == "hierarchical_mapper" else
+                        self.cal_help).encode(),
             )
         calibration = argv[0] == "view_graph_calibrator"
         mode = self.calibration_mode if calibration else self.mapping_mode
@@ -291,6 +309,12 @@ class MappingFixture(MatchingFixture):
                     import shutil
 
                     shutil.copytree(output / "7", output / "8")
+        if "--log_path" in argv:
+            log = Path(argv[argv.index("--log_path") + 1]) / "colmap.log.INFO.fixture"
+            log.write_text(
+                "Partitioning scene\n  Cluster 0 with 3 images\n  Cluster 1 with 3 images\n"
+                "Reconstructing clusters\nMerging clusters\n"
+                if argv[0] == "hierarchical_mapper" else self.gpu_log, encoding="utf8")
         if poll:
             poll()
         text = (b"Creating Caspar bundle adjuster\n"

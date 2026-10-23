@@ -22,6 +22,8 @@ from splatforge.application.work_models import mapping_progress_plan
 from splatforge.core.execution import (
     ArtifactHandle,
     FailureCategory,
+    GlobalAcceleratedRoute,
+    HierarchicalMappingRoute,
     IncrementalMappingRoute,
     MappingRoute,
     RunSnapshot,
@@ -29,11 +31,15 @@ from splatforge.core.execution import (
 )
 from splatforge.core.geometry import VerifiedGeometrySet
 from splatforge.core.process import ProcessInvocationEvidence
+from splatforge.core.progress import ExecutionHardwareProfile
 from splatforge.core.reconstruction import (
     ClassicalMappingReceipt,
+    GlobalAcceleratedSettings,
     GlobalMapperSettings,
+    HierarchicalMapperSettings,
     IncrementalMapperSettings,
     MappingCalibrationPolicy,
+    MappingInput,
     MappingResourceLimits,
     ReconstructionLineage,
     ReconstructionReader,
@@ -67,6 +73,12 @@ class MappingRunResult(FrozenModel):
     reconstruction: ReconstructionSet | None
     cache_hit: bool
     warnings: tuple[str, ...] = ()
+    native_seconds: float | None = None
+    mapping_input_digest: str | None = None
+    recipe_key: str | None = None
+    backend: dict[str, object] | None = None
+    diagnostics: dict[str, object] = {}
+    estimated_workspace_bytes: int | None = None
 
 
 class MappingService:
@@ -79,6 +91,16 @@ class MappingService:
     ) -> None:
         self._repository, self._adapter = repository, adapter
         self._progress = progress or ProgressSupport()
+
+    @property
+    def hardware(self) -> ExecutionHardwareProfile:
+        return self._progress.hardware
+
+    def comparison_input(self, root: Path, verification_run_id: UUID) -> MappingInput:
+        handle = self._repository.resolve_run_output(
+            root.resolve(), verification_run_id, "verified_geometry", "geometry")
+        self._repository.load_verified_geometry(root, handle)
+        return self._adapter.input(self._repository.artifact_directory(root, handle))
 
     def inspect(self, root: Path, run_id: UUID) -> ReconstructionSet:
         handle = self._repository.resolve_run_output(
@@ -97,17 +119,18 @@ class MappingService:
         root: Path,
         *,
         verification_run_id: UUID,
-        settings: GlobalMapperSettings | IncrementalMapperSettings | None = None,
+        settings: (
+            GlobalMapperSettings | IncrementalMapperSettings | HierarchicalMapperSettings | None
+        ) = None,
         calibration_policy: MappingCalibrationPolicy = MappingCalibrationPolicy.PRESERVE_PRIORS,
         calibration_settings: ViewGraphCalibrationSettings | None = None,
         resource_limits: MappingResourceLimits | None = None,
         colmap: Path | None = None,
     ) -> MappingRunResult:
         root, owner = root.resolve(), uuid4()
-        settings_type = (
-            IncrementalMapperSettings if isinstance(settings, IncrementalMapperSettings)
-            else GlobalMapperSettings
-        )
+        settings_type = (type(settings) if isinstance(settings, (
+            GlobalMapperSettings, IncrementalMapperSettings, HierarchicalMapperSettings
+        )) else GlobalMapperSettings)
         settings = settings_type.model_validate(
             (settings or GlobalMapperSettings()).model_dump()
         )
@@ -116,9 +139,12 @@ class MappingService:
         )
         calibration_policy = MappingCalibrationPolicy(calibration_policy)
         incremental = isinstance(settings, IncrementalMapperSettings)
-        if incremental and (calibration_policy != MappingCalibrationPolicy.PRESERVE_PRIORS
-                            or calibration_settings is not None):
-            raise ValueError("Incremental v1 uses verified camera state without calibration")
+        hierarchical = isinstance(settings, HierarchicalMapperSettings)
+        if (incremental or hierarchical) and (
+            calibration_policy != MappingCalibrationPolicy.PRESERVE_PRIORS
+            or calibration_settings is not None
+        ):
+            raise ValueError("Incremental/Hierarchical use verified cameras without calibration")
         if calibration_policy == MappingCalibrationPolicy.VIEW_GRAPH:
             calibration_settings = ViewGraphCalibrationSettings.model_validate(
                 (calibration_settings or ViewGraphCalibrationSettings()).model_dump()
@@ -137,7 +163,8 @@ class MappingService:
             if incremental:
                 self._adapter.validate_incremental_input(directory, mapping_input, settings)
             estimate = estimate_mapping_resources(
-                mapping_input, (directory / "matches.db").stat().st_size, limits
+                mapping_input, (directory / "matches.db").stat().st_size, limits,
+                settings if hierarchical else None,
             )
             backend = self._adapter.prepare(
                 calibration_policy,
@@ -145,7 +172,10 @@ class MappingService:
                 settings=settings,
                 calibration=calibration_settings,
             )
-            route_type = IncrementalMappingRoute if incremental else MappingRoute
+            route_type = (HierarchicalMappingRoute if hierarchical else
+                          IncrementalMappingRoute if incremental else
+                          GlobalAcceleratedRoute if isinstance(settings, GlobalAcceleratedSettings)
+                          else MappingRoute)
             route = route_type(
                 verification_run_id=verification_run_id,
                 verification=handle,
@@ -158,7 +188,7 @@ class MappingService:
                 estimate=estimate,
             )
 
-            def produce(workspace, control, evidence, phase):
+            def produce(workspace, control, evidence, phase, diagnostics):
                 calibrated, components = self._adapter.map(
                     workspace,
                     directory=directory,
@@ -172,6 +202,7 @@ class MappingService:
                     cancellation=control,
                     evidence_sink=evidence,
                     phase_sink=phase,
+                    diagnostics_sink=diagnostics,
                 )
                 registered = {v for component in components for v in component.registered_view_ids}
                 unregistered = tuple(v for v in mapping_input.view_ids if v not in registered)
@@ -194,6 +225,7 @@ class MappingService:
                     mapping_input_digest=mapping_input.semantic_digest,
                     input_view_ids=mapping_input.view_ids,
                     method_id=settings.method_id,
+                    settings_version=settings.settings_version,
                     resolved_settings=resolved_settings(settings),
                     calibration=calibration_summary(calibrated),
                     native_format="colmap.sparse.binary.v1",
@@ -257,6 +289,8 @@ class MappingService:
         control = _Cancellation(repo, root, run_id)
         attempt, payload, artifact, cache_hit = None, None, None, False
         warnings = []
+        native_records = []
+        native_diagnostics = {}
 
         def event(code: str, **details: object) -> None:
             try:
@@ -274,6 +308,7 @@ class MappingService:
                 warnings.append("events.append_failed")
 
         def evidence(record: ProcessInvocationEvidence) -> None:
+            native_records.append(record)
             try:
                 warning = repo.append_process_evidence(root, run_id, control.attempt, record)
                 if warning:
@@ -283,6 +318,10 @@ class MappingService:
 
         def phase(name: str) -> None:
             progress.report(route.node_id, 0, phase=name)
+
+        def diagnostics(details: dict[str, object]) -> None:
+            native_diagnostics.update(details)
+            event("mapping.native_diagnostics", **details)
 
         try:
             event("mapping.run.started", method=route.settings.method_id)
@@ -322,7 +361,7 @@ class MappingService:
                 )
                 control.attempt = attempt.attempt_id
                 progress.start(route.node_id, attempt.attempt_id)
-                payload = produce(Path(attempt.workspace), control, evidence, phase)
+                payload = produce(Path(attempt.workspace), control, evidence, phase, diagnostics)
                 require_mapping_payload(route, payload)
                 event("mapping.output.validated", registered_views=payload.registered_view_count,
                       unregistered_views=payload.unregistered_view_count,
@@ -347,6 +386,9 @@ class MappingService:
                 progress.complete(route.node_id)
             event("mapping.run.completed")
         except FeatureTeardownError as exc:
+            exc.mapping_run_id = run_id
+            exc.mapping_route = route
+            exc.mapping_native_seconds = sum(r.elapsed_seconds for r in native_records)
             repo.mark_external_interrupted(
                 root, run_id=run_id, attempt_id=control.attempt, message=str(exc)
             )
@@ -379,6 +421,9 @@ class MappingService:
                 )
             repo.mark_run_failed(root, run_id=run_id, message=str(exc))
             event("mapping.run.failed", error=str(exc))
+            exc.mapping_run_id = run_id
+            exc.mapping_route = route
+            exc.mapping_native_seconds = sum(r.elapsed_seconds for r in native_records)
             raise
         return MappingRunResult(
             run_id=run_id,
@@ -387,6 +432,12 @@ class MappingService:
             reconstruction=payload,
             cache_hit=cache_hit,
             warnings=tuple(warnings) + progress.snapshot().warnings,
+            native_seconds=(sum(r.elapsed_seconds for r in native_records)
+                            if native_records else None),
+            mapping_input_digest=route.mapping_input.semantic_digest,
+            recipe_key=route.recipe_key(), backend=route.backend.model_dump(mode="json"),
+            diagnostics=native_diagnostics,
+            estimated_workspace_bytes=route.estimate.peak_workspace_bytes,
         )
 
 
@@ -404,5 +455,5 @@ def require_mapping_payload(route: MappingRoute, payload: ReconstructionSet) -> 
         or payload.backend_numerical_identity != route.backend.numerical_identity
     ):
         raise ValueError("mapping.input_mismatch: ReconstructionSet differs from frozen route")
-    if isinstance(route, IncrementalMappingRoute) and payload.component_count != 1:
+    if type(route) is IncrementalMappingRoute and payload.component_count != 1:
         raise ValueError("mapping.unexpected_multiple_models: Incremental requires one component")

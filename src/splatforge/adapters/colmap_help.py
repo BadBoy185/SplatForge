@@ -56,6 +56,12 @@ def parse_option_help(text: str, option: str) -> ParsedOptionHelp:
             if default and len(default.group(1)) <= 1024:
                 defaults.append((name, default.group(1).strip()))
     selected = [block for name, block in blocks if name == option]
+    if option == "HierarchicalMapper":
+        required = {"database_path", "image_path", "output_path", "Mapper.multiple_models",
+                    "HierarchicalMapper.branching", "HierarchicalMapper.num_threads",
+                    "HierarchicalMapper.leaf_max_num_images"}
+        return ParsedOptionHelp("-h [ --help ]" in text and required <= set(names), (), names,
+                                tuple(defaults), "mapping_options_v1")
     if option == "Mapper":
         required = {"database_path", "image_path", "output_path", "Mapper.multiple_models",
                     "Mapper.min_model_size", "Mapper.min_num_matches", "Mapper.extract_colors",

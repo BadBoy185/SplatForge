@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "run_id": "1eae01b8-4bf9-4306-970a-982d709db1bc",
+  "project_id": "62d64f92-e68a-422b-8db2-720764700fe0",
+  "project_revision": 1,
+  "owner_token": "95a85a0f-dc3b-490d-ae31-220d6692a915",
+  "created_at": "2026-10-22T20:12:09.971617Z",
+  "project_intent": {
+    "project_format_version": 1,
+    "project_id": "62d64f92-e68a-422b-8db2-720764700fe0",
+    "revision": 1,
+    "label": "M3 route",
+    "created_at": "2026-10-22T20:11:53.593477Z",
+    "updated_at": "2026-10-22T20:11:54.046378Z",
+    "inventory_reference": "sources/0a4dc1f7-2915-4ef8-887c-af293481e2f1.jsonl",
+    "preset_provenance": {
+      "name": "recommended_flat_video_profile",
+      "version": 1
+    },
+    "settings": {
+      "config_schema_version": 1,
+      "frame_selection": {
+        "method_id": "frame_selection.sharpest_interval",
+        "settings_schema_version": 1,
+        "settings": {
+          "target_fps": 2.0,
+          "max_frames": 1800,
+          "reject_blur": true,
+          "reject_duplicates": true
+        }
+      },
+      "feature_extraction": {
+        "method_id": "feature_extraction.aliked",
+        "settings_schema_version": 1,
+        "settings": {}
+      },
+      "pair_selection": {
+        "method_id": "pair_selection.sequential",
+        "settings_schema_version": 1,
+        "settings": {}
+      },
+      "feature_matching": {
+        "method_id": "feature_matching.lightglue_aliked",
+        "settings_schema_version": 1,
+        "settings": {}
+      },
+      "mapping": {
+        "method_id": "mapping.colmap_global",
+        "settings_schema_version": 1,
+        "settings": {}
+      },
+      "training": {
+        "method_id": "training.none",
+        "settings_schema_version": 1,
+        "settings": {
+          "preset": "balanced"
+        }
+      }
+    }
+  },
+  "route": {
+    "route_id": "mapping.run",
+    "route_version": 1,
+    "verification_run_id": "e4aef23f-d9a3-4452-b2ac-ec0a9a0fba08",
+    "verification": {
+      "artifact_id": "f7dfad2c-a0a8-44b9-b675-6b2d74c999f4",
+      "artifact_type": "geometry.verified_geometry_set",
+      "contract_version": 1,
+      "recipe_key": "3dcab3a10828de922e81e3e71023778497c387c68c206e259ae7e66ef835b054",
+      "semantic_digest": "cfce43034c3ebc2d8256a14d13a1511dfc0170c9654085fb380a3015f102c946",
+      "manifest_path": "artifacts/verified_geometry/f7dfad2c-a0a8-44b9-b675-6b2d74c999f4/manifest.json"
+    },
+    "mapping_input": {
+      "contract_version": 1,
+      "view_ids": [
+        "135836a0-11a6-5db0-b268-5360b3bbe95e",
+        "da6eefd2-0d72-51bf-a423-8da55c2f2213",
+        "fd601a5a-d96d-5a28-bae3-6a7eea19843b"
+      ],
+      "cameras_digest": "f3719d967966c49627d9f18832c37ce5f46b2d0f44235a44dc31dae41f73276e",
+      "keypoints_digest": "a7ca0294b953f2273ae07940eec9eb2fc7bac3bb42bcad97188da2ad86069e78",
+      "geometry_digest": "558702c15f213c9ecec5d424be937f23e2e95d6a23e4f920935115fd10f2a914",
+      "verified_pair_count": 1,
+      "keypoint_count": 72,
+      "inlier_count": 24,
+      "transport": "independent_camera_frames_v1"
+    },
+    "settings": {
+      "method_id": "mapping.colmap_global",
+      "settings_version": 1,
+      "min_num_matches": 15,
+      "num_threads": 1,
+      "random_seed": 0,
+      "multiple_models": true,
+      "min_model_size": 3,
+      "ba_num_iterations": 3,
+      "gp_max_num_iterations": 100,
+      "ba_ceres_max_num_iterations": 200,
+      "ba_refine_focal_length": true,
+      "ba_refine_principal_point": false,
+      "ba_refine_extra_params": true,
+      "gp_use_gpu": false,
+      "ba_ceres_use_gpu": false,
+      "ba_backend": "CERES"
+    },
+    "calibration_policy": "preserve_priors",
+    "calibration_settings": null,
+    "backend": {
+      "adapter_id": "splatforge.colmap_global",
+      "adapter_version": 1,
+      "selection": {
+        "source": "explicit",
+        "requested": "C:/synthetic-fixture/COLMAP native \u017e.exe",
+        "identity": {
+          "resolved_path": "C:/synthetic-fixture/COLMAP native \u017e.exe",
+          "size": 19,
+          "last_write_ns": 1,
+          "volume_id": "fixture-volume",
+          "file_id": "fixture-file",
+          "change_time_ns": 1,
+          "sha256": "40522a35a35251c032a0b4b78c7e2e82c64d80a6c4cad51057673961d0179ab7",
+          "version_line": "COLMAP 4.2.1 (Commit fixture) with CUDA"
+        },
+        "runtime_layout": null
+      },
+      "database": {
+        "probe_schema_version": 1,
+        "evidence": {
+          "evidence_schema_version": 1,
+          "capability_id": "colmap.database",
+          "status": "available",
+          "diagnostic_code": "colmap.database_compatible",
+          "message": "Generated native COLMAP database satisfies schema probe version 1",
+          "observed_at": "2026-10-22T20:12:09.169561Z",
+          "expires_at": "2026-10-22T20:17:09.169561Z",
+          "freshness_seconds": 300,
+          "backend_identity": {
+            "resolved_path": "C:/synthetic-fixture/COLMAP native \u017e.exe",
+            "size": 19,
+            "last_write_ns": 1,
+            "volume_id": "fixture-volume",
+            "file_id": "fixture-file",
+            "change_time_ns": 1,
+            "sha256": "40522a35a35251c032a0b4b78c7e2e82c64d80a6c4cad51057673961d0179ab7",
+            "version_line": "COLMAP 4.2.1 (Commit fixture) with CUDA"
+          },
+          "details": [],
+          "prerequisites": []
+        },
+        "sqlite_user_version": 0,
+        "sqlite_application_id": 0,
+        "tables": [
+          {
+            "name": "cameras",
+            "columns": [
+              "camera_id",
+              "model",
+              "width",
+              "height",
+              "params",
+              "prior_focal_length"
+            ],
+            "primary_key_columns": [
+              "camera_id"
+            ]
+          },
+          {
+            "name": "images",
+            "columns": [
+              "image_id",
+              "name",
+              "camera_id"
+            ],
+            "primary_key_columns": [
+              "image_id"
+            ]
+          },
+          {
+            "name": "keypoints",
+            "columns": [
+              "image_id",
+              "rows",
+              "cols",
+              "data"
+            ],
+            "primary_key_columns": [
+              "image_id"
+            ]
+          },
+          {
+            "name": "descriptors",
+            "columns": [
+              "image_id",
+              "rows",
+              "cols",
+              "data",
+              "type"
+            ],
+            "primary_key_columns": [
+              "image_id"
+            ]
+          },
+          {
+            "name": "matches",
+            "columns": [
+              "pair_id",
+              "rows",
+              "cols",
+              "data"
+            ],
+            "primary_key_columns": [
+              "pair_id"
+            ]
+          },
+          {
+            "name": "two_view_geometries",
+            "columns": [
+              "pair_id",
+              "rows",
+              "cols",
+              "data",
+              "config",
+              "F",
+              "E",
+              "H"
+            ],
+            "primary_key_columns": [
+              "pair_id"
+            ]
+          }
+        ]
+      },
+      "option_names": [
+        "GlobalMapper.ba_backend",
+        "GlobalMapper.ba_ceres_max_num_iterations",
+        "GlobalMapper.ba_ceres_use_gpu",
+        "GlobalMapper.ba_num_iterations",
+        "GlobalMapper.ba_refine_extra_params",
+        "GlobalMapper.ba_refine_focal_length",
+        "GlobalMapper.ba_refine_principal_point",
+        "GlobalMapper.gp_max_num_iterations",
+        "GlobalMapper.gp_use_gpu",
+        "GlobalMapper.min_model_size",
+        "GlobalMapper.min_num_matches",
+        "GlobalMapper.multiple_models",
+        "GlobalMapper.num_threads",
+        "GlobalMapper.random_seed",
+        "database_path",
+        "default_random_seed",
+        "image_path",
+        "log_target",
+        "output_path"
+      ],
+      "models": [],
+      "runtime_files": [],
+      "live_progress_profile": null,
+      "numerical_identity": "5bbd64e8a733d6299b43c16ae009d9df3f3dcefddac5eacee341c98eacb8b9f1",
+      "capability_evidence": [
+        {
+          "evidence_schema_version": 1,
+          "capability_id": "colmap.mapper.global.version",
+          "status": "available",
+          "diagnostic_code": "mapping.version_supported",
+          "message": "Global production requires tested COLMAP 4.2.1 (floor >=4.2.1); 4.2.0 refused, later builds need positive integration validation",
+          "observed_at": "2026-10-22T20:12:09.169561Z",
+          "expires_at": "2026-10-22T20:17:09.169561Z",
+          "freshness_seconds": 300,
+          "backend_identity": {
+            "resolved_path": "C:/synthetic-fixture/COLMAP native \u017e.exe",
+            "size": 19,
+            "last_write_ns": 1,
+            "volume_id": "fixture-volume",
+            "file_id": "fixture-file",
+            "change_time_ns": 1,
+            "sha256": "40522a35a35251c032a0b4b78c7e2e82c64d80a6c4cad51057673961d0179ab7",
+            "version_line": "COLMAP 4.2.1 (Commit fixture) with CUDA"
+          },
+          "details": [],
+          "prerequisites": []
+        },
+        {
+          "evidence_schema_version": 1,
+          "capability_id": "colmap.mapper.global",
+          "status": "available",
+          "diagnostic_code": "mapping.options_verified",
+          "message": "global_mapper: command, version and required typed options verified; actual scene integration is separate",
+          "observed_at": "2026-10-22T20:12:09.169561Z",
+          "expires_at": "2026-10-22T20:17:09.169561Z",
+          "freshness_seconds": 300,
+          "backend_identity": {
+            "resolved_path": "C:/synthetic-fixture/COLMAP native \u017e.exe",
+            "size": 19,
+            "last_write_ns": 1,
+            "volume_id": "fixture-volume",
+            "file_id": "fixture-file",
+            "change_time_ns": 1,
+            "sha256": "40522a35a35251c032a0b4b78c7e2e82c64d80a6c4cad51057673961d0179ab7",
+            "version_line": "COLMAP 4.2.1 (Commit fixture) with CUDA"
+          },
+          "details": [],
+          "prerequisites": []
+        }
+      ],
+      "operation": "global_mapper",
+      "calibration_option_names": [
+        "cross_validate_prior_focal_lengths",
+        "database_path",
+        "default_random_seed",
+        "log_target",
+        "max_calibration_error",
+        "max_focal_length_ratio",
+        "min_calibrated_pair_ratio",
+        "min_focal_length_ratio",
+        "reestimate_relative_pose",
+        "relpose_max_error",
+        "relpose_min_inlier_ratio",
+        "relpose_min_num_inliers"
+      ]
+    },
+    "resource_limits": {
+      "max_views": 10000,
+      "max_pairs": 100000,
+      "max_keypoints": 100000000,
+      "max_inliers": 100000000,
+      "max_database_bytes": 68719476736,
+      "max_output_bytes": 17179869184,
+      "max_workspace_bytes": 137438953472,
+      "timeout_seconds": 7200
+    },
+    "estimate": {
+      "database_bytes": 45056,
+      "peak_workspace_bytes": 1195672,
+      "output_bytes": 1060504
+    },
+    "node_id": "reconstruction",
+    "target": {
+      "node_id": "reconstruction",
+      "output_name": "reconstruction",
+      "artifact_type": "mapping.reconstruction_set",
+      "contract_version": 1
+    }
+  }
+}

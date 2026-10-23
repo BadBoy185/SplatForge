@@ -582,3 +582,27 @@ settings/runtime/device signatures keep Global CPU, Incremental Ceres CPU and Ca
 history apart. Registered counts are post-validation diagnostics, never a live completion
 fraction. Doctor help/build evidence, selected-device runtime evidence and real integration
 remain separate. No native build/install or performance-driven method selection is added.
+
+
+## M8b2 verification
+
+[Hierarchical/Global GPU/comparison contracts and recorded local evidence](M8B2.md)
+extend existing M8a/b1 tests. Focused suites include test_hierarchical_contracts.py,
+test_hierarchical_capabilities.py, test_hierarchical_execution.py, test_global_gpu.py,
+test_global_backward_compatibility.py and test_mapping_comparison.py, plus shared
+Reader/cache/recovery/cancellation, Doctor, CLI and M6.5 progress/ETA regressions.
+
+Opt-in test_hierarchical_integration.py uses 12 perspective views and small test-only
+leaves, requires observed multiple clusters/native merge, validates final disjoint output
+and Reader, checks M7 bytes/cache/settings invalidation, and cancels a launched process.
+Global GPU integration tests GP only, BA only and both separately, using 60 views only
+when the already provisioned Ceres/device preflight succeeds. Missing Ceres CUDA/cuDSS
+or unverified runtime evidence is an explicit skip, never successful GPU validation.
+No downloads/builds/runtime replacement are part of testing. Tiny native fixtures establish
+transport contracts, not representative quality or a production mapper recommendation.
+
+Hierarchy uses mapping.hierarchical_phases_v1 with observed headings and diagnostic leaf
+counts, never a leaf-count percentage. Global GPU retains Global phase semantics and
+separates performance signatures for each acceleration axis/device. Incomplete evidence,
+CPU fallback and final overlapping Hierarchical hypotheses fail without automatic retries.
+M7c production VPR benchmarks remain pending; M9 and M10 have not started.

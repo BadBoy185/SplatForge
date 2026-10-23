@@ -154,8 +154,77 @@ class IncrementalMappingBackend(MappingBackend):
     device: CasparDevice | None = None
 
 
+class HierarchicalClusterSettings(IncrementalMapperSettings):
+    """Internal hypotheses, never the public single-model Incremental policy."""
+
+    method_id: Literal["mapping.colmap_hierarchical.cluster"] = (
+        "mapping.colmap_hierarchical.cluster")
+    multiple_models: Literal[True] = True
+    num_threads: Literal[-1] = -1
+    init_num_trials: Literal[200] = 200
+    ba_local_backend: Literal["CERES"] = "CERES"
+    ba_global_backend: Literal["CERES"] = "CERES"
+
+
+class HierarchicalMapperSettings(FrozenModel):
+    method_id: Literal["mapping.colmap_hierarchical"] = "mapping.colmap_hierarchical"
+    settings_version: Literal[1] = 1
+    num_threads: int = Field(default=1, ge=1, le=64, strict=True)
+    num_workers: int = Field(default=1, ge=1, le=64, strict=True)
+    image_overlap: int = Field(default=50, ge=3, le=10000, strict=True)
+    leaf_max_num_images: int = Field(default=500, ge=3, le=10000, strict=True)
+    num_image_matches: int = Field(default=20, ge=1, le=1000, strict=True)
+    is_hierarchical: bool = True
+    branching: Literal[2] = 2
+    init_num_trials: int = Field(default=10, ge=1, le=10000, strict=True)
+    cluster: HierarchicalClusterSettings = HierarchicalClusterSettings()
+
+    @property
+    def min_model_size(self) -> int:
+        return self.cluster.min_model_size
+
+    @model_validator(mode="after")
+    def thread_budget(self) -> HierarchicalMapperSettings:
+        if self.num_workers > self.num_threads:
+            raise ValueError("mapping.thread_budget: workers must not exceed total threads")
+        return self
+
+
+class HierarchicalMappingBackend(MappingBackend):
+    adapter_id: Literal["splatforge.colmap_hierarchical"] = "splatforge.colmap_hierarchical"
+    operation: Literal["hierarchical_mapper"] = "hierarchical_mapper"
+
+
+class GlobalAccelerationSettings(FrozenModel):
+    settings_version: Literal[1] = 1
+    positioning_device: Literal["cpu"] | Annotated[int, Field(ge=0, le=31, strict=True)] = "cpu"
+    ba_device: Literal["cpu"] | Annotated[int, Field(ge=0, le=31, strict=True)] = "cpu"
+
+    @property
+    def uses_gpu(self) -> bool:
+        return self.positioning_device != "cpu" or self.ba_device != "cpu"
+
+
+class GlobalAcceleratedSettings(GlobalMapperSettings):
+    """Opt-in v2 wrapper; v1 CPU defaults and serialization remain untouched."""
+
+    settings_version: Literal[2] = 2
+    acceleration: GlobalAccelerationSettings = GlobalAccelerationSettings()
+
+
+class GlobalAcceleratedBackend(MappingBackend):
+    adapter_id: Literal["splatforge.colmap_global_accelerated"] = (
+        "splatforge.colmap_global_accelerated")
+    positioning_device: CasparDevice | None = None
+    ba_device: CasparDevice | None = None
+
+
+GlobalSettings = Annotated[
+    GlobalMapperSettings | GlobalAcceleratedSettings, Field(discriminator="settings_version")
+]
 MapperSettings = Annotated[
-    GlobalMapperSettings | IncrementalMapperSettings, Field(discriminator="method_id")
+    GlobalSettings | IncrementalMapperSettings | HierarchicalMapperSettings,
+    Field(discriminator="method_id"),
 ]
 
 
@@ -202,6 +271,7 @@ def estimate_mapping_resources(
     value: MappingInput,
     database_bytes: int,
     limits: MappingResourceLimits,
+    settings: HierarchicalMapperSettings | None = None,
 ) -> MappingResourceEstimate:
     # Reservation includes independent copy, SQLite journal growth and sparse output.
     # This is a disk refusal gate, not a prediction of native peak host memory.
@@ -210,6 +280,12 @@ def estimate_mapping_resources(
     )
     # Sparse validation uses a bounded disk-backed reciprocal-observation index.
     peak = 3 * database_bytes + 5 * output
+    if settings is not None:
+        # Conservative disk reservation for overlapping hypotheses, workers,
+        # native merge payload and validation scratch. Not a RAM prediction.
+        leaves = max(1, (len(value.view_ids) + settings.leaf_max_num_images - 1)
+                     // settings.leaf_max_num_images)
+        peak += output * (leaves + settings.num_workers + 2)
     if (
         len(value.view_ids) > limits.max_views
         or value.verified_pair_count > limits.max_pairs
@@ -227,7 +303,7 @@ def estimate_mapping_resources(
 
 def mapping_recipe_key(
     input_digest: str,
-    settings: GlobalMapperSettings | IncrementalMapperSettings,
+    settings: GlobalMapperSettings | IncrementalMapperSettings | HierarchicalMapperSettings,
     policy: MappingCalibrationPolicy,
     calibration: ViewGraphCalibrationSettings | None,
     backend_identity: str,
@@ -440,11 +516,17 @@ class ReconstructionSet(FrozenModel):
 
 
 def resolved_settings(settings: FrozenModel) -> tuple[ReconstructionSetting, ...]:
-    return tuple(
-        ReconstructionSetting(name=k, value=v)
-        for k, v in sorted(settings.model_dump().items())
-        if k not in {"method_id", "settings_version"}
-    )
+    def flatten(values: dict, prefix: str = ""):
+        for key, value in sorted(values.items()):
+            if key in {"method_id", "settings_version"}:
+                continue
+            name = prefix + key
+            if isinstance(value, dict):
+                yield from flatten(value, name + ".")
+            else:
+                yield ReconstructionSetting(name=name, value=value)
+
+    return tuple(flatten(settings.model_dump()))
 
 
 def calibration_summary(value: CalibrationResult) -> ReconstructionCalibration:
@@ -474,9 +556,10 @@ class ClassicalMappingReceipt(FrozenModel):
 
     @model_validator(mode="after")
     def consistent(self) -> ClassicalMappingReceipt:
-        if (isinstance(self.settings, IncrementalMapperSettings)
+        if (isinstance(self.settings, (IncrementalMapperSettings, HierarchicalMapperSettings))
                 and self.calibration.policy != MappingCalibrationPolicy.PRESERVE_PRIORS):
-            raise ValueError("Incremental v1 requires verified camera state without calibration")
+            raise ValueError(
+                "Incremental/Hierarchical require verified cameras without calibration")
         if (
             self.calibration.cameras_before != self.mapping_input.cameras_digest
             or self.calibration.mapping_input_after.view_ids != self.mapping_input.view_ids

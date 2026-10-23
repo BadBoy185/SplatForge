@@ -202,9 +202,14 @@ backend-neutral reader, tested >=4.2.1 capability gating, private DB isolation a
 explicit view-graph calibration. Preserve-priors remains the conservative default.
 M8b1 adds explicit single-model Incremental Ceres CPU and capability-gated Caspar BA.
 Overlapping native Incremental hypotheses are refused; all unregistered views remain explicit.
-Both routes use unchanged ReconstructionSet v1/Reader and the same private DB boundary.
-Hierarchical/Global GPU/comparison remain M8b2. No profile selects a mapper.
-See [M8a contracts](docs/M8A.md) and [M8b1](docs/M8B1.md).
+All routes use unchanged ReconstructionSet v1/Reader and the same private DB boundary.
+M8b2 implements Hierarchical with internal overlapping clusters and one native merge process;
+only final disjoint models become components. Final overlap fails, without custom merging.
+Global GP GPU and Ceres BA GPU are separate explicit settings/capabilities with concrete
+device identity and CPU-fallback refusal. Sequential comparison references normal M8
+artifacts from the same M7 input. Technical M8 is complete; representative mapper
+recommendation remains pending. No profile selects a mapper or changes it after failure.
+See [M8a](docs/M8A.md), [M8b1](docs/M8B1.md) and [M8b2](docs/M8B2.md).
 
 The documented COLMAP learned route depends on build options, including ONNX support;
 it is not guaranteed by the executable name or version alone. This motivates probing,
