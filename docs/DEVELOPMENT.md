@@ -605,4 +605,48 @@ Hierarchy uses mapping.hierarchical_phases_v1 with observed headings and diagnos
 counts, never a leaf-count percentage. Global GPU retains Global phase semantics and
 separates performance signatures for each acceleration axis/device. Incomplete evidence,
 CPU fallback and final overlapping Hierarchical hypotheses fail without automatic retries.
-M7c production VPR benchmarks remain pending; M9 and M10 have not started.
+M7c production VPR benchmarks remain pending; M9 is documented below and M10 has not started.
+
+## M9 verification
+
+M9a tests use exact historical selected universes, mixed source/group coverage, analytically
+known perspective/distorted projection errors, exact integer track histograms, deterministic
+bounded quantiles/rays and explicit policy/availability. Native fixtures change point IDs,
+image/camera IDs and folder numbering independently of canonical geometry; changed XYZ,
+observations, camera poses or frozen camera-sharing priors change the consumed evidence.
+Camera sharing compares the actual frozen mapper-prior partition, not possible candidate
+grouping. Existing M8 artifacts are read without changing their schema or numerical identity.
+Publication/cache/corruption/cancellation and every orphan stage use normal execution storage.
+
+```powershell
+python -m pytest tests/test_validation_measurements.py tests/test_validation_geometry.py tests/test_validation_execution.py tests/test_validation_cli.py tests/test_validation_progress.py
+```
+
+`validation.reconstruction_points_v1` reports WORK as scanned points, with known native
+point totals where available and observation diagnostics. Zero/unknown detailed point work
+and policy evaluation are phase-only; component index never supplies an overall fraction.
+M6.5 successful history uses points/components and separate method/sampling signatures.
+Cold ETA is unavailable until live evidence supports it; history cannot alter methodology.
+Native payload integrity revalidation still runs when numerical measurements are cached.
+
+M9b tests cover manual canonical one/multiple choices, legal disjoint mixed phone/drone
+coverage tradeoffs, unique dominance, severity/quality tradeoffs, missing ranking evidence,
+scoped project/component/source-group failures, exact/stale overrides and changed cameras
+or detailed XYZ under identical component UUIDs. Reason/policy/artifact UUID changes retain
+selected-content semantics. Cache, indexed/orphan corruption, cancellation and recovery
+use normal state. Ambiguity creates no selection artifact. No dataset generation is claimed.
+
+```powershell
+python -m pytest tests/test_reconstruction_selection.py tests/test_selection_execution.py tests/test_selection_cli.py
+```
+
+The M9 integrity mode has explicit tests proving policy-only reuse does not deserialize
+native points/tracks, while changed bytes, hardlinks and unexpected model entries still
+fail. Ordinary M8 integrity/cache/recovery is unchanged. This reuses original structural
+validation over freshly hash-verified identical bytes, not metadata-only source assurance.
+All three scan refusal limits remain outside numerical identity; deterministic sampling
+never changes to fit runtime history or machine speed.
+Metadata resource tests also reject excessive component/source coverage matrices before
+geometry access and enforce the 64 MiB evidence bound before a payload file is written.
+Inactive component/cell limits preserve identical measurements/recipes. Metadata grouping
+retains cancellation checkpoints and never silently drops sources or components.

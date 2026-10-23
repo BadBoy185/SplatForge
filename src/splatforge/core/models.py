@@ -15,6 +15,7 @@ class StageKind(StrEnum):
     GEOMETRIC_VERIFICATION = "geometric_verification"
     MAPPING = "mapping"
     VALIDATION = "validation"
+    RECONSTRUCTION_SELECTION = "reconstruction_selection"
     TRAINING = "training"
     EXPORT = "export"
 

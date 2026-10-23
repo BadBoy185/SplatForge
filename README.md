@@ -50,7 +50,9 @@ ALIKED/LightGlue and SIFT/brute-force are supported technology families; local
 availability and real integration validation are reported separately. M7c offline retrieval,
 M8a Global mapping and M8b1 single-model Incremental Ceres / capability-gated Caspar BA
 and M8b2 Hierarchical / capability-gated Global GPU / mapper comparison are implemented.
-Production VPR inference, representative mapper recommendation, training and GUI remain pending.
+M9a reconstruction measurements/policy validation and M9b explicit component selection are
+implemented. Production VPR inference, representative mapper recommendation, dataset
+preparation, training and GUI remain pending.
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 Fixed-FPS selection uses an exact ordered sweep with bounded target expansion.
@@ -333,8 +335,38 @@ compiled Caspar, so real Caspar validation remains false. There is no automatic 
 M8b2 adds Hierarchical internal clustering/native merging, separate explicit Global GP/BA GPU
 gates and sequential mapper comparison. Final Hierarchical overlaps and requested GPU CPU
 fallback are refused. Technical M8 is complete; representative recommendation remains pending.
-M7c's production VPR benchmark remains pending independently; M9/M10 have not started.
+M7c's production VPR benchmark remains pending independently. M9 validation is described
+below; M10 has not started.
 See [M8a](docs/M8A.md), [M8b1](docs/M8B1.md) and [M8b2 contracts/evidence](docs/M8B2.md).
+
+### Reconstruction validation and explicit selection (M9)
+
+```powershell
+splatforge reconstruction validate "C:\Scenes\Example" --mapping-run <uuid> --json
+splatforge reconstruction validation-show "C:\Scenes\Example" <validation-run-id> --json
+splatforge reconstruction validate "C:\Scenes\Example" --mapping-run <uuid> --policy custom.json
+splatforge reconstruction select "C:\Scenes\Example" --validation-run <uuid> --mode recommended
+splatforge reconstruction select "C:\Scenes\Example" --validation-run <uuid> --component <a> --component <b>
+splatforge reconstruction selection-show "C:\Scenes\Example" <selection-run-id> --json
+```
+
+M9 freezes the exact historical selected-view source/camera grouping, canonically hashes
+the detailed sparse geometry separately from M8, then publishes measurements and a separate
+policy report. Coverage denominators always use M7 selected views. Human inspection shows
+source-group imbalance, camera diagnostics, tracks, reprojection/triangulation availability
+and structured PASS/WARN/FAIL evidence. Threshold changes reuse measurements; unknown
+metrics stay explicit. The conservative baseline warns on unbenchmarked heuristics and
+supports explicit custom hard thresholds. It never mutates/reruns M8 or merges components.
+See [M9 contracts and policy thresholds](docs/M9.md).
+
+Manual selection retains one or several separate components. Automatic
+`selection.dominance_v1` compares registration, every source group's coverage and validation
+severity transparently. Coverage tradeoffs/equal evidence are AMBIGUOUS and require manual
+selection; largest/first is never a tie-break. Applicable FAIL gates require exact
+`--override-issue` IDs and a non-empty `--override-reason`, bound to reconstruction,
+report and selected content. Changed geometry under the same component UUID invalidates
+old choices/overrides. Reason/policy changes with identical selected content preserve
+downstream numerical semantics. M10 separate dataset generation has not started.
 
 ## Intended workflow
 

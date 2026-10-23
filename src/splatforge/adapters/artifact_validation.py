@@ -38,7 +38,23 @@ from splatforge.core.quality import (
     sharpest_selected_semantic_digest,
 )
 from splatforge.core.reconstruction import RECONSTRUCTION_ARTIFACT_TYPE, ReconstructionSet
+from splatforge.core.reconstruction_selection import (
+    SELECTION_ARTIFACT_TYPE,
+    ReconstructionSelectionArtifact,
+)
+from splatforge.core.reconstruction_validation import (
+    GEOMETRY_ARTIFACT_TYPE as VALIDATION_GEOMETRY_ARTIFACT_TYPE,
+)
+from splatforge.core.reconstruction_validation import (
+    METRICS_ARTIFACT_TYPE,
+    REPORT_ARTIFACT_TYPE,
+)
 from splatforge.core.retrieval import RETRIEVAL_ARTIFACT_TYPE, RetrievalRepresentationSet
+from splatforge.core.validation_artifacts import (
+    ReconstructionMetricsArtifact,
+    ReconstructionReportArtifact,
+    ValidationGeometryArtifact,
+)
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     MAX_VIEWS,
@@ -64,6 +80,10 @@ class ValidatedArtifact:
     semantic_digest: str
     parsed: (
         ReconstructionSet
+        | ValidationGeometryArtifact
+        | ReconstructionMetricsArtifact
+        | ReconstructionReportArtifact
+        | ReconstructionSelectionArtifact
         | PairSet
         | RetrievalRepresentationSet
         | LocalFeatureSet
@@ -86,7 +106,11 @@ class ValidationStrength(IntEnum):
 class ArtifactValidationContext:
     """One operation's immutable typed results; never retains image bytes."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, mapping_integrity_only: bool = False) -> None:
+        # M9 downstream reads may reuse the indexed M8 structural validation only
+        # after fresh manifest + every-payload SHA verification. This context is
+        # separate from ordinary M8 cache/recovery and never survives an operation.
+        self.mapping_integrity_only = mapping_integrity_only
         self.results: dict[
             tuple[str, ...],
             tuple[ValidationStrength, ArtifactManifest, Path, ValidatedArtifact],
@@ -106,6 +130,7 @@ def stream_sha256(path: Path, *, chunk_size: int = 1024 * 1024) -> tuple[int, st
 def validate_workspace_output(
     output: Path, artifact_type: str, *, decode_pixels: bool = True,
     verified_payloads: dict[str, PayloadFile] | None = None,
+    mapping_integrity_only: bool = False,
 ) -> ValidatedArtifact:
     if not output.is_dir() or output.is_symlink() or output.is_junction():
         raise ValueError("Stage did not create a safe output directory")
@@ -117,9 +142,19 @@ def validate_workspace_output(
     if artifact_type == PAIR_ARTIFACT_TYPE:
         return _validate_pairs(output, verified_payloads)
     if artifact_type == RECONSTRUCTION_ARTIFACT_TYPE:
-        from splatforge.adapters.mapping_artifacts import validate_mapping_output
+        from splatforge.adapters.mapping_artifacts import (
+            validate_mapping_integrity_receipt,
+            validate_mapping_output,
+        )
 
+        if mapping_integrity_only and verified_payloads is not None:
+            return validate_mapping_integrity_receipt(output, verified_payloads)
         return validate_mapping_output(output, verified_payloads)
+    if artifact_type in {VALIDATION_GEOMETRY_ARTIFACT_TYPE, METRICS_ARTIFACT_TYPE,
+                         REPORT_ARTIFACT_TYPE, SELECTION_ARTIFACT_TYPE}:
+        from splatforge.adapters.validation_artifacts import validate_validation_output
+
+        return validate_validation_output(output, artifact_type, verified_payloads)
     if artifact_type == RETRIEVAL_ARTIFACT_TYPE:
         from splatforge.adapters.retrieval_artifacts import validate_retrieval_output
 
@@ -138,7 +173,8 @@ def validate_workspace_output(
 
 
 def validate_published_artifact(
-    artifact_directory: Path, manifest: ArtifactManifest, *, decode_pixels: bool = True
+    artifact_directory: Path, manifest: ArtifactManifest, *, decode_pixels: bool = True,
+    mapping_integrity_only: bool = False,
 ) -> ValidatedArtifact:
     if manifest.artifact_type == PAIR_ARTIFACT_TYPE and (
         len(manifest.payloads) != 1 or manifest.payloads[0].path != "pair_set.json"
@@ -165,6 +201,7 @@ def validate_published_artifact(
     validated = validate_workspace_output(
         artifact_directory, manifest.artifact_type, decode_pixels=decode_pixels,
         verified_payloads=verified_payloads,
+        mapping_integrity_only=mapping_integrity_only,
     )
     if validated.payloads != manifest.payloads:
         raise ValueError("Published payload manifest differs from validated files")
@@ -198,6 +235,12 @@ def validate_published_artifact(
         from splatforge.adapters.mapping_artifacts import validate_mapping_lineage
 
         validate_mapping_lineage(validated.parsed, manifest)
+    if isinstance(validated.parsed, (ValidationGeometryArtifact, ReconstructionMetricsArtifact,
+                                     ReconstructionReportArtifact,
+                                     ReconstructionSelectionArtifact)):
+        from splatforge.adapters.validation_artifacts import validate_validation_lineage
+
+        validate_validation_lineage(validated.parsed, manifest)
     if isinstance(validated.parsed, RetrievalRepresentationSet):
         from splatforge.adapters.retrieval_artifacts import validate_retrieval_lineage
 

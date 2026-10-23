@@ -545,3 +545,41 @@ ordering, times, performance history and refusal limits do not affect numerical 
 No selected winner/component or universal quality ranking is persisted. Native phase/GPU
 logs remain bounded attempt diagnostics outside immutable reconstruction payloads.
 See [M8b2](M8B2.md).
+
+## M9 validation publications
+
+RunSnapshot schema 1 adds reconstruction.geometry, reconstruction.measure and
+reconstruction.validate, each an explicit one-node local stage. Project/state/M8 formats
+do not migrate. ValidationGeometryInput, ReconstructionMetrics and
+ReconstructionValidationReport each publish one bounded evidence.json receipt through
+normal artifacts, attempts, expected-ID/manifest-before-move and recovery machinery.
+Exact reconstruction/selected/candidate/geometry/measurement handles are frozen in the
+appropriate route and normal manifest lineage. Geometry canonicalization retains an
+immutable ValidationUniverse. Reports reference numerical measurements without copying them.
+
+The transport geometry scan keys verified native payload hashes to avoid re-normalizing
+unchanged input on policy-only runs. Canonical geometry identity excludes those hashes,
+native IDs and paths. Measurements key numerical reconstruction + canonical detailed
+geometry + exact universe + numerical method/settings. Reports key metrics + policy.
+Cache reuse preserves original producer lineage; fresh runs record their own exact inputs.
+Orphan adoption checks frozen inputs, typed evidence/recipe, upstream integrity and policy
+evaluation. Pending/accepted cancellation forbids publication/adoption. Partial scans remain
+scratch and restart from M8. History is still separate machine-local M6.5 telemetry.
+See [M9](M9.md) for contracts and limits.
+
+`reconstruction.select` adds one normal M9b decision route/publication, still RunSnapshot
+schema 1 with no state/project/M8 migration. ReconstructionSelection v1 evidence.json binds
+exact reconstruction, report, metrics and geometry handles in manifest lineage. Its small
+payload retains canonical separate selected components/content digests, mode, policy,
+structured reasons, warning issue references and optional exact failure override. Recipe
+identity includes report/decision evidence; downstream semantic identity includes selected
+content and excludes policy/reason/artifact UUID. New same-content publications can reuse
+numerical semantics while keeping fresh exact run provenance. Ambiguous/blocked automatic
+decisions publish no selection. Orphan adoption re-evaluates frozen decisions and exact
+overrides; stale report/geometry/lineage fails closed.
+
+M9 downstream reads use an isolated operation context that freshly verifies successful
+indexed producer/manifest and every native payload hash before reusing the original M8
+structural validation evidence. It enforces independent plain files and required model
+entries. Policy-only cache hits do not parse sparse observations. This context is discarded
+after each operation; ordinary M8 cache/publication/recovery still uses full native scans.

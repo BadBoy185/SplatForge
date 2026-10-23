@@ -295,7 +295,7 @@ requested view-graph calibration, existing containment/publication/recovery/cach
 M6.5 progress. No component selection or mapper/calibration fallback occurs.
 Synthetic reader/isolation/lifecycle tests and tiny real Global transport are covered.
 See [M8a contracts and evidence](docs/M8A.md). M7c production VPR benchmarking remains
-pending independently and does not block M8a. M9 and M10 have not started.
+pending independently and does not block M8a. M9 is implemented below; M10 has not started.
 
 **M8b1: implemented Incremental Ceres CPU.** Explicit single-model Incremental publishes
 the same ReconstructionSet v1/Reader with all unregistered views recorded. Native
@@ -316,12 +316,16 @@ so Global GPU real validation is false. See [M8b2](docs/M8B2.md).
 **Technical M8 implementation is complete. Representative mapper recommendation benchmark
 remains pending** across drone, phone, mixed/multi-clip/unordered/difficult/larger scenes.
 No universal winner, automatic fallback or production default change follows from tiny
-fixtures. M7c production VPR benchmarking remains independently pending. M9 may begin
-after architecture/review; M9 and M10 have not started.
+fixtures. M7c production VPR benchmarking remains independently pending. M9 now consumes
+these immutable M8 artifacts as documented below; M10 has not started.
 
 ## M9 — reconstruction validation and component selection
 
-**M9a:** implement a structured report for registration coverage overall/per source group,
+**M9a: implemented.** Exact immutable ValidationUniverse follows historical selected-view
+lineage. M9-owned detailed geometry identity covers consumed XYZ/observations/tracks without
+changing ReconstructionSet v1. Separate ReconstructionMetrics and policy report reuse
+measurements across threshold changes, with exact/sampled/unavailable evidence. Provides a
+structured report for registration coverage overall/per source group,
 components, unregistered views, point/track statistics, reprojection distributions,
 triangulation/degeneracy checks where supported and camera plausibility. Use explicit
 threshold profiles; missing metrics are unknown, not zero or pass.
@@ -331,7 +335,7 @@ policy changes do not rerun mapping. Distinguish component-scoped and project-wi
 rules. CLI displays actionable issues; continuation past applicable failing gates
 requires an explicit override bound to the reconstruction, report and selected data.
 
-**M9b:** publish ReconstructionSelection as a small application decision artifact
+**M9b: implemented.** Publishes ReconstructionSelection v1 as a small application decision artifact
 referencing the unchanged ReconstructionSet and validation evidence. Record chosen
 component IDs, manual/policy mode, policy settings/version and reasons. Fingerprint
 selection for downstream datasets; never silently select the largest component.
@@ -341,7 +345,15 @@ missing/obsolete choices block preparation; selection changes invalidate only af
 datasets/training/exports. Several unaligned components remain separate datasets.
 Validation still reports all components. Evaluate selected-component gates plus
 project-wide rules; deselection cannot waive a global failure. Test changed geometry
-under identical component IDs, stale overrides and same-content dataset reuse.
+under identical component IDs, stale overrides and same-content downstream semantic identity.
+Conservative selection.dominance_v1 compares every source group, coverage and explicit
+validation severity; tradeoffs/equal evidence stay ambiguous without an output artifact.
+Manual multi-component choices remain separate reconstructions. Exact failure overrides
+and scoped gates are inspectable. No score, largest tie-break, merge or M8 feedback occurs.
+
+See [M9 contracts, thresholds and verification](docs/M9.md). M9 technical implementation
+is complete. Representative M7c VPR benchmarking and representative M8 mapper recommendation
+benchmarking remain independently pending. M10 has not started.
 
 ## M10 — complete flat-camera CLI and training dataset
 

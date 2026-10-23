@@ -334,8 +334,12 @@ VPR benchmarking proceeds independently.
 
 ## 8. M9: view-graph and reconstruction diagnostics
 
-M9 should remain a validation/decision layer, not an algorithm that mutates the
-reconstruction. Its normative acceptance remains the one in `ROADMAP.md`.
+M9 is implemented as a validation/decision layer that observes immutable reconstruction.
+Its normative acceptance remains the one in `ROADMAP.md`. Separate exact historical
+universe, detailed geometry identity, measurements and baseline/custom policy evidence
+support explicit manual or conservative dominance selection. No weighted quality score,
+largest-component rule or mapper feedback is added. Heuristic thresholds primarily warn;
+representative calibration remains empirical work. See [M9](M9.md).
 
 Where the already-produced M7/M8 evidence makes them cheap and defensible, future M9
 research may consider additional diagnostic signals such as:

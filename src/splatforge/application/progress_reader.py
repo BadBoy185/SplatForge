@@ -15,6 +15,7 @@ from splatforge.core.execution import (
     GeometricVerificationRoute,
     MappingRoute,
     PairSelectionRoute,
+    ReconstructionEvidenceRoute,
     RetrievalBuildRoute,
     SharpestViewPreparationRoute,
 )
@@ -41,13 +42,16 @@ class RunProgressService:
         if isinstance(route, FakeRoute):
             nodes = (route.sequence, route.scale)
         elif isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
-                                FeatureMatchingRoute, GeometricVerificationRoute, MappingRoute)):
+                                FeatureMatchingRoute, GeometricVerificationRoute, MappingRoute,
+                                ReconstructionEvidenceRoute)):
             nodes = ()
         elif isinstance(route, SharpestViewPreparationRoute):
             nodes = (route.candidate, route.quality, route.selection)
         else:
             nodes = (route.candidate, route.selection)
         descriptions = [(node.node_id, node.method_id) for node in nodes]
+        if isinstance(route, ReconstructionEvidenceRoute):
+            descriptions = [(route.node_id, route.method_id)]
         if isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
                               FeatureMatchingRoute, GeometricVerificationRoute, MappingRoute)):
             descriptions = [(route.node_id, route.settings.method_id)]

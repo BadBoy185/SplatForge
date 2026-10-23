@@ -32,6 +32,7 @@ from splatforge.adapters.project_lock import (
     WindowsProjectWriterLock,
 )
 from splatforge.adapters.project_storage import LocalProjectStore
+from splatforge.adapters.validation_storage import ValidationStorageMixin
 from splatforge.application.execution import (
     ExecutionCancelledError,
     PublicationUnresolvedError,
@@ -60,6 +61,7 @@ from splatforge.core.execution import (
     GeometricVerificationRoute,
     MappingRoute,
     PairSelectionRoute,
+    ReconstructionEvidenceRoute,
     RecoveryResult,
     RetrievalBuildRoute,
     RunSnapshot,
@@ -142,7 +144,7 @@ class LocalExecutionProject:
     state_version: int
 
 
-class LocalExecutionRepository:
+class LocalExecutionRepository(ValidationStorageMixin):
     def __init__(
         self,
         *,
@@ -1103,7 +1105,7 @@ class LocalExecutionRepository:
         elif isinstance(snapshot.route, (FeatureExtractionRoute, PairSelectionRoute,
                                          RetrievalBuildRoute,
                                          FeatureMatchingRoute, GeometricVerificationRoute,
-                                         MappingRoute)):
+                                         MappingRoute, ReconstructionEvidenceRoute)):
             allowed = {(snapshot.route.node_id, snapshot.route.target.output_name)}
         else:
             allowed = set()
@@ -1395,7 +1397,7 @@ class LocalExecutionRepository:
         elif isinstance(snapshot.route, (PairSelectionRoute, FeatureExtractionRoute,
                                          RetrievalBuildRoute,
                                          FeatureMatchingRoute, GeometricVerificationRoute,
-                                         MappingRoute)):
+                                         MappingRoute, ReconstructionEvidenceRoute)):
             required = {snapshot.route.node_id}
         elif isinstance(snapshot.route, SharpestViewPreparationRoute):
             required = {
@@ -1750,6 +1752,14 @@ class LocalExecutionRepository:
                 expected_literal_inputs = {}
             else:
                 raise ValueError("Attempt node is not present in the frozen fake route")
+        elif isinstance(route, ReconstructionEvidenceRoute):
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("Attempt node absent from frozen M9 route")
+            self.validate_validation_inputs(root, route)
+            output = route.target
+            expected_recipe_key = route.recipe_key()
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
         elif isinstance(route, (FeatureMatchingRoute, GeometricVerificationRoute,
                                          MappingRoute)):
             if attempt["node_id"] != route.node_id:
@@ -1962,7 +1972,11 @@ class LocalExecutionRepository:
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if isinstance(route, MappingRoute):
+        if isinstance(route, ReconstructionEvidenceRoute):
+            from splatforge.application.reconstruction_validation import require_validation_payload
+
+            require_validation_payload(self, root, route, validated.parsed, exact_lineage=True)
+        elif isinstance(route, MappingRoute):
             from splatforge.application.mapping import require_mapping_payload
 
             require_mapping_payload(route, validated.parsed)
@@ -2222,7 +2236,8 @@ class LocalExecutionRepository:
         if handle.artifact_id in _seen:
             raise ValueError("Artifact lineage contains a cycle")
         seen = _seen | {handle.artifact_id}
-        metadata_only = metadata_only or handle.artifact_type == PAIR_ARTIFACT_TYPE
+        metadata_only = (metadata_only or handle.artifact_type == PAIR_ARTIFACT_TYPE
+                         or context.mapping_integrity_only)
         manifest_path = self._owned_path(root, handle.manifest_path)
         with self._read_connection(root) as connection:
             row = connection.execute(
@@ -2273,7 +2288,8 @@ class LocalExecutionRepository:
             raise ValueError("Manifest identity or contract mismatch")
         artifact_directory = manifest_path.parent
         validated = validate_published_artifact(
-            artifact_directory, manifest, decode_pixels=not metadata_only
+            artifact_directory, manifest, decode_pixels=not metadata_only,
+            mapping_integrity_only=context.mapping_integrity_only,
         )
         for lineage in manifest.input_lineage:
             with self._read_connection(root) as connection:
@@ -2318,6 +2334,16 @@ class LocalExecutionRepository:
             if ((artifact_directory / "input_cameras.json").read_bytes()
                     != (directory / "cameras.json").read_bytes()):
                 raise ValueError("mapping.input_mismatch: camera priors differ from lineage")
+        if (manifest.artifact_type.startswith("validation.")
+                or manifest.artifact_type == "reconstruction.selection"):
+            from splatforge.application.reconstruction_validation import require_validation_payload
+
+            snapshot_route = self._load_run_snapshot(root, manifest.producer_run_id).route
+            if not isinstance(snapshot_route, ReconstructionEvidenceRoute):
+                raise ValueError("M9 publication producer is not an M9 frozen route")
+            self.validate_validation_inputs(root, snapshot_route)
+            require_validation_payload(self, root, snapshot_route, validated.parsed,
+                                       exact_lineage=True)
         context.results[identity] = (strength, manifest, artifact_directory, validated)
         return manifest, artifact_directory, validated
 

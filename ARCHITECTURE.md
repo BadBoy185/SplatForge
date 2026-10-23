@@ -132,7 +132,10 @@ flowchart TD
     pairs --> matching
     matching --> verification[GeometricVerification]
     verification --> mapping[Mapping]
-    mapping --> validation[ReconstructionValidation]
+    mapping --> validation_universe[Immutable ValidationUniverse]
+    selection --> validation_universe
+    validation_universe --> reconstruction_metrics[ReconstructionMetrics / detailed geometry identity]
+    reconstruction_metrics --> validation[ReconstructionValidation / explicit policy]
     mapping --> component_selection[ReconstructionSelection]
     validation --> component_selection
     component_selection --> dataset[DatasetPreparation]
@@ -258,6 +261,23 @@ adapter reader for view/camera/pose/component records,
 with declared conventions and explicit optional-record availability. M8a point/track streaming
 is not_published; native point counts are measured. Validation and dataset preparation
 must not parse COLMAP files themselves. Do not build a universal feature-array store.
+
+M9a adds a separate inward-owned ValidationGeometrySource. Its COLMAP adapter reads
+immutable detailed points/observations with a disk-backed canonical stream and public
+view UUIDs. ValidationUniverse follows exact historical selected/candidate lineage;
+project intent is not a grouping source. Geometry, measurements and policy reports are
+separate normal publications. Thresholds do not enter measurement identity; detailed
+XYZ/tracks/observed pixels do. M8 ReconstructionSet/Reader remain unchanged. Unknown
+future projections/optional sparse records have explicit metric availability. See [M9](docs/M9.md).
+
+M9b implements explicit manual one/multiple-component decisions and the conservative
+selection.dominance_v1 policy. Automatic selection requires a unique total dominator
+across registration, every source group's coverage and configured comparable evidence.
+Equal/tradeoff/unknown evidence stays ambiguous. Project-wide FAIL cannot be waived by
+deselection; selected component failures require exact issue-bound reasoned overrides.
+Selection recipe/provenance is separate from downstream selected-content identity,
+including detailed sparse geometry. Same UUID plus changed geometry is stale. Multiple
+selected components remain separate datasets for future M10; no merge or M8 rerun exists.
 
 Separate application `state.sqlite` from every COLMAP database. Isolate databases by
 feature identity and compatible processing branch. Copy or rebuild a native database

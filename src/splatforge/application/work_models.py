@@ -13,8 +13,11 @@ from splatforge.core.execution import (
     GeometricVerificationRoute,
     MappingRoute,
     PairSelectionRoute,
+    ReconstructionEvidenceRoute,
+    ReconstructionMeasurementRoute,
     RetrievalBuildRoute,
     SharpestViewPreparationRoute,
+    ValidationGeometryRoute,
     ViewPreparationRoute,
 )
 from splatforge.core.media import MediaType
@@ -91,6 +94,57 @@ def python_backend(adapter: str) -> PerformanceBackendIdentity:
         family="python",
         runtime_version=platform.python_version(),
     )
+
+
+def validation_progress_plan(
+    route: ReconstructionEvidenceRoute, hardware: ExecutionHardwareProfile
+) -> PlannedStage:
+    total = (
+        route.point_total
+        if isinstance(route, ValidationGeometryRoute)
+        else sum(c.point_count for c in route.geometry.components)
+        if isinstance(route, ReconstructionMeasurementRoute)
+        and all(c.points_available and c.point_count is not None for c in route.geometry.components)
+        else None
+    )
+    scanning = isinstance(route, (ValidationGeometryRoute, ReconstructionMeasurementRoute))
+    plan = _stage(
+        node_id=route.node_id,
+        stage_id=(
+            "reconstruction_selection"
+            if route.route_id == "reconstruction.select"
+            else "reconstruction_validation"
+        ),
+        method_id=route.method_id,
+        model="validation.reconstruction_points_v1"
+        if scanning
+        else (
+            "selection.decision_v1"
+            if route.route_id == "reconstruction.select"
+            else "validation.policy_evaluation_v1"
+        ),
+        unit=WorkUnit.WORK,
+        total=total if total else None,
+        backend=python_backend("splatforge.validation_python"),
+        settings={
+            "method": route.method_id,
+            "settings": route.settings.model_dump(mode="json")
+            if isinstance(route, ReconstructionMeasurementRoute)
+            else {},
+        },
+        metrics={
+            "points": total or 0,
+            "components": len(route.geometry.components)
+            if isinstance(route, ReconstructionMeasurementRoute)
+            else 0,
+        },
+        hardware=hardware,
+    )
+    if not total:
+        return plan.model_copy(
+            update={"work": plan.work.model_copy(update={"mode": ProgressMode.PHASE})}
+        )
+    return plan
 
 
 def candidate_source_work(

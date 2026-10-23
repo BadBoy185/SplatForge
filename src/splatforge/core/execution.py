@@ -75,6 +75,22 @@ from splatforge.core.reconstruction import (
     ViewGraphCalibrationSettings,
     mapping_recipe_key,
 )
+from splatforge.core.reconstruction_selection import (
+    SELECTION_ARTIFACT_TYPE,
+    ReconstructionSelection,
+)
+from splatforge.core.reconstruction_validation import (
+    GEOMETRY_ARTIFACT_TYPE as VALIDATION_GEOMETRY_ARTIFACT_TYPE,
+)
+from splatforge.core.reconstruction_validation import (
+    METRICS_ARTIFACT_TYPE,
+    REPORT_ARTIFACT_TYPE,
+    MeasurementSettings,
+    ValidationGeometryInput,
+    ValidationResourceLimits,
+    ValidationUniverse,
+    measurements_recipe,
+)
 from splatforge.core.retrieval import (
     RETRIEVAL_ARTIFACT_TYPE,
     RetrievalExport,
@@ -82,6 +98,8 @@ from splatforge.core.retrieval import (
     RetrievalResourceLimits,
 )
 from splatforge.core.sfm_profiles import ResolvedFeatureMatchingRoute
+from splatforge.core.validation_artifacts import geometry_recipe
+from splatforge.core.validation_policy import ReconstructionValidationPolicy, report_recipe
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     SELECTED_ARTIFACT_TYPE,
@@ -763,6 +781,170 @@ class GlobalAcceleratedRoute(MappingRoute):
         return self
 
 
+class ReconstructionEvidenceRoute(FrozenModel):
+    """The concrete M9 evidence/decision stages share the existing one-node lifecycle."""
+
+    reconstruction: ArtifactHandle
+    resource_limits: ValidationResourceLimits = ValidationResourceLimits()
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (("reconstruction", self.reconstruction),)
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(
+            ArtifactInputLineage(input_name=name, **handle.model_dump(exclude={"manifest_path"}))
+            for name, handle in self.input_handles()
+        )
+
+    def literal_inputs(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"reconstruction", "target"})
+
+    @model_validator(mode="after")
+    def reconstruction_contract(self) -> ReconstructionEvidenceRoute:
+        if self.reconstruction.artifact_type != RECONSTRUCTION_ARTIFACT_TYPE or (
+            self.reconstruction.contract_version != 1
+        ):
+            raise ValueError("M9 requires ReconstructionSet v1")
+        contracts = {
+            "reconstruction": RECONSTRUCTION_ARTIFACT_TYPE,
+            "candidate_views": CANDIDATE_ARTIFACT_TYPE,
+            "selected_views": SELECTED_ARTIFACT_TYPE,
+            "validation_geometry": VALIDATION_GEOMETRY_ARTIFACT_TYPE,
+            "reconstruction_metrics": METRICS_ARTIFACT_TYPE,
+            "validation_report": REPORT_ARTIFACT_TYPE,
+        }
+        for name, handle in self.input_handles():
+            if handle.artifact_type != contracts[name] or handle.contract_version != 1:
+                raise ValueError("M9 frozen input contract mismatch")
+        if (
+            self.target.node_id != self.node_id
+            or self.target.contract_version != 1
+            or (self.target.output_name, self.target.artifact_type)
+            != {
+                "reconstruction.geometry": ("geometry", VALIDATION_GEOMETRY_ARTIFACT_TYPE),
+                "reconstruction.measure": ("metrics", METRICS_ARTIFACT_TYPE),
+                "reconstruction.validate": ("report", REPORT_ARTIFACT_TYPE),
+                "reconstruction.select": ("selection", SELECTION_ARTIFACT_TYPE),
+            }[self.route_id]
+        ):
+            raise ValueError("M9 frozen output contract mismatch")
+        return self
+
+
+class ValidationGeometryRoute(ReconstructionEvidenceRoute):
+    route_id: Literal["reconstruction.geometry"] = "reconstruction.geometry"
+    route_version: Literal[1] = 1
+    method_id: Literal["validation.geometry_v1"] = "validation.geometry_v1"
+    candidate: ArtifactHandle
+    selected: ArtifactHandle
+    universe: ValidationUniverse
+    native_payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    point_total: int | None = Field(default=None, ge=0, strict=True)
+    node_id: Literal["validation_geometry"] = "validation_geometry"
+    target: OutputReference = OutputReference(
+        node_id="validation_geometry",
+        output_name="geometry",
+        artifact_type=VALIDATION_GEOMETRY_ARTIFACT_TYPE,
+        contract_version=1,
+    )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (
+            *super().input_handles(),
+            ("candidate_views", self.candidate),
+            ("selected_views", self.selected),
+        )
+
+    def recipe_key(self) -> str:
+        return geometry_recipe(
+            self.reconstruction.semantic_digest,
+            self.native_payload_digest,
+            self.universe.semantic_digest,
+        )
+
+
+class ReconstructionMeasurementRoute(ReconstructionEvidenceRoute):
+    route_id: Literal["reconstruction.measure"] = "reconstruction.measure"
+    route_version: Literal[1] = 1
+    method_id: Literal["validation.sparse_measurements_v1"] = "validation.sparse_measurements_v1"
+    geometry_artifact: ArtifactHandle
+    geometry: ValidationGeometryInput
+    universe: ValidationUniverse
+    settings: MeasurementSettings = MeasurementSettings()
+    node_id: Literal["reconstruction_metrics"] = "reconstruction_metrics"
+    target: OutputReference = OutputReference(
+        node_id="reconstruction_metrics",
+        output_name="metrics",
+        artifact_type=METRICS_ARTIFACT_TYPE,
+        contract_version=1,
+    )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (*super().input_handles(), ("validation_geometry", self.geometry_artifact))
+
+    def recipe_key(self) -> str:
+        return measurements_recipe(
+            self.reconstruction.semantic_digest,
+            self.universe.semantic_digest,
+            self.geometry.semantic_digest,
+            self.settings,
+        )
+
+
+class ReconstructionValidationRoute(ReconstructionEvidenceRoute):
+    route_id: Literal["reconstruction.validate"] = "reconstruction.validate"
+    route_version: Literal[1] = 1
+    method_id: Literal["validation.policy_v1"] = "validation.policy_v1"
+    metrics: ArtifactHandle
+    geometry_artifact: ArtifactHandle
+    policy: ReconstructionValidationPolicy = ReconstructionValidationPolicy()
+    node_id: Literal["reconstruction_validation"] = "reconstruction_validation"
+    target: OutputReference = OutputReference(
+        node_id="reconstruction_validation",
+        output_name="report",
+        artifact_type=REPORT_ARTIFACT_TYPE,
+        contract_version=1,
+    )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (
+            *super().input_handles(),
+            ("reconstruction_metrics", self.metrics),
+            ("validation_geometry", self.geometry_artifact),
+        )
+
+    def recipe_key(self) -> str:
+        return report_recipe(self.metrics.semantic_digest, self.policy)
+
+
+class ReconstructionSelectionRoute(ReconstructionEvidenceRoute):
+    route_id: Literal["reconstruction.select"] = "reconstruction.select"
+    route_version: Literal[1] = 1
+    method_id: Literal["selection.decision_v1"] = "selection.decision_v1"
+    report: ArtifactHandle
+    metrics: ArtifactHandle
+    geometry_artifact: ArtifactHandle
+    decision: ReconstructionSelection
+    node_id: Literal["reconstruction_selection"] = "reconstruction_selection"
+    target: OutputReference = OutputReference(
+        node_id="reconstruction_selection",
+        output_name="selection",
+        artifact_type=SELECTION_ARTIFACT_TYPE,
+        contract_version=1,
+    )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (
+            *super().input_handles(),
+            ("validation_report", self.report),
+            ("reconstruction_metrics", self.metrics),
+            ("validation_geometry", self.geometry_artifact),
+        )
+
+    def recipe_key(self) -> str:
+        return self.decision.recipe_key
+
+
 class RunSnapshot(FrozenModel):
     schema_version: Literal[1] = 1
     run_id: UUID
@@ -775,7 +957,9 @@ class RunSnapshot(FrozenModel):
         FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute
         | FeatureExtractionRoute | FeatureMatchingRoute | GeometricVerificationRoute
         | RetrievalBuildRoute | MappingRoute | IncrementalMappingRoute
-        | HierarchicalMappingRoute | GlobalAcceleratedRoute,
+        | HierarchicalMappingRoute | GlobalAcceleratedRoute | ValidationGeometryRoute
+        | ReconstructionMeasurementRoute | ReconstructionValidationRoute
+        | ReconstructionSelectionRoute,
         Field(discriminator="route_id"),
     ]
 

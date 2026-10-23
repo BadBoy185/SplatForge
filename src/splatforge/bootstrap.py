@@ -36,6 +36,8 @@ from splatforge.application.pairs import PairsService
 from splatforge.application.progress import PerformanceService, ProgressSupport
 from splatforge.application.progress_reader import RunProgressService
 from splatforge.application.projects import ProjectService
+from splatforge.application.reconstruction_selection import ReconstructionSelectionService
+from splatforge.application.reconstruction_validation import ReconstructionValidationService
 from splatforge.application.retrieval import RetrievalService
 from splatforge.application.retrieval_benchmark import RetrievalBenchmarkService
 from splatforge.application.sfm_profiles import SfmProfileService
@@ -165,3 +167,23 @@ def build_sfm_profile_service() -> SfmProfileService:
 def build_mapping_service(*, performance_path: Path | None = None) -> MappingService:
     return MappingService(LocalExecutionRepository(project_store=LocalProjectStore()),
                           ColmapMappingAdapter(), progress=build_progress_support(performance_path))
+
+
+def build_reconstruction_validation_service(
+    *, performance_path: Path | None = None
+) -> ReconstructionValidationService:
+    from splatforge.adapters.validation_geometry import ColmapValidationSource
+
+    return ReconstructionValidationService(
+        LocalExecutionRepository(project_store=LocalProjectStore()),
+        ColmapValidationSource,
+        progress=build_progress_support(performance_path),
+    )
+
+
+def build_reconstruction_selection_service(
+    *, performance_path: Path | None = None
+) -> ReconstructionSelectionService:
+    return ReconstructionSelectionService(
+        build_reconstruction_validation_service(performance_path=performance_path)
+    )

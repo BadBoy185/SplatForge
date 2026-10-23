@@ -27,6 +27,7 @@ from splatforge.bootstrap import (
     build_sfm_profile_service,
     build_views_service,
 )
+from splatforge.cli.reconstruction import app as reconstruction_app
 from splatforge.core import build_builtin_registry, recommended_flat_video_profile
 from splatforge.core.features import (
     FeatureResourceLimits,
@@ -83,6 +84,7 @@ from splatforge.core.views import (
 )
 
 app = typer.Typer(no_args_is_help=True, help="SplatForge development CLI")
+app.add_typer(reconstruction_app, name="reconstruction")
 project_app = typer.Typer(no_args_is_help=True, help="Basic project persistence")
 app.add_typer(project_app, name="project")
 run_app = typer.Typer(no_args_is_help=True, help="Run inspection and control")

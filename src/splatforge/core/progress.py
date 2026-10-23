@@ -110,6 +110,9 @@ class WorkMetric(ProgressValue):
         "descriptor_bytes",
         "features",
         "matches",
+        "points",
+        "observations",
+        "components",
     ]
     value: NonNegative
 

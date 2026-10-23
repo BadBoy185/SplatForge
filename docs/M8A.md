@@ -7,8 +7,9 @@ structural validation and immutable transport, not M9 reconstruction-quality val
 or M9b component selection. [M8b1](M8B1.md) now adds explicit single-model Incremental
 Ceres and capability-gated Caspar BA through these unchanged portable contracts.
 [M8b2](M8B2.md) adds Hierarchical, explicit Global GPU gates and comparison infrastructure. Caspar is not a mapper.
-M7c's representative production VPR benchmark is pending independently. M9 and M10
-have not started; no training, GUI, dense/MVS/mesh or direct-geometry route is implemented.
+M7c's representative production VPR benchmark is pending independently. [M9](M9.md) now
+implements downstream validation/selection; M10 has not started. No training, GUI,
+dense/MVS/mesh or direct-geometry route is implemented.
 
 ## Supported backend and explicit settings
 
@@ -96,7 +97,7 @@ artifact IDs are excluded.
 | Calibration policy/settings | All M7 artifacts | M8 |
 | Non-binding resource limits / ETA history | Same numerical M8 cache and M7 | Nothing numerical |
 | Verified numerical geometry / consumed x/y / camera state | Unchanged upstream branches | M8 and future consumers |
-| Future M9 policy | M8 | Future report/selection only |
+| M9 policy | M8 and unchanged M9 measurements | Report/selection only |
 
 A verification-threshold change reruns verification. Mapping invalidates when its
 consumed numerical projection changes; provenance-only changes with identical mapper

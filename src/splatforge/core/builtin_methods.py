@@ -123,6 +123,24 @@ def build_builtin_registry() -> MethodRegistry:
             notes="Implemented M8b2: internal clusters, native merge, disjoint final components",
         ),
         MethodSpec(
+            id="validation.sparse_measurements_v1",
+            display_name="Reconstruction measurements",
+            stage=StageKind.VALIDATION,
+            notes="Implemented M9a: local normalized geometry, explicit metric availability; "
+                  "no COLMAP executable/GPU required to read existing artifacts",
+        ),
+        MethodSpec(
+            id="validation.policy_v1", display_name="Reconstruction validation policy",
+            stage=StageKind.VALIDATION,
+            notes="Implemented M9a: baseline_v1/custom_v1 over immutable measurements",
+        ),
+        MethodSpec(
+            id="selection.dominance_v1", display_name="Conservative component dominance",
+            stage=StageKind.RECONSTRUCTION_SELECTION,
+            notes="Implemented M9b: explicit coverage/severity dominance; ambiguous alternatives "
+                  "require manual selection; no score or largest-component tie-break",
+        ),
+        MethodSpec(
             id="training.none",
             display_name="Export training dataset only",
             stage=StageKind.TRAINING,

@@ -20,7 +20,7 @@ members or promises that every stage already has an implementation.
 | FeatureMatching | LocalFeatureSet and PairSet | MatchSet v1: exact requested pairs including zeros, valid feature indices, matcher/settings/model identity and raw numerical digest |
 | GeometricVerification | MatchSet, keypoints and camera assumptions | VerifiedGeometrySet v1: inliers, pair models/relative constraints, camera identity and typed rejection states |
 | Mapping (initial sparse route) | Verified geometry, views, cameras and optional declared priors | ReconstructionSet: all components, camera/pose/point metadata, native payloads, ID mappings and coordinate frames |
-| ReconstructionValidation | ReconstructionSet and relevant views/observations | ValidationReport: metrics, warnings, missing measurements, policy result and component coverage; no model mutation |
+| ReconstructionValidation | ReconstructionSet, immutable ValidationUniverse and normalized optional detailed geometry | Separate ValidationGeometryInput, ReconstructionMetrics and ReconstructionValidationReport v1; exact/sampled/unavailable evidence, explicit policy and scoped issues; no model mutation |
 | ReconstructionSelection (application decision) | ReconstructionSet, ValidationReport and explicit manual choices or configured policy | ReconstructionSelection: referenced set, selected component IDs, selection mode, policy/version/settings and evidence; no reconstruction mutation |
 | DatasetPreparation | ReconstructionSelection, its referenced ReconstructionSet, views, validation gate and target input format | TrainingDataset: images, cameras/poses, sparse points where required, masks if used, units/transforms and conversion manifest |
 | Training | TrainingDataset, trainer settings and optional compatible checkpoint | TrainingResult: scene payload, metrics, logs and checkpoints with recipe provenance |
@@ -578,7 +578,8 @@ geometry need not fabricate M7 artifacts. Reader contracts own M9/M10 interchang
 Coordinate convention is right-handed camera_from_world, x right/y down/z forward,
 wxyz quaternion and pixel centers at (.5,.5); scale is unknown_arbitrary. No component
 is selected. Full identities, optional-record states, settings, cache and failure contracts
-are in [M8A.md](M8A.md). M9/M10 remain future; the M7c production benchmark is independent.
+are in [M8A.md](M8A.md). M9 is downstream as described below; M10 remains future.
+The M7c production benchmark is independent.
 
 M8b1 adds explicit Incremental Ceres CPU / capability-gated Caspar BA, consuming the same
 MappingInput. `multiple_models=false` and `extract_colors=false` are fixed; exactly one
@@ -600,3 +601,33 @@ v1 snapshots/recipes remain unchanged. Comparison runs normal M8 routes sequenti
 from the same M7 artifact; report metadata never enters numerical mapping identities.
 No automatic mapper fallback, quality score or universal recommendation is introduced.
 See [M8b2](M8B2.md). Technical M8 is complete; representative recommendation is pending.
+
+## M9 measurement and policy boundary
+
+The exact selected-view universe comes from validated immutable reconstruction/M7 lineage,
+including source, source group, camera group and media type. It must match every M8 input
+view UUID, including unregistered views. All registration fractions retain this denominator.
+M9 adds its own canonical detailed geometry identity without changing ReconstructionSet v1.
+Coordinates, tracks and actual 2D observations affect measurements; native IDs/layout do not.
+
+Geometry canonicalization and numerical measurement use normal independent stages/cache.
+ReconstructionMetrics v1 contains factual whole/component/source/source-group coverage,
+fragmentation, camera plausibility and optional sparse evidence. Detailed values are exact,
+sampled with method/count/population, or unavailable with a bounded reason. Unknown is never
+zero/pass. Native summary text is not the canonical numerical representation.
+MeasurementSettings freezes bounded sampling; refusal-only resources and history do not
+change numerical settings. Baseline/custom policy evaluates these immutable measurements
+into ReconstructionValidationReport v1 with structured scoped issues and deterministic IDs.
+Threshold changes reuse measurements; policy/selection/M10 never re-key M8.
+See [M9 methods, thresholds, availability and CLI](M9.md).
+
+M9b implements ReconstructionSelection v1 with manual one/multiple components or explicit
+selection.dominance_v1. Automatic comparisons require no-worse registration/every source
+group/validation severity and strict improvement against each alternative. Tradeoffs,
+ties or missing required comparison evidence return ambiguity without a selected artifact.
+Applicable project-wide/component/source-group failures require exact issue IDs and reason,
+bound to reconstruction, detailed geometry, report and canonical selected content. A global
+failure survives deselection. Warnings remain visible. Selection recipes include decision
+evidence; numerical downstream semantics exclude policy/reasons/artifact UUIDs and include
+selected camera/pose/detailed sparse content. Same component ID with changed content is stale.
+Future M10 must emit separate datasets for multiple selected unaligned components.

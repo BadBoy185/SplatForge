@@ -370,6 +370,9 @@ independent. Do not implement M9/M10 inside M8b2.
 
 ## M9a Reconstruction validation
 
+Implemented. Follow-up work must preserve the [M9 contracts](M9.md), separate measurement
+and policy caches, exact frozen selected universe and explicit metric availability.
+
 Additional reading: [PIPELINE: reconstruction interchange](PIPELINE.md#reconstruction-interchange),
 [selection and gates](PIPELINE.md#reconstruction-component-selection) and [DEVELOPMENT: diagnostics](DEVELOPMENT.md#structured-events-and-diagnostics).
 
@@ -382,6 +385,10 @@ threshold changes without remapping. Do not select components or rewrite models.
 ```
 
 ## M9b Reconstruction component selection
+
+Implemented after the M9a focused gate. Follow-up work must preserve
+[M9 selection/override/content identities](M9.md), conservative dominance/ambiguity,
+manual multi-component separation and unchanged M8. M10 remains unstarted.
 
 Additional reading: [PIPELINE: component selection](PIPELINE.md#reconstruction-component-selection)
 and [PROJECT_FORMAT: authoritative records](PROJECT_FORMAT.md#authoritative-records).
@@ -513,4 +520,5 @@ M8b2 Hierarchical, Global GP/BA GPU capability routes and comparisons are implem
 in [M8B2.md](M8B2.md) through the same ReconstructionSet/Reader. Representative mapper
 recommendation remains pending and must not be inferred from tiny transport fixtures. Do not expose internal overlapping clusters
 as components, mutate M7, enable calibration or fall back to another mapper/BA backend.
-M7c production VPR benchmarks remain independent; M9 and M10 have not started.
+M7c representative production VPR and M8 representative mapper recommendation benchmarks
+remain independently pending. [M9a/M9b](M9.md) are implemented; M10 has not started.
