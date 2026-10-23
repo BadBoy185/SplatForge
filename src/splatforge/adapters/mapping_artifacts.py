@@ -17,6 +17,7 @@ from splatforge.core.geometry import GEOMETRY_ARTIFACT_TYPE, CameraPriorSet
 from splatforge.core.reconstruction import (
     MAX_RECONSTRUCTION_METADATA_BYTES,
     ClassicalMappingReceipt,
+    IncrementalMapperSettings,
     ReconstructionSet,
 )
 
@@ -53,7 +54,8 @@ def validate_mapping_output(
     actual_input = inspect_mapping_input(output / "mapping.db", mapping)
     if actual_input != receipt.calibration.mapping_input_after:
         raise ValueError("mapping.input_mismatch: calibrated numerical payload differs")
-    if read_components(output, mapping) != reconstruction.components:
+    maximum = 1 if isinstance(receipt.settings, IncrementalMapperSettings) else None
+    if read_components(output, mapping, maximum_components=maximum) != reconstruction.components:
         raise ValueError(
             "mapping.malformed_output: component metadata/digests differ from native state"
         )

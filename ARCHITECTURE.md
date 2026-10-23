@@ -200,8 +200,11 @@ choices without fallback. Current saved explicit ALIKED intent remains explicit.
 M8a implements COLMAP Global Mapper with all-component ReconstructionSet v1 and a
 backend-neutral reader, tested >=4.2.1 capability gating, private DB isolation and optional
 explicit view-graph calibration. Preserve-priors remains the conservative default.
-Incremental/Caspar-supported Incremental/Hierarchical remain M8b. No profile selects a mapper.
-See [M8a contracts](docs/M8A.md).
+M8b1 adds explicit single-model Incremental Ceres CPU and capability-gated Caspar BA.
+Overlapping native Incremental hypotheses are refused; all unregistered views remain explicit.
+Both routes use unchanged ReconstructionSet v1/Reader and the same private DB boundary.
+Hierarchical/Global GPU/comparison remain M8b2. No profile selects a mapper.
+See [M8a contracts](docs/M8A.md) and [M8b1](docs/M8B1.md).
 
 The documented COLMAP learned route depends on build options, including ONNX support;
 it is not guaranteed by the executable name or version alone. This motivates probing,

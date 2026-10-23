@@ -7,7 +7,7 @@ import math
 import struct
 from collections.abc import Iterable, Iterator
 from enum import StrEnum
-from typing import Literal, Protocol
+from typing import Annotated, Literal, Protocol
 from uuid import UUID, uuid5
 
 from pydantic import Field, model_validator
@@ -80,6 +80,85 @@ class MappingBackend(FeatureBackend):
     calibration_option_names: tuple[str, ...] = ()
 
 
+class IncrementalMapperSettings(FrozenModel):
+    """Bounded single-model route; remaining defaults bind exact runtime bytes."""
+
+    method_id: Literal["mapping.colmap_incremental"] = "mapping.colmap_incremental"
+    settings_version: Literal[1] = 1
+    multiple_models: Literal[False] = False
+    extract_colors: Literal[False] = False
+    min_num_matches: int = Field(default=15, ge=8, le=100000, strict=True)
+    min_model_size: int = Field(default=3, ge=3, le=MAX_VIEWS, strict=True)
+    num_threads: int = Field(default=1, ge=1, le=64, strict=True)
+    random_seed: int = Field(default=0, ge=0, le=2**31 - 1, strict=True)
+    min_focal_length_ratio: float = Field(default=0.1, gt=0)
+    max_focal_length_ratio: float = Field(default=10.0, gt=0)
+    max_extra_param: float = Field(default=1.0, gt=0)
+    ba_refine_focal_length: bool = True
+    ba_refine_principal_point: bool = False
+    ba_refine_extra_params: bool = True
+    ba_refine_sensor_from_rig: Literal[False] = False
+    ba_local_backend: Literal["CERES", "CASPAR"] = "CERES"
+    ba_global_backend: Literal["CERES", "CASPAR"] = "CERES"
+    # This switch controls Ceres CUDA only. Caspar is intrinsically GPU-only.
+    ba_use_gpu: Literal[False] = False
+    ba_gpu_index: int = Field(default=-1, ge=-1, le=31, strict=True)
+    ba_local_max_num_iterations: int = Field(default=-1, ge=-1, le=10000, strict=True)
+    ba_global_max_num_iterations: int = Field(default=-1, ge=-1, le=10000, strict=True)
+    ba_global_frames_ratio: float = Field(default=1.1, gt=1)
+    ba_global_points_ratio: float = Field(default=1.1, gt=1)
+    init_num_trials: int = Field(default=200, ge=1, le=10000, strict=True)
+    init_min_num_inliers: int = Field(default=100, ge=8, le=100000, strict=True)
+    init_max_error: float = Field(default=4.0, gt=0)
+    init_min_tri_angle: float = Field(default=16.0, gt=0, lt=180)
+    # Native 2D-2D registration is explicit; it never changes mapper or BA backend.
+    structure_less_registration_fallback: bool = True
+
+    @property
+    def uses_caspar(self) -> bool:
+        return self.ba_global_backend == "CASPAR"
+
+    @model_validator(mode="after")
+    def supported_configuration(self) -> IncrementalMapperSettings:
+        if self.ba_local_backend != self.ba_global_backend:
+            raise ValueError(
+                "mapping.unsupported_ba_configuration: use CERES/CERES or CASPAR/CASPAR"
+            )
+        if self.max_focal_length_ratio < self.min_focal_length_ratio:
+            raise ValueError("Invalid Incremental focal-length ratio range")
+        if self.uses_caspar:
+            if self.ba_gpu_index < 0:
+                raise ValueError("mapping.gpu_unresolved: Caspar requires a concrete GPU index")
+            if self.ba_refine_focal_length != self.ba_refine_extra_params:
+                raise ValueError("mapping.caspar_refinement: focal and extra refinement must agree")
+        elif self.ba_gpu_index != -1:
+            raise ValueError("mapping.cpu_ceres_only: GPU index is relevant only for Caspar")
+        if 0 in (self.ba_local_max_num_iterations, self.ba_global_max_num_iterations):
+            raise ValueError("BA iterations must be positive or -1 for pinned backend defaults")
+        return self
+
+
+class CasparDevice(FrozenModel):
+    index: int = Field(ge=0, le=31, strict=True)
+    uuid: str = Field(min_length=32, max_length=64)
+    name: str = Field(min_length=1, max_length=256)
+    driver_version: int = Field(ge=1, strict=True)
+    driver_binary_sha256: Digest
+    compute_major: int = Field(ge=1, strict=True)
+    compute_minor: int = Field(ge=0, strict=True)
+
+
+class IncrementalMappingBackend(MappingBackend):
+    adapter_id: Literal["splatforge.colmap_incremental"] = "splatforge.colmap_incremental"
+    operation: Literal["mapper"] = "mapper"
+    device: CasparDevice | None = None
+
+
+MapperSettings = Annotated[
+    GlobalMapperSettings | IncrementalMapperSettings, Field(discriminator="method_id")
+]
+
+
 class MappingInput(FrozenModel):
     contract_version: Literal[1] = 1
     view_ids: tuple[UUID, ...] = Field(min_length=1, max_length=MAX_VIEWS)
@@ -148,7 +227,7 @@ def estimate_mapping_resources(
 
 def mapping_recipe_key(
     input_digest: str,
-    settings: GlobalMapperSettings,
+    settings: GlobalMapperSettings | IncrementalMapperSettings,
     policy: MappingCalibrationPolicy,
     calibration: ViewGraphCalibrationSettings | None,
     backend_identity: str,
@@ -383,18 +462,21 @@ def calibration_summary(value: CalibrationResult) -> ReconstructionCalibration:
 
 
 class ClassicalMappingReceipt(FrozenModel):
-    """Classical M7 -> Global provenance, separate from the portable output contract."""
+    """Classical M7 provenance, separate from the portable output contract."""
 
     contract_version: Literal[1] = 1
     verification_artifact_id: UUID
     verification_semantic_digest: Digest
     mapping_input: MappingInput
-    settings: GlobalMapperSettings
+    settings: MapperSettings
     calibration: CalibrationResult
     backend_numerical_identity: Digest
 
     @model_validator(mode="after")
     def consistent(self) -> ClassicalMappingReceipt:
+        if (isinstance(self.settings, IncrementalMapperSettings)
+                and self.calibration.policy != MappingCalibrationPolicy.PRESERVE_PRIORS):
+            raise ValueError("Incremental v1 requires verified camera state without calibration")
         if (
             self.calibration.cameras_before != self.mapping_input.cameras_digest
             or self.calibration.mapping_input_after.view_ids != self.mapping_input.view_ids
@@ -421,6 +503,10 @@ class ClassicalMappingReceipt(FrozenModel):
         )
 
     def require_output(self, value: ReconstructionSet) -> None:
+        if isinstance(self.settings, IncrementalMapperSettings) and value.component_count != 1:
+            raise ValueError(
+                "mapping.unexpected_multiple_models: Incremental requires one component"
+            )
         if (
             value.mapping_input_digest != self.mapping_input.semantic_digest
             or value.input_view_ids != self.mapping_input.view_ids

@@ -4,8 +4,9 @@ M8a implements the classical `VerifiedGeometrySet -> private DB -> optional expl
 view-graph calibration -> Global Mapper -> all components -> ReconstructionSet`
 route. M9/M10 consume `ReconstructionReader`, never COLMAP files directly. This is
 structural validation and immutable transport, not M9 reconstruction-quality validation
-or M9b component selection. M8b Incremental, Incremental with Caspar BA, Hierarchical
-and comparative benchmarking remain future. Caspar is not a separate mapper.
+or M9b component selection. [M8b1](M8B1.md) now adds explicit single-model Incremental
+Ceres and capability-gated Caspar BA through these unchanged portable contracts.
+Hierarchical, Global GPU and comparative benchmarking remain M8b2. Caspar is not a mapper.
 M7c's representative production VPR benchmark is pending independently. M9 and M10
 have not started; no training, GUI, dense/MVS/mesh or direct-geometry route is implemented.
 
@@ -56,7 +57,7 @@ calibrator support, exact native identity, schema/runtime evidence and real inte
 validation separate. Help/schema evidence does not certify reconstruction quality or
 an integration run: `colmap.mapper.global.integration` remains explicitly unknown in
 Doctor. Actual successful stage diagnostics and opt-in integration provide execution
-evidence. Only the Global method is marked implemented; other catalog mappers remain planned.
+evidence. M8a implemented Global; M8b1 separately adds Incremental. Hierarchical remains planned.
 
 ## Numerical input and recipe
 

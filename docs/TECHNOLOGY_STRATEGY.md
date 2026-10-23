@@ -297,8 +297,10 @@ proposals.
 ## 7. M8: mapping and calibration
 
 Retain the planned multi-mapper strategy rather than declaring one universal mapper.
-The roadmap splits implemented M8a Global/reader contracts from future M8b
-Incremental/Caspar-supported Incremental/Hierarchical alternatives and comparative benchmarks.
+The roadmap splits implemented M8a Global/reader contracts and M8b1 explicit Incremental
+Ceres / capability-gated Caspar BA from future M8b2 Hierarchical, Global GPU and comparisons.
+Incremental M8b1 fixes native multi-model false to preserve disjoint component semantics;
+it retains explicit unregistered views in the unchanged ReconstructionSet v1.
 
 Current COLMAP guidance makes it reasonable to research the following routing logic:
 
@@ -312,14 +314,17 @@ These points guide method selection; they do not add new acceptance criteria to 
 ### M8a explicit calibration policy
 
 M8a implements the tested COLMAP >=4.2.1 Global route and ReconstructionSet/Reader;
-M8b retains Incremental, Caspar-supported Incremental BA, Hierarchical and comparative
-benchmarking. The explicit M8a scope authorizes optional view_graph calibration only on
+M8b1 adds Incremental/Caspar BA using verified cameras directly, without calibration.
+M8b2 retains Hierarchical, Global GPU and comparative benchmarking. The explicit M8a
+scope authorizes optional view_graph calibration only on
 a private mapping DB, with validated finite numerical state and deterministic result identity.
 The default remains preserve_priors. Device/EXIF/scene classification never enables it.
 Representative uncertain-intrinsics benchmarks must justify any future default change.
 Calibration estimates are distinct from original priors and final optimized intrinsics;
 none is automatically called ground truth. Learned calibration remains out of scope.
-See [M8a contracts](M8A.md). M7c production VPR benchmarking proceeds independently.
+See [M8a contracts](M8A.md) and [M8b1](M8B1.md). Caspar is implemented but not compiled
+in the locally tested runtime; real Caspar validation remains false. GPU inventory is
+insufficient. M7c production VPR benchmarking proceeds independently.
 
 ## 8. M9: view-graph and reconstruction diagnostics
 

@@ -196,7 +196,8 @@ dispersion, spikes/stalls, unknown stages, cache/skips, monotonic display aggreg
 history privacy/retention/failures, cancellation, old runs and structured FFmpeg progress.
 M7 must report views/MP and pairs; M8 must preserve nonlinear/indeterminate progress;
 M11 managed trainers must report iterations/steps through the same contract. M7a/M7b
-now implement their work models; M8a uses phase-only work; M8b/M11 remain planned. Numerical schema versions remain unchanged.
+now implement their work models; M8a/M8b1 use phase-only work; M8b2/M11 remain planned.
+Numerical schema versions remain unchanged.
 
 ## M7 — features, matching and geometric verification
 
@@ -296,10 +297,19 @@ Synthetic reader/isolation/lifecycle tests and tiny real Global transport are co
 See [M8a contracts and evidence](docs/M8A.md). M7c production VPR benchmarking remains
 pending independently and does not block M8a. M9 and M10 have not started.
 
-**M8b: planned.** Incremental Mapper, a Caspar-supported Incremental BA route,
-Hierarchical Mapper and comparative mapper benchmarking. These must converge to the
-same ReconstructionSet/Reader, reuse earlier compatible artifacts and preserve all components.
-Caspar is a BA backend, not a separate mapper. M8 as a whole is not complete.
+**M8b1: implemented Incremental Ceres CPU.** Explicit single-model Incremental publishes
+the same ReconstructionSet v1/Reader with all unregistered views recorded. Native
+multi-model mode is disabled because its overlapping hypotheses cannot represent disjoint
+components. M7/private DB, immutable publication/cache/recovery/cancellation and M6.5 phase
+progress are reused. Caspar local/global BA route is implemented and capability-gated;
+locally compiled/available: **no**, real-backend validated locally: **false** (the existing
+4.2.1 runtime lacks CASPAR_ENABLED). NVIDIA inventory is separate evidence. Real tiny
+Incremental Ceres transport/cache/cancellation passes. See [M8b1](docs/M8B1.md).
+
+**M8b2: planned.** Hierarchical Mapper, Global GPU route/capability, comparative mapper
+benchmarks and eventual product-level recommendation policy. Preserve the same portable
+contracts; internal Hierarchical overlapping clusters must be merged natively before
+publication. No automatic fallback is introduced. M8 as a whole is not complete.
 
 ## M9 — reconstruction validation and component selection
 

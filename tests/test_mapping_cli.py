@@ -2,11 +2,12 @@
 
 from uuid import UUID
 
+import pytest
 from typer.testing import CliRunner
 
 import splatforge.cli.app as cli
 from splatforge.application.mapping import MappingRunResult
-from splatforge.core.reconstruction import MappingCalibrationPolicy
+from splatforge.core.reconstruction import IncrementalMapperSettings, MappingCalibrationPolicy
 
 
 def test_mapping_cli_delegates_global_and_explicit_calibration(tmp_path, monkeypatch):
@@ -52,8 +53,8 @@ def test_mapping_cli_delegates_global_and_explicit_calibration(tmp_path, monkeyp
 def test_unsupported_mapper_raw_flags_and_settings_refused(tmp_path):
     base = ["mapping", "run", str(tmp_path), "--verification-run", str(UUID(int=1))]
     runner = CliRunner()
-    result = runner.invoke(cli.app, [*base, "--method", "incremental"])
-    assert result.exit_code == 1 and "only explicit Global" in result.output
+    result = runner.invoke(cli.app, [*base, "--method", "hierarchical"])
+    assert result.exit_code == 1 and "Hierarchical is planned" in result.output
     assert runner.invoke(cli.app, [*base, "--GlobalMapper.multiple_models", "0"]).exit_code == 2
     settings = tmp_path / "unknown.json"
     settings.write_text('{"unknown_backend_flag":1}', encoding="utf-8")
@@ -69,3 +70,61 @@ def test_programmatic_bypass_cannot_disable_multiple_models(tmp_path):
     invalid = GlobalMapperSettings().model_copy(update={"multiple_models": False})
     with pytest.raises(ValueError):
         MappingService(None, None).run(tmp_path, verification_run_id=UUID(int=1), settings=invalid)
+
+
+@pytest.mark.parametrize("backend,index", [("ceres", None), ("caspar", 0), ("caspar", 2)])
+def test_incremental_cli_freezes_distinct_local_global_backend(
+    tmp_path, monkeypatch, backend, index
+):
+    calls = []
+
+    class Service:
+        def run(self, root, **kwargs):
+            calls.append(kwargs)
+            return MappingRunResult(
+                run_id=UUID(int=2),
+                status="cancelled",
+                artifact=None,
+                reconstruction=None,
+                cache_hit=False,
+            )
+
+    monkeypatch.setattr(cli, "build_mapping_service", lambda: Service())
+    argv = [
+        "mapping",
+        "run",
+        str(tmp_path),
+        "--verification-run",
+        str(UUID(int=1)),
+        "--method",
+        "incremental",
+        "--ba-backend",
+        backend,
+        "--json",
+    ]
+    if index is not None:
+        argv += ["--gpu-index", str(index)]
+    result = CliRunner().invoke(cli.app, argv)
+    assert result.exit_code == 0, result.output
+    settings = calls[0]["settings"]
+    assert type(settings) is IncrementalMapperSettings
+    assert settings.ba_local_backend == settings.ba_global_backend == backend.upper()
+    assert settings.ba_gpu_index == (-1 if index is None else index)
+    assert not settings.multiple_models and not settings.extract_colors
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--method", "global", "--ba-backend", "caspar"],
+        ["--method", "incremental", "--ba-backend", "ceres", "--gpu-index", "0"],
+        ["--method", "incremental", "--ba-backend", "caspar", "--gpu-index", "-1"],
+        ["--method", "incremental", "--ba-backend", "unknown"],
+        ["--method", "incremental", "--Mapper.multiple_models", "1"],
+    ],
+)
+def test_cli_refuses_unsupported_ba_flags_without_substitution(tmp_path, flags):
+    result = CliRunner().invoke(
+        cli.app, ["mapping", "run", str(tmp_path), "--verification-run", str(UUID(int=1)), *flags]
+    )
+    assert result.exit_code in {1, 2}

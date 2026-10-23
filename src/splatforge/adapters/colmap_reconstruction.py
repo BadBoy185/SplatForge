@@ -309,10 +309,18 @@ def read_components(
     *,
     maximum_validation_bytes: int | None = None,
     checkpoint: Callable[[], None] | None = None,
+    maximum_components: int | None = None,
 ) -> tuple[ReconstructionComponent, ...]:
     sparse = output / "sparse"
     if not sparse.is_dir() or sparse.is_symlink() or sparse.is_junction():
         raise ValueError("mapping.zero_components: no sparse output")
+    if maximum_components is not None:
+        count = sum(1 for p in sparse.iterdir() if p.name != "project.ini")
+        if count > maximum_components:
+            raise ValueError(
+                "mapping.unexpected_multiple_models: single-model Incremental emitted multiple "
+                "native models; overlapping hypotheses cannot be disjoint components"
+            )
     components = []
     for directory in sparse.iterdir():
         if directory.name == "project.ini":

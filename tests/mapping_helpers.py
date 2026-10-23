@@ -18,7 +18,11 @@ from splatforge.adapters.colmap_mapping import ColmapMappingAdapter
 from splatforge.adapters.feature_database import FeatureImageMapping, NativeFeaturePayload
 from splatforge.application.mapping import MappingService
 from splatforge.core.pairs import ExhaustiveSettings
-from splatforge.core.reconstruction import GlobalMapperSettings, ViewGraphCalibrationSettings
+from splatforge.core.reconstruction import (
+    GlobalMapperSettings,
+    IncrementalMapperSettings,
+    ViewGraphCalibrationSettings,
+)
 
 
 def mapping_help():
@@ -34,6 +38,22 @@ def mapping_help():
 def calibration_help():
     names = {"database_path", "default_random_seed", "log_target"}
     names |= set(ViewGraphCalibrationSettings.model_fields) - {"settings_version", "random_seed"}
+    return "-h [ --help ]\n" + "".join("--" + n + " arg\n" for n in sorted(names))
+
+
+def incremental_help():
+    names = {"database_path", "image_path", "output_path", "default_random_seed", "log_target",
+             "log_level"}
+    names |= {"Mapper." + k for k in IncrementalMapperSettings.model_fields
+              if k not in {"method_id", "settings_version"}}
+    return "-h [ --help ]\n" + "".join("--" + n + " arg\n" for n in sorted(names))
+
+
+def bundle_adjustment_help(*, compiled=False):
+    names = {"input_path", "output_path", "BundleAdjustment.backend",
+             "BundleAdjustmentCeres.use_gpu"}
+    if compiled:
+        names |= {"BundleAdjustmentCaspar.gpu_index", "BundleAdjustmentCaspar.solver_iter_max"}
     return "-h [ --help ]\n" + "".join("--" + n + " arg\n" for n in sorted(names))
 
 
@@ -130,10 +150,13 @@ def write_model(
 class MappingFixture(MatchingFixture):
     def __init__(self, root):
         super().__init__(root)
-        self.top_help += "\nview_graph_calibrator\n"
+        self.top_help += "\nview_graph_calibrator\nbundle_adjuster\n"
         if "global_mapper" not in self.top_help:
             self.top_help += "global_mapper\n"
         self.map_help, self.cal_help = mapping_help(), calibration_help()
+        self.incremental_help = incremental_help()
+        self.caspar_compiled = False
+        self.caspar_evidence = True
         self.mapping_mode = "success"
         self.calibration_mode = "success"
         self.on_map = None
@@ -151,7 +174,12 @@ class MappingFixture(MatchingFixture):
 
     def run(self, request, *, cancellation=None, poll=None):
         argv = request.argv
-        if argv[0] not in {"global_mapper", "view_graph_calibrator"}:
+        if argv == ("mapper", "-h") or argv == ("bundle_adjuster", "-h"):
+            self.requests.append(request)
+            return process_result(request, identity=self.identity, stdout=(
+                self.incremental_help if argv[0] == "mapper" else
+                bundle_adjustment_help(compiled=self.caspar_compiled)).encode())
+        if argv[0] not in {"global_mapper", "mapper", "view_graph_calibrator"}:
             return super().run(request, cancellation=cancellation, poll=poll)
         self.requests.append(request)
         if argv[-1] == "-h":
@@ -219,11 +247,13 @@ class MappingFixture(MatchingFixture):
                 )
                 output = Path(argv[argv.index("--output_path") + 1])
                 if mode != "multi":
-                    write_model(output / "7", mapping, shared=False)
+                    selected = mapping.images[:3] if mode == "partial" else mapping.images
+                    model_rows = rows[:3] if mode == "partial" else rows
+                    write_model(output / "7", mapping, shared=False, selected=selected)
                     # Match the fixture's explicit camera dimensions/model.
                     with (output / "7" / "cameras.bin").open("wb") as stream:
-                        stream.write(struct.pack("<Q", len(rows)))
-                        for index, (image, _name) in enumerate(rows):
+                        stream.write(struct.pack("<Q", len(model_rows)))
+                        for index, (image, _name) in enumerate(model_rows):
                             model, w, h, params = db.execute(
                                 "SELECT c.model,c.width,c.height,c.params "
                                 "FROM cameras c JOIN images i ON i.camera_id=c.camera_id "
@@ -257,12 +287,21 @@ class MappingFixture(MatchingFixture):
                     prior_file.write_text(json.dumps(prior_value), encoding="utf-8")
                 if mode == "malformed":
                     (output / "7" / "images.bin").write_bytes(b"bad")
+                if mode == "overlap":
+                    import shutil
+
+                    shutil.copytree(output / "7", output / "8")
         if poll:
             poll()
-        return process_result(request, identity=self.identity)
+        text = (b"Creating Caspar bundle adjuster\n"
+                b"Caspar: CONVERGED_SCORE_THRESHOLD after 2 iters\n"
+                if "--Mapper.ba_global_backend" in argv and
+                argv[argv.index("--Mapper.ba_global_backend") + 1] == "CASPAR" and
+                self.caspar_evidence else b"")
+        return process_result(request, identity=self.identity, stderr=text)
 
 
-def mapping_inputs(tmp_path, *, multi=False):
+def mapping_inputs(tmp_path, *, multi=False, camera_model=None):
     value, fixture = harness(tmp_path), MappingFixture(tmp_path)
     if multi:
         value.materializer.mode = "too_many"
@@ -270,7 +309,21 @@ def mapping_inputs(tmp_path, *, multi=False):
     features = build_features(value, views, fixture)
     pairs = build_pairs(value, views, settings=ExhaustiveSettings())
     raw = match(value, fixture, features, pairs)
-    verified = verify(value, fixture, raw)
+    kwargs = {}
+    if camera_model:
+        from splatforge.core.geometry import CameraPriorSet, ViewCameraPrior
+
+        feature_set = value.execution.load_local_features(value.root, features.feature_artifact)
+        kwargs["cameras"] = CameraPriorSet(cameras=tuple(
+            ViewCameraPrior(view_id=v.view_id, model=camera_model, width=v.width, height=v.height,
+                            parameters=(100, 100, v.width / 2, v.height / 2)
+                            if camera_model == "PINHOLE" else
+                            (100, v.width / 2, v.height / 2) if camera_model == "SIMPLE_PINHOLE"
+                            else (100, v.width / 2, v.height / 2, 0),
+                            prior_focal_length=True)
+            for v in feature_set.views
+        ))
+    verified = verify(value, fixture, raw, **kwargs)
     return value, fixture, features, raw, verified
 
 

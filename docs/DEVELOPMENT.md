@@ -565,3 +565,20 @@ unknown fraction even when historical duration is available. Determinate estimat
 are unchanged. Only committed successful uncached jobs teach history. Actual observable
 phases are preparation, optional calibration, input validation, native mapping and output
 validation; no Global rotation/positioning/BA log parser is claimed.
+
+## M8b1 verification
+
+M8b1 extends the same path with explicit single-model Incremental Ceres CPU and
+capability-gated Caspar local/global BA. Focused suites are `test_incremental_contracts.py`,
+`test_incremental_execution.py`, `test_caspar_capabilities.py`, existing reconstruction /
+mapping suites, Doctor, CLI and Progress/ETA suites. Real `test_incremental_integration.py`
+executes M7 -> Incremental -> ReconstructionSet -> Reader, cache/settings invalidation,
+immutable upstream bytes and owned-process cancellation. Opt-in instructions and recorded
+local evidence are in [M8B1.md](M8B1.md). Missing compiled Caspar skips with the exact
+actionable preflight reason; mocks do not establish real-backend validation.
+
+`mapping.incremental_phases_v1` uses phase-only historical whole-job duration. Separate
+settings/runtime/device signatures keep Global CPU, Incremental Ceres CPU and Caspar GPU
+history apart. Registered counts are post-validation diagnostics, never a live completion
+fraction. Doctor help/build evidence, selected-device runtime evidence and real integration
+remain separate. No native build/install or performance-driven method selection is added.

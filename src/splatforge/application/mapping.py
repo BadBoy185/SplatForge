@@ -1,4 +1,4 @@
-"""Explicit Global mapping use case, immutable publication and restart recovery."""
+"""Explicit classical mapping, immutable publication and restart recovery."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from splatforge.application.work_models import mapping_progress_plan
 from splatforge.core.execution import (
     ArtifactHandle,
     FailureCategory,
+    IncrementalMappingRoute,
     MappingRoute,
     RunSnapshot,
     RunStatus,
@@ -31,6 +32,7 @@ from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.reconstruction import (
     ClassicalMappingReceipt,
     GlobalMapperSettings,
+    IncrementalMapperSettings,
     MappingCalibrationPolicy,
     MappingResourceLimits,
     ReconstructionLineage,
@@ -95,20 +97,28 @@ class MappingService:
         root: Path,
         *,
         verification_run_id: UUID,
-        settings: GlobalMapperSettings | None = None,
+        settings: GlobalMapperSettings | IncrementalMapperSettings | None = None,
         calibration_policy: MappingCalibrationPolicy = MappingCalibrationPolicy.PRESERVE_PRIORS,
         calibration_settings: ViewGraphCalibrationSettings | None = None,
         resource_limits: MappingResourceLimits | None = None,
         colmap: Path | None = None,
     ) -> MappingRunResult:
         root, owner = root.resolve(), uuid4()
-        settings = GlobalMapperSettings.model_validate(
+        settings_type = (
+            IncrementalMapperSettings if isinstance(settings, IncrementalMapperSettings)
+            else GlobalMapperSettings
+        )
+        settings = settings_type.model_validate(
             (settings or GlobalMapperSettings()).model_dump()
         )
         limits = MappingResourceLimits.model_validate(
             (resource_limits or MappingResourceLimits()).model_dump()
         )
         calibration_policy = MappingCalibrationPolicy(calibration_policy)
+        incremental = isinstance(settings, IncrementalMapperSettings)
+        if incremental and (calibration_policy != MappingCalibrationPolicy.PRESERVE_PRIORS
+                            or calibration_settings is not None):
+            raise ValueError("Incremental v1 uses verified camera state without calibration")
         if calibration_policy == MappingCalibrationPolicy.VIEW_GRAPH:
             calibration_settings = ViewGraphCalibrationSettings.model_validate(
                 (calibration_settings or ViewGraphCalibrationSettings()).model_dump()
@@ -124,6 +134,8 @@ class MappingService:
             repo.load_verified_geometry(root, handle)
             directory = repo.artifact_directory(root, handle)
             mapping_input = self._adapter.input(directory)
+            if incremental:
+                self._adapter.validate_incremental_input(directory, mapping_input, settings)
             estimate = estimate_mapping_resources(
                 mapping_input, (directory / "matches.db").stat().st_size, limits
             )
@@ -133,7 +145,8 @@ class MappingService:
                 settings=settings,
                 calibration=calibration_settings,
             )
-            route = MappingRoute(
+            route_type = IncrementalMappingRoute if incremental else MappingRoute
+            route = route_type(
                 verification_run_id=verification_run_id,
                 verification=handle,
                 mapping_input=mapping_input,
@@ -311,6 +324,9 @@ class MappingService:
                 progress.start(route.node_id, attempt.attempt_id)
                 payload = produce(Path(attempt.workspace), control, evidence, phase)
                 require_mapping_payload(route, payload)
+                event("mapping.output.validated", registered_views=payload.registered_view_count,
+                      unregistered_views=payload.unregistered_view_count,
+                      points=[component.point_count for component in payload.components])
                 control.checkpoint()
                 artifact = repo.publish_attempt(
                     root,
@@ -377,6 +393,8 @@ class MappingService:
 def require_mapping_payload(route: MappingRoute, payload: ReconstructionSet) -> None:
     if (
         not isinstance(payload, ReconstructionSet)
+        or payload.method_id != route.settings.method_id
+        or payload.input_view_ids != route.mapping_input.view_ids
         or payload.mapping_input_digest != route.mapping_input.semantic_digest
         or payload.resolved_settings != resolved_settings(route.settings)
         or payload.recipe_key != route.recipe_key()
@@ -386,3 +404,5 @@ def require_mapping_payload(route: MappingRoute, payload: ReconstructionSet) -> 
         or payload.backend_numerical_identity != route.backend.numerical_identity
     ):
         raise ValueError("mapping.input_mismatch: ReconstructionSet differs from frozen route")
+    if isinstance(route, IncrementalMappingRoute) and payload.component_count != 1:
+        raise ValueError("mapping.unexpected_multiple_models: Incremental requires one component")

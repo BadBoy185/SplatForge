@@ -61,6 +61,8 @@ from splatforge.core.quality import (
 from splatforge.core.reconstruction import (
     RECONSTRUCTION_ARTIFACT_TYPE,
     GlobalMapperSettings,
+    IncrementalMapperSettings,
+    IncrementalMappingBackend,
     MappingBackend,
     MappingCalibrationPolicy,
     MappingInput,
@@ -689,6 +691,39 @@ class MappingRoute(FrozenModel):
         return self
 
 
+class IncrementalMappingRoute(MappingRoute):
+    """Distinct discriminator preserves the original mapping.run Global snapshots."""
+
+    route_id: Literal["mapping.incremental.run"] = "mapping.incremental.run"
+    settings: IncrementalMapperSettings
+    backend: IncrementalMappingBackend
+    calibration_policy: Literal[MappingCalibrationPolicy.PRESERVE_PRIORS] = (
+        MappingCalibrationPolicy.PRESERVE_PRIORS
+    )
+    calibration_settings: None = None
+
+    @model_validator(mode="after")
+    def exact_contracts(self) -> IncrementalMappingRoute:
+        if (
+            self.verification.artifact_type != GEOMETRY_ARTIFACT_TYPE
+            or self.verification.contract_version != 1
+            or self.backend.operation != "mapper"
+            or self.target != OutputReference(
+                node_id=self.node_id, output_name="reconstruction",
+                artifact_type=RECONSTRUCTION_ARTIFACT_TYPE, contract_version=1,
+            )
+        ):
+            raise ValueError(
+                "Incremental requires VerifiedGeometrySet v1 / mapper / output contract"
+            )
+        device = self.backend.device
+        if self.settings.uses_caspar != (device is not None) or (
+            device is not None and device.index != self.settings.ba_gpu_index
+        ):
+            raise ValueError("mapping.gpu_unresolved: frozen Caspar device/configuration differs")
+        return self
+
+
 class RunSnapshot(FrozenModel):
     schema_version: Literal[1] = 1
     run_id: UUID
@@ -700,7 +735,7 @@ class RunSnapshot(FrozenModel):
     route: Annotated[
         FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute
         | FeatureExtractionRoute | FeatureMatchingRoute | GeometricVerificationRoute
-        | RetrievalBuildRoute | MappingRoute,
+        | RetrievalBuildRoute | MappingRoute | IncrementalMappingRoute,
         Field(discriminator="route_id"),
     ]
 

@@ -499,3 +499,4 @@ class ColmapMatchingAdapter:
         ):
             raise FeatureCapabilityError("Native matching executable/runtime identity changed")
         poll()
+        return result

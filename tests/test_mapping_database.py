@@ -54,3 +54,18 @@ def test_numerical_projection_excludes_descriptors_raw_matches_paths_and_native_
     changed = digest(changed_mapping, {p + delta for p in allowed})
     assert changed.keypoints_digest != original.keypoints_digest
     assert changed.geometry_digest == original.geometry_digest
+
+
+def test_classical_mapping_rejects_undeclared_pose_priors(tmp_path):
+    import pytest
+
+    value, _fixture, _features, _raw, verified = mapping_inputs(tmp_path)
+    source = value.execution.artifact_directory(value.root, verified.artifact)
+    mapping, allowed = mapping_source(source)
+    copied = tmp_path / "pose prior input.db"
+    shutil.copyfile(source / "matches.db", copied)
+    with closing(sqlite3.connect(copied)) as db, db:
+        db.execute("CREATE TABLE pose_priors (id INTEGER PRIMARY KEY)")
+        db.execute("INSERT INTO pose_priors VALUES (1)")
+    with pytest.raises(ValueError, match="unsupported undeclared pose priors"):
+        inspect_mapping_input(copied, mapping, allowed_pairs=allowed)

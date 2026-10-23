@@ -1,4 +1,4 @@
-"""Global-only mapping over an attempt-owned independent verified database."""
+"""Explicit Global or single-model Incremental over the same private verified DB."""
 
 from __future__ import annotations
 
@@ -10,7 +10,11 @@ from pathlib import Path
 
 from splatforge.adapters.artifact_validation import _read_bounded
 from splatforge.adapters.colmap_features import native_transport_path, runtime_files
-from splatforge.adapters.colmap_mapping_options import calibration_arguments, mapping_arguments
+from splatforge.adapters.colmap_mapping_options import (
+    calibration_arguments,
+    incremental_arguments,
+    mapping_arguments,
+)
 from splatforge.adapters.colmap_matching import ColmapMatchingAdapter
 from splatforge.adapters.colmap_reconstruction import read_components
 from splatforge.adapters.feature_database import NativeFeaturePayload, seal_feature_database
@@ -29,10 +33,13 @@ from splatforge.application.features_contracts import (
 from splatforge.core.capabilities import CapabilityStatus, FreshnessPolicy
 from splatforge.core.features import digest_json
 from splatforge.core.geometry import GEOMETRY_ARTIFACT_TYPE, VerifiedGeometrySet
+from splatforge.core.incremental import require_caspar_compatibility
 from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.reconstruction import (
     CalibrationResult,
     GlobalMapperSettings,
+    IncrementalMapperSettings,
+    IncrementalMappingBackend,
     MappingBackend,
     MappingCalibrationPolicy,
     MappingInput,
@@ -68,9 +75,13 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         policy: MappingCalibrationPolicy,
         *,
         colmap: Path | None = None,
-        settings: GlobalMapperSettings,
+        settings: GlobalMapperSettings | IncrementalMapperSettings,
         calibration: ViewGraphCalibrationSettings | None,
     ) -> MappingBackend:
+        incremental = isinstance(settings, IncrementalMapperSettings)
+        if incremental and (policy != MappingCalibrationPolicy.PRESERVE_PRIORS or calibration):
+            raise ValueError("Incremental v1 does not support view-graph calibration")
+        route = "incremental" if incremental else "global"
         report = self._capabilities.probe(
             explicit_executable=colmap.absolute() if colmap else None,
             explicit_model_directory=None,
@@ -84,8 +95,8 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         required = [
             report.binary,
             report.database.evidence,
-            report.capability("colmap.mapper.global.version"),
-            report.capability("colmap.mapper.global"),
+            report.capability(f"colmap.mapper.{route}.version"),
+            report.capability(f"colmap.mapper.{route}"),
         ]
         if policy == MappingCalibrationPolicy.VIEW_GRAPH:
             required.append(report.capability("colmap.calibration.view_graph"))
@@ -99,6 +110,30 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         assert selection is not None
         options = {s.command: s.option_names for s in report.command_discovery.subcommands}
         runtime = runtime_files(selection)
+        device = None
+        extra_evidence = ()
+        if incremental and settings.uses_caspar:
+            caspar = tuple(report.capability("colmap.ba.caspar." + key)
+                           for key in ("compiled", "options"))
+            if any(e.status != CapabilityStatus.AVAILABLE for e in caspar):
+                raise FeatureCapabilityError("; ".join(
+                    e.diagnostic_code + ": " + e.message
+                    for e in caspar if e.status != CapabilityStatus.AVAILABLE
+                ), evidence=caspar)
+            from splatforge.adapters.caspar_probe import probe_caspar
+
+            device = probe_caspar(self._capabilities, selection, settings.ba_gpu_index)
+            extra_evidence = (caspar[0], report.capability("colmap.ba.caspar.runtime").model_copy(
+                update={"status": CapabilityStatus.AVAILABLE,
+                        "diagnostic_code": "mapping.caspar_runtime_verified",
+                        "message": f"Native PINHOLE BA probe passed on gpu:{device.index}; "
+                        f"{device.name}, UUID {device.uuid}; requested local/global CASPAR. "
+                        "Mapper real integration remains separate"},
+            ))
+            if runtime_files(selection) != runtime:
+                raise FeatureCapabilityError(
+                    "mapping.runtime_changed: Caspar probe runtime changed"
+                )
         identity = digest_json(
             {
                 "adapter_version": 1,
@@ -109,18 +144,24 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
                 "runtime_profile": selection.runtime_layout.profile
                 if selection.runtime_layout
                 else None,
+                **({"caspar_device": device.model_dump()} if device else {}),
             }
         )
-        backend = MappingBackend(
+        backend_type = IncrementalMappingBackend if incremental else MappingBackend
+        backend = backend_type(
             selection=selection,
             database=report.database,
-            option_names=options["global_mapper"],
-            calibration_option_names=options.get("view_graph_calibrator", ()),
+            option_names=options["mapper" if incremental else "global_mapper"],
+            calibration_option_names=(
+                () if incremental else options.get("view_graph_calibrator", ())
+            ),
             numerical_identity=identity,
             runtime_files=runtime,
-            capability_evidence=tuple(required[-2:]),
+            capability_evidence=tuple(required[-2:]) + extra_evidence,
+            **({"device": device} if incremental else {}),
         )
-        mapping_arguments(
+        arguments = incremental_arguments if incremental else mapping_arguments
+        arguments(
             settings,
             backend.option_names,
             database=Path("p.db"),
@@ -138,6 +179,23 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         mapping, allowed = mapping_source(directory)
         return inspect_mapping_input(directory / "matches.db", mapping, allowed_pairs=allowed)
 
+    def validate_incremental_input(
+        self, directory: Path, frozen: MappingInput, settings: IncrementalMapperSettings,
+    ) -> None:
+        if self.input(directory) != frozen:
+            raise ValueError("mapping.input_mismatch: Incremental preflight differs from frozen M7")
+        if settings.uses_caspar:
+            from splatforge.adapters.matching_database import CAMERA_MODELS, readonly_database
+
+            # Redundant interpretation of the same validated camera state, not recipe metadata.
+            names = {value: key for key, value in CAMERA_MODELS.items()}
+            with closing(readonly_database(directory / "matches.db")) as db:
+                models = tuple(names[row[0]] for row in db.execute(
+                    "SELECT DISTINCT c.model FROM cameras c JOIN images i "
+                    "ON i.camera_id=c.camera_id"
+                ))
+            require_caspar_compatibility(models)
+
     def map(
         self,
         workspace: Path,
@@ -145,7 +203,7 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         directory: Path,
         mapping_input: MappingInput,
         backend: MappingBackend,
-        settings: GlobalMapperSettings,
+        settings: GlobalMapperSettings | IncrementalMapperSettings,
         policy: MappingCalibrationPolicy,
         calibration: ViewGraphCalibrationSettings | None,
         limits: MappingResourceLimits,
@@ -155,6 +213,22 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         phase_sink: Callable[[str], None],
     ) -> tuple[CalibrationResult, tuple[ReconstructionComponent, ...]]:
         phase_sink("preparing_database")
+        incremental = isinstance(settings, IncrementalMapperSettings)
+        if incremental:
+            if policy != MappingCalibrationPolicy.PRESERVE_PRIORS or calibration:
+                raise ValueError("Incremental v1 does not support calibration")
+            self.validate_incremental_input(directory, mapping_input, settings)
+            if settings.uses_caspar:
+                from splatforge.adapters.caspar_probe import observe_caspar_device
+                from splatforge.application.doctor_contracts import DoctorTeardownError
+
+                try:
+                    actual = observe_caspar_device(self._capabilities, backend.selection,
+                                                  settings.ba_gpu_index, workspace)
+                except DoctorTeardownError as exc:
+                    raise FeatureTeardownError(str(exc)) from exc
+                if actual != backend.device:
+                    raise FeatureCapabilityError("mapping.gpu_changed: frozen GPU unavailable")
         if self.input(directory) != mapping_input:
             raise ValueError("mapping.input_mismatch: upstream numerical state changed")
         mapping, allowed = mapping_source(directory)
@@ -213,7 +287,7 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
             try:
                 # M7b's native runner already owns Windows Job/process tree lifetime,
                 # bounded streams, timeout, diagnostics and exact binary/DLL identity.
-                self._run(
+                process_result = self._run(
                     workspace,
                     backend,
                     argv,
@@ -224,6 +298,10 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
                     evidence_sink,
                     lambda _name: phase_sink(phase),
                 )
+                if incremental and settings.uses_caspar:
+                    from splatforge.adapters.caspar_probe import require_caspar_execution
+
+                    require_caspar_execution(process_result)
             except (FeatureTeardownError, FeatureCancelledError, FeatureTimeoutError):
                 raise
             except Exception as exc:
@@ -287,17 +365,23 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
         images.mkdir()
         sparse = output / "sparse"
         sparse.mkdir()
-        phase_sink("global_mapping")
+        native_phase = "incremental_mapping" if incremental else "global_mapping"
+        phase_sink(native_phase)
+        arguments = incremental_arguments if incremental else mapping_arguments
         invoke(
-            mapping_arguments(
+            arguments(
                 settings,
                 backend.option_names,
                 database=native_transport_path(database),
                 images=native_transport_path(images),
                 output=native_transport_path(sparse),
             ),
-            "global_mapping",
+            native_phase,
         )
+        if incremental:
+            from splatforge.adapters.colmap_incremental import normalize_incremental_output
+
+            normalize_incremental_output(output)
         phase_sink("validating_output")
 
         def validation_checkpoint() -> None:
@@ -314,6 +398,7 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
             mapping,
             maximum_validation_bytes=validation_budget,
             checkpoint=validation_checkpoint,
+            maximum_components=1 if incremental else None,
         )
         if any(c.registered_view_count < settings.min_model_size for c in components):
             raise ValueError("mapping.malformed_output: backend violated minimum model size")

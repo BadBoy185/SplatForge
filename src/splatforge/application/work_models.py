@@ -387,10 +387,13 @@ def matching_progress_plan(
 
 
 def mapping_progress_plan(route: MappingRoute, hardware: ExecutionHardwareProfile) -> PlannedStage:
+    incremental = route.settings.method_id == "mapping.colmap_incremental"
+    caspar = incremental and route.settings.uses_caspar
     plan = _stage(
         node_id=route.node_id, stage_id="mapping", method_id=route.settings.method_id,
-        model="mapping.global_phases_v1", unit=WorkUnit.WORK, total=1.0,
-        hardware=hardware.model_copy(update={"device": "cpu"}),
+        model="mapping.incremental_phases_v1" if incremental else "mapping.global_phases_v1",
+        unit=WorkUnit.WORK, total=1.0,
+        hardware=hardware.model_copy(update={"device": "gpu" if caspar else "cpu"}),
         backend=PerformanceBackendIdentity(adapter_id=route.backend.adapter_id, family="colmap",
             runtime_version=route.backend.numerical_identity,
             executable_sha256=route.backend.selection.identity.sha256),

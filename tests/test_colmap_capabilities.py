@@ -143,7 +143,7 @@ def test_official_windows_layout_scopes_every_probe(
         assert layout.qt_platform_plugin_directory is None
         assert "QT_PLUGIN_PATH" not in expected
         assert "QT_QPA_PLATFORM_PLUGIN_PATH" not in expected
-    assert len(runner.requests) == 10  # help x5 (including Global), database x3, SIFT x2
+    assert len(runner.requests) == 11  # help x6 (Global/Incremental), database x3, SIFT x2
     assert all(dict(request.environment) == expected for request in runner.requests)
     assert all(Path(request.executable).suffix == ".exe" for request in runner.requests)
     assert inherited_path not in report.model_dump_json()
@@ -327,7 +327,8 @@ class FakeRunner:
 
     def run(self, request: ProcessRequest, *, cancellation=None) -> ProcessResult:
         self.requests.append(request)
-        if request.argv in (("global_mapper", "-h"), ("view_graph_calibrator", "-h")):
+        if request.argv in (("global_mapper", "-h"), ("view_graph_calibrator", "-h"),
+                            ("mapper", "-h"), ("bundle_adjuster", "-h")):
             return process_result(request, stdout=b"unrecognized mapping help",
                                   identity=getattr(self, "observed_identity", IDENTITY))
         if self.callback is not None:

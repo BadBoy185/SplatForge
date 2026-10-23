@@ -56,6 +56,7 @@ from splatforge.core.quality import (
 )
 from splatforge.core.reconstruction import (
     GlobalMapperSettings,
+    IncrementalMapperSettings,
     MappingCalibrationPolicy,
     MappingResourceLimits,
     ViewGraphCalibrationSettings,
@@ -102,7 +103,7 @@ matches_app = typer.Typer(no_args_is_help=True, help="Raw matching of an exact P
 app.add_typer(matches_app, name="matches")
 verification_app = typer.Typer(no_args_is_help=True, help="Standalone geometric verification")
 app.add_typer(verification_app, name="verification")
-mapping_app = typer.Typer(no_args_is_help=True, help="Global reconstruction; all components")
+mapping_app = typer.Typer(no_args_is_help=True, help="Explicit Global or single-model Incremental")
 app.add_typer(mapping_app, name="mapping")
 sfm_app = typer.Typer(no_args_is_help=True, help="Feature/matching profile and Advanced planning")
 app.add_typer(sfm_app, name="sfm")
@@ -125,6 +126,10 @@ def mapping_run(
     project: Path,
     verification_run: Annotated[UUID, typer.Option("--verification-run")],
     method: str = typer.Option("global", "--method"),
+    ba_backend: str | None = typer.Option(
+        None, "--ba-backend", help="Incremental: ceres or caspar"),
+    gpu_index: int | None = typer.Option(
+        None, "--gpu-index", help="Caspar concrete CUDA device index"),
     calibration: str = typer.Option("preserve-priors", "--calibration"),
     settings: Annotated[Path | None, typer.Option("--settings")] = None,
     calibration_settings: Annotated[Path | None, typer.Option("--calibration-settings")] = None,
@@ -139,14 +144,31 @@ def mapping_run(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     try:
-        if method != "global":
-            raise ValueError("M8a implements only explicit Global mapping")
-        if settings and (min_model_size is not None or num_threads is not None):
+        if method not in {"global", "incremental"}:
+            raise ValueError(
+                "Choose explicit global or incremental mapping; Hierarchical is planned")
+        if method == "global" and (ba_backend is not None or gpu_index is not None):
+            raise ValueError("--ba-backend and --gpu-index are Incremental-only settings")
+        if settings and any(v is not None for v in (
+            min_model_size, num_threads, ba_backend, gpu_index,
+        )):
             raise ValueError("Choose typed --settings or individual mapper settings")
-        numerical = (_typed_settings(settings, GlobalMapperSettings) if settings else
-                     GlobalMapperSettings(**({"min_model_size": min_model_size}
-                        if min_model_size is not None else {}),
-                        **({"num_threads": num_threads} if num_threads is not None else {})))
+        settings_type = (IncrementalMapperSettings if method == "incremental"
+                         else GlobalMapperSettings)
+        values = {k: v for k, v in (
+            ("min_model_size", min_model_size), ("num_threads", num_threads))
+                  if v is not None}
+        if method == "incremental" and not settings:
+            backend = (ba_backend or "ceres").upper()
+            if backend not in {"CERES", "CASPAR"}:
+                raise ValueError("--ba-backend requires ceres or caspar")
+            if backend == "CERES" and gpu_index is not None:
+                raise ValueError("--gpu-index requires explicit Caspar BA; Ceres is CPU-only")
+            values.update(ba_local_backend=backend, ba_global_backend=backend)
+            if gpu_index is not None or backend == "CASPAR":
+                values["ba_gpu_index"] = gpu_index if gpu_index is not None else 0
+        numerical = (_typed_settings(settings, settings_type) if settings
+                     else settings_type(**values))
         policy = MappingCalibrationPolicy(calibration.replace("-", "_"))
         result = build_mapping_service().run(
             project, verification_run_id=verification_run, settings=numerical,

@@ -515,3 +515,12 @@ and semantic digests. Invalid/partial models are not adopted. Recovery uses test
 owner-death containment, never an OS lock alone on unsupported platforms. Restart is a new
 mapping command from completed M7. Cancellation leaves M7 immutable. History/progress/refusal
 limits do not enter numerical keys. See [M8a](M8A.md) for exact schemas and conventions.
+
+M8b1 adds `mapping.incremental.run` / `IncrementalMappingRoute` to the same RunSnapshot
+schema 1. Existing Global `mapping.run` snapshots and receipts retain their meaning and
+recipe identity, with no project/state migration. Classical receipts additionally accept
+typed Incremental settings; portable ReconstructionSet v1 and Reader are unchanged.
+Incremental fixes one model, records all unregistered UUIDs and refuses multiple native
+models. Caspar device identity and separate local/global BA choices are frozen producer
+provenance and recipe inputs. Recovery requires the exact route, recipe and lineage;
+matching output semantic digests do not authorize cross-mapper adoption. See [M8b1](M8B1.md).

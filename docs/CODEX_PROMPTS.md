@@ -203,7 +203,8 @@ discovery records exact executable/build identity, bounded raw commands/options/
 ONNX/model prerequisites and separate generic-GPU evidence. `--deep` adds disposable
 native database and CPU/GPU SIFT functional probes. M7a extends this same machinery
 with exact ALIKED/LoMa variant/device/model inference gates. M7b adds explicit-pair
-matching and standalone verification inference gates. M8a Global is implemented; M8b alternatives remain planned;
+matching and standalone verification inference gates. M8a Global and M8b1 Incremental
+Ceres / capability-gated Caspar BA are implemented; M8b2 alternatives remain planned;
 capability evidence alone cannot make an unimplemented method runnable.
 Windows official-style installations accept `COLMAP.bat` only as an inert locator;
 all probes execute hash-verified native `colmap.exe` with the same controlled child
@@ -354,13 +355,15 @@ Additional reading: [PIPELINE reconstruction interchange](PIPELINE.md#reconstruc
 [DEVELOPMENT M8a](DEVELOPMENT.md#m8a-verification).
 
 ```text
-For M8b implement explicit Incremental Mapper, Caspar-supported Incremental BA and
-Hierarchical routes with comparative benchmarks through the existing ReconstructionSet
-and ReconstructionReader. Verify the actual installed backend capability/options.
-Preserve all components, stable UUID membership identity, separate geometry semantics,
-private database isolation, cancellation/recovery and stage-specific cache boundaries.
-Never silently choose a component, switch mapper or enable calibration. Keep M7c's
-production VPR benchmark independent. Do not implement M9/M10 inside M8b.
+M8b1 is implemented; preserve its explicit single-model Incremental Ceres and gated
+Caspar BA contracts in M8B1.md. Native overlapping Incremental hypotheses must never
+be published as disjoint components. M8b2 remains planned: Hierarchical Mapper,
+Global GPU capability/route, comparative benchmarks and eventual mapper recommendation
+research. Keep internal Hierarchical overlap separate from final native merged output.
+Retain ReconstructionSet v1/Reader, UUID membership and numerical semantics, private DB,
+cache, cancellation/recovery and phase progress. Never silently select a component,
+switch mapper/BA backend or enable calibration. Keep M7c production VPR benchmarking
+independent. Do not implement M9/M10 inside M8b2.
 ```
 
 ## M9a Reconstruction validation
@@ -499,11 +502,12 @@ Run flat-camera regressions; no rewrite or unverified native spherical mapper su
 ```
 
 
-## M8a implemented / M8b continuation
+## M8a and M8b1 implemented / M8b2 continuation
 
 M8a's Global reconstruction contracts, explicit calibration, reader, all-component
-publication and verification are described in [M8A.md](M8A.md). Continue M8b with
-Incremental Mapper, Caspar-supported Incremental BA, Hierarchical Mapper and comparative
-benchmarks through the same ReconstructionSet/Reader. Do not silently select components,
-mutate M7 databases, enable calibration or fall back to another mapper. M7c production
-VPR benchmarks remain independent; M9 validation/selection and M10 export have not started.
+publication and verification are described in [M8A.md](M8A.md). M8b1 single-model
+Incremental/Caspar contracts and precise local availability are in [M8B1.md](M8B1.md).
+Continue M8b2 with Hierarchical, Global GPU and comparative/recommendation research
+through the same ReconstructionSet/Reader. Do not expose internal overlapping clusters
+as components, mutate M7, enable calibration or fall back to another mapper/BA backend.
+M7c production VPR benchmarks remain independent; M9 and M10 have not started.

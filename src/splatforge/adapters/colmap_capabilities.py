@@ -71,6 +71,7 @@ _REQUIRED_COMMANDS = (
     "sequential_matcher",
     "global_mapper",
     "view_graph_calibrator",
+    "bundle_adjuster",
     "mapper",
     "hierarchical_mapper",
     "model_converter",
@@ -121,6 +122,12 @@ _CAPABILITY_IDS = (
     "colmap.mapper.global.integration",
     "colmap.calibration.view_graph",
     "colmap.mapper.incremental",
+    "colmap.mapper.incremental.version",
+    "colmap.mapper.incremental.integration",
+    "colmap.ba.caspar.compiled",
+    "colmap.ba.caspar.options",
+    "colmap.ba.caspar.runtime",
+    "colmap.ba.caspar.integration",
     "colmap.mapper.hierarchical",
 )
 
@@ -368,7 +375,7 @@ class ColmapCapabilityAdapter:
             )
             for command in ("feature_extractor", "exhaustive_matcher", "sequential_matcher",
                             "matches_importer", "geometric_verifier") +
-                           (("global_mapper", "view_graph_calibrator")
+                           (("global_mapper", "view_graph_calibrator", "mapper", "bundle_adjuster")
                             if supported_global_version(version_line) else ())
         )
         feature_parsed = help_results[0][2]
@@ -442,6 +449,10 @@ class ColmapCapabilityAdapter:
 
         capabilities = mapping_evidence(self, capabilities, help_results, identity,
                                         observed_at, freshness)
+        from splatforge.adapters.incremental_capabilities import incremental_evidence
+
+        capabilities = incremental_evidence(self, capabilities, help_results, identity,
+                                             observed_at, freshness)
         # M7a extends the existing discovery/probe lifecycle, including containment.
         from splatforge.adapters.learned_feature_probe import probe_feature_routes
         from splatforge.core.features import SiftExtractionSettings
@@ -823,6 +834,8 @@ class ColmapCapabilityAdapter:
                     status, code, message = problem
                 else:
                     option = ("GlobalMapper" if command == "global_mapper" else
+                              "Mapper" if command == "mapper" else
+                              "BundleAdjustment" if command == "bundle_adjuster" else
                               "ViewGraphCalibration" if command == "view_graph_calibrator" else
                               "TwoViewGeometry" if command == "geometric_verifier" else (
                         "FeatureExtraction.type"

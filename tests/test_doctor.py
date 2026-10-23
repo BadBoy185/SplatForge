@@ -181,7 +181,8 @@ def test_no_colmap_is_a_valid_report_and_planned_methods_are_not_runnable() -> N
     assert all(method.implementation_status == (
         "implemented" if method.method_id.startswith(("feature_extraction.", "feature_matching.",
                                                      "geometric_verification."))
-        or method.method_id == "mapping.colmap_global" else "planned"
+        or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental"}
+        else "planned"
     ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)
     DoctorReport.model_validate_json(report.model_dump_json())
@@ -201,7 +202,8 @@ def test_deep_flag_is_forwarded_and_backend_status_never_marks_stage_runnable() 
     assert all(method.backend_capability_status == (
         CapabilityStatus.UNKNOWN if method.method_id.startswith(("feature_extraction.",
             "feature_matching.", "geometric_verification."))
-        or method.method_id == "mapping.colmap_global" else CapabilityStatus.AVAILABLE
+        or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental"}
+        else CapabilityStatus.AVAILABLE
     ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)
     assert colmap.calls == 1

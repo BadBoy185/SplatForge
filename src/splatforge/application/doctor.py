@@ -202,7 +202,7 @@ class DoctorService:
                 backend_status = report.binary.status
             implemented = method_id.startswith((
                 "feature_extraction.", "feature_matching.", "geometric_verification.",
-            )) or method_id == "mapping.colmap_global"
+            )) or method_id in {"mapping.colmap_global", "mapping.colmap_incremental"}
             if implemented:
                 backend_status = required_status((backend_status, report.database.evidence.status))
             mapped.append(

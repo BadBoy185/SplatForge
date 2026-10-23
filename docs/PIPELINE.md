@@ -175,11 +175,11 @@ history/privacy and throttling rules. SQLite status remains authoritative after 
 
 M7a extraction reports selected VIEWS/megapixels and observed feature counts; M7b matching
 and verification use separate exact PAIRS work models. M8a exposes preparation, calibration,
-native execution and validation phases. Future M8b may parse
+native execution and validation phases. A later mapping milestone may parse
 initialization, registration, triangulation, bundle-adjustment and finalization phases,
 but nonlinear work must retain absent/phase-scoped percent and unavailable or wide
 low/medium-confidence ETA. Future M11 trainers use completed/total iterations or steps.
-M7a/M7b/M8a use this boundary; M8b/training remain planned.
+M7a/M7b/M8a/M8b1 use this boundary; M8b2/training remain planned.
 
 M1b1 implements one concrete deterministic route for contract testing:
 `fake.sequence` consumes literal `start` plus resolved `count` and publishes
@@ -570,7 +570,7 @@ not a promise that repeating the computation will produce identical bytes.
 The classical route consumes exact M7b accepted geometry plus actual camera/share/dimension
 and indexed x/y keypoint state, not the whole verifier ancestry. MappingInput v1 freezes
 that minimal numerical projection; MappingRoute retains exact upstream handles separately.
-Only COLMAP Global is implemented, requiring tested >=4.2.1 (currently positively tested
+COLMAP Global is implemented, requiring tested >=4.2.1 (currently positively tested
 4.2.1). Multiple models is forced true with explicit minimum size. Private DB copying,
 optional explicit view-graph calibration and Global execution preserve all valid models.
 ReconstructionSet v1 is neutral; the M7-specific receipt is separate so future direct
@@ -579,3 +579,13 @@ Coordinate convention is right-handed camera_from_world, x right/y down/z forwar
 wxyz quaternion and pixel centers at (.5,.5); scale is unknown_arbitrary. No component
 is selected. Full identities, optional-record states, settings, cache and failure contracts
 are in [M8A.md](M8A.md). M9/M10 remain future; the M7c production benchmark is independent.
+
+M8b1 adds explicit Incremental Ceres CPU / capability-gated Caspar BA, consuming the same
+MappingInput. `multiple_models=false` and `extract_colors=false` are fixed; exactly one
+valid model becomes one component and every unregistered input view stays explicit.
+Native overlapping hypotheses cannot be represented as disjoint components, so any
+multiple-model output fails. Incremental uses verified cameras directly, without Global's
+optional calibration, and reuses the same private DB/publication/Reader boundary.
+Caspar requires compiled support, a concrete validated CUDA device, PINHOLE/SIMPLE_RADIAL
+input and compatible refinement settings; no mapper/BA fallback occurs. No portable
+ReconstructionSet semantics change. See [M8b1](M8B1.md). M8b2 remains planned.

@@ -113,6 +113,7 @@ def build_builtin_registry() -> MethodRegistry:
             id="mapping.colmap_incremental",
             display_name="COLMAP Incremental Mapper",
             stage=StageKind.MAPPING,
+            notes="Implemented M8b1: single model, CPU Ceres or capability-gated Caspar BA",
         ),
         MethodSpec(
             id="mapping.colmap_hierarchical",
