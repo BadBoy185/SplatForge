@@ -409,9 +409,17 @@ Multiple M10 components remain separate jobs/scenes. See [M11 acceptance and emp
 evidence](docs/M11.md), including the opt-in real integration and its limitations.
 
 Still pending separately: M7c production VPR, representative M8 mapper recommendation
-and broader M11 training preset recommendation. M12 has not started.
+and broader M11 training preset recommendation. M12 is implemented below.
 
 ## M12 — desktop GUI
+
+**M12 desktop GUI implemented.** Optional PySide6 6.12.0 / Qt Widgets client, shared
+project/application facade, worker executor, guided/advanced goal pages, M9 explicit
+selection, M10/M11 plans/execution/resume, bounded inspection, Doctor and preview/apply
+cleanup. See [M12 contracts, verification and limitations](docs/M12.md).
+M7c production VPR, representative M8 recommendation, broader M11 quality presets,
+true Gaussian rasterization and installer/updater remain separately pending. M13 has
+not started. The original acceptance contract remains below.
 
 Build PySide6 as a client of existing application services: project/source management,
 guided profiles, advanced stage settings, plan preview, progress/cancel/retry,

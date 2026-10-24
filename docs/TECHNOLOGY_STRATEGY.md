@@ -23,6 +23,14 @@ from measured end-to-end evidence on representative SplatForge data.
 
 ## 1. Decision principles
 
+M12's implemented desktop decision is PySide6 6.12.0 / Qt Widgets as an optional
+dependency, with standard Qt System/Light/Dark behavior and a lightweight bounded
+QPainter point-center viewport. This client consumes existing services; it adds no
+QtQuick/QML, browser UI, web server, third-party theme, Torch renderer, Open3D/VTK,
+installer or updater. Future renderer/packaging evaluation requires separate scope.
+This decision changes no processing methods/defaults or benchmark recommendations.
+See [M12](M12.md) for the implemented boundary and verification.
+
 ### 1.1 Preserve a strong baseline
 
 A newer learned method does not remove the need for a robust classical route. Keep a

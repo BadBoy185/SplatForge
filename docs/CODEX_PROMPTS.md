@@ -468,7 +468,7 @@ Do not import legacy internals as core or label untested recipes equivalent/supe
 
 Implemented: external manual handoff and exact isolated gsplat Default/MCMC runtime,
 checkpoint resume, independent Gaussian PLY validation and existing lifecycle integration.
-See [M11](M11.md). Preserve the invariants below for future changes; M12 is not started.
+See [M11](M11.md). Preserve the invariants below for future changes; M12 is implemented.
 
 Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-outputs),
 [execution](PIPELINE.md#method-execution-contract),
@@ -487,6 +487,10 @@ universal quality preset from one scene or silently fall back between strategies
 ```
 
 ## M12 GUI
+
+Status: implemented as the optional PySide6 6.12.0 / Qt Widgets desktop client.
+See [M12](M12.md) for exact application boundaries, UI/storage/threading contracts,
+verification and limitations. Preserve these boundaries in later edits. M13 is not started.
 
 Additional reading: [ARCHITECTURE: application/dependency contracts](../ARCHITECTURE.md#dependency-direction)
 and [ARCHITECTURE: execution contracts](../ARCHITECTURE.md#state-reproducibility-and-execution).

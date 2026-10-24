@@ -14,6 +14,14 @@ inputs come later through preprocessing into perspective views.
 
 ## Current status
 
+The optional desktop application is launched with `splatforge-gui` after installing
+`python -m pip install -e ".[dev,gui]"` in the development environment. It uses
+PySide6 6.12.0 / Qt Widgets and the same application services, project settings,
+runs and artifacts as CLI. Home, Sources, Reconstruct, Dataset, Train, Results and
+Diagnostics provide Guided/Advanced operation without a separate processing pipeline.
+See [desktop usage, threading and limitations](docs/M12.md). Base CLI installation
+does not require Qt. Installer/updater packaging remains deferred.
+
 The repository contains configuration models, a method catalog, safe local project
 persistence, the M1b2 fake-stage execution/recovery slice, M2 media ingest, the M3
 candidate-view/fixed-FPS route, M4 quality-aware selection, M6 deterministic PairSet
@@ -56,7 +64,8 @@ per-component cache and manual safe cleanup. M11 implements external LichtFeld d
 handoff and isolated managed gsplat Default/MCMC training, compatible checkpoints,
 validated Gaussian PLY scenes and candidate comparison. Production VPR inference,
 practical automatic multi-video E2E acceptance, representative mapper recommendation,
-broader training preset recommendation and GUI remain pending. See [M10](docs/M10.md)
+broader training preset recommendation remain pending. M12 adds the optional Qt Widgets
+desktop client described in [M12](docs/M12.md). See [M10](docs/M10.md)
 and [M11 contracts and evidence](docs/M11.md).
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
@@ -234,7 +243,7 @@ Simple feature/matching profiles **Fast, Medium, High, Max High** express speed/
 intent. The versioned resolver chooses an exact compatible route before execution and
 returns JSON explaining unavailable higher candidates. Advanced users select compatible
 SIFT, ALIKED/LightGlue and LoMa variants and typed numerical settings directly. These
-are shared Application contracts for the future GUI; no GUI exists yet. All routes are
+are shared Application contracts used by the desktop GUI. All routes are
 recorded and never change algorithm silently during an attempt. Existing explicit saved
 ALIKED defaults are unchanged and are not reinterpreted as a Simple profile.
 
@@ -437,7 +446,7 @@ The CLI can stop at a validated dataset or continue through an explicitly config
 external gsplat runtime to checkpoints and independently validated Gaussian scenes.
 Run `splatforge training handoff`, `training plan`, `training run`, `training show`
 or `training compare`; see [M11 commands and runtime setup](docs/M11.md).
-A future GUI will use the same application services. No universal quality preset is adopted.
+The optional desktop GUI uses the same application services. No universal quality preset is adopted.
 Later work includes masks/segmentation, GPS, LiDAR, alternative SfM/training methods,
 large-scene automation, batch jobs and 360 workflows. Previously successful 3DGS work
 may be researched read-only earlier without blocking implementation; official preset

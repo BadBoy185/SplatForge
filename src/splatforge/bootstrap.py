@@ -1,6 +1,10 @@
 """Explicit construction of application services."""
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from splatforge.application.desktop import GuiFacade
 
 from splatforge.adapters.colmap_capabilities import ColmapCapabilityAdapter
 from splatforge.adapters.colmap_features import ColmapFeatureAdapter
@@ -92,6 +96,24 @@ def build_project_service() -> ProjectService:
         backup_preparer=backup_preparer,
     )
     return ProjectService(store, build_builtin_registry(), upgrader)
+
+
+def build_gui_facade() -> "GuiFacade":
+    """Optional desktop composition without importing Qt into the backend."""
+    from splatforge.adapters.desktop_reader import LocalDesktopReader
+    from splatforge.application.desktop import GuiFacade
+
+    return GuiFacade(LocalDesktopReader(), {
+        "project": build_project_service, "media": build_media_service,
+        "execution": build_execution_service, "progress": build_run_progress_service,
+        "views": build_views_service, "pairs": build_pairs_service,
+        "features": build_features_service, "matching": build_matching_service,
+        "profiles": build_sfm_profile_service, "mapping": build_mapping_service,
+        "validation": build_reconstruction_validation_service,
+        "selection": build_reconstruction_selection_service, "dataset": build_dataset_service,
+        "training": build_training_service, "cleanup": build_cleanup_service,
+        "doctor": build_doctor_service,
+    })
 
 
 def build_execution_service() -> FakeExecutionService:

@@ -9,6 +9,24 @@ on every later Python release.
 
 ## Testing layers
 
+M12's GUI extra is optional: `python -m pip install -e ".[dev,gui]"` installs the
+validated PySide6 6.12.0 target; `splatforge-gui` launches Qt Widgets. Base CLI/core
+imports remain Qt-free. Run focused acceptance with:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m pytest tests/test_gui.py tests/test_gui_workflows.py tests/test_gui_architecture.py tests/test_desktop.py
+```
+
+These tests use QtTest/direct state assertions, deterministic fake work and tiny
+published artifacts. They cover responsiveness, shared project intent/history,
+cancel/recovery, exact M9/M10/M11 requests and bounded preview without benchmarking.
+The final verification includes affected application regressions, one full default
+pytest, Ruff and documentation/link checks. Native Windows smoke at 100%/150% DPI
+is separate from offscreen tests; do not describe headless testing as manual GUI
+validation. The tested baseline is Python 3.12.10, PySide6/Qt 6.12.0, Windows Server
+2022 build 20348. See [M12](M12.md) for architecture and scope limitations.
+
 | Layer | What to verify | External requirements |
 | --- | --- | --- |
 | Core unit | Role validation including repeated IDs in different slots, settings bounds, descriptor/camera/format compatibility, canonical fingerprints and dependency invalidation | None |

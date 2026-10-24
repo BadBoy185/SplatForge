@@ -8,6 +8,14 @@ manifests and individual methods are separate; the prototype
 
 ## Storage layout and ownership
 
+M12 adds no project/state/manifest schema version or GUI-owned numerical fields.
+CLI and desktop use ProjectService for intent saves, including revision checks and
+unknown method/settings preservation. GUI edits remain drafts until Save; closing
+offers Save/Discard/Cancel. Run-only settings stay in existing immutable snapshots.
+Machine-local QSettings holds only geometry/theme/recent paths/page/mode and explicit
+tool paths, never numerical project intent or authoritative run/artifact state.
+Loss of QSettings does not affect CLI processing. See [M12](M12.md).
+
 Use a local writable project directory, separate from the source repository:
 
 ```text

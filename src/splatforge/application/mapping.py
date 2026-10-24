@@ -29,6 +29,7 @@ from splatforge.core.execution import (
     RunSnapshot,
     RunStatus,
 )
+from splatforge.core.features import FeatureBackend
 from splatforge.core.geometry import VerifiedGeometrySet
 from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.progress import ExecutionHardwareProfile
@@ -101,6 +102,18 @@ class MappingService:
             root.resolve(), verification_run_id, "verified_geometry", "geometry")
         self._repository.load_verified_geometry(root, handle)
         return self._adapter.input(self._repository.artifact_directory(root, handle))
+
+    def capability(
+        self,
+        settings: GlobalMapperSettings | IncrementalMapperSettings | HierarchicalMapperSettings,
+        colmap: Path | None = None,
+        calibration_policy: MappingCalibrationPolicy = MappingCalibrationPolicy.PRESERVE_PRIORS,
+        calibration_settings: ViewGraphCalibrationSettings | None = None,
+    ) -> FeatureBackend:
+        """Probe the explicitly selected mapper without requiring or mutating a project."""
+        return self._adapter.prepare(
+            calibration_policy, colmap=colmap, settings=settings,
+            calibration=calibration_settings)
 
     def inspect(self, root: Path, run_id: UUID) -> ReconstructionSet:
         handle = self._repository.resolve_run_output(

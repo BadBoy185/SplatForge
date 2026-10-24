@@ -149,6 +149,11 @@ class TrainingService:
     def capability(self, runtime: TrainingRuntime, ordinal: int = 0) -> TrainingBackendIdentity:
         return self.backend.capability(runtime, ordinal)
 
+    def external_status(self, executable: Path | None = None) -> dict:
+        """Read-only external handoff tool identity, without launching its GUI."""
+        return self.external_probe(executable) if self.external_probe else {
+            "status": "not_configured", "version": None}
+
     def handoff_report(self, root: Path, dataset_run: UUID, executable: Path | None = None) -> dict:
         return {
             "datasets": self.handoff(root, dataset_run),
@@ -355,6 +360,29 @@ class TrainingService:
                 scene_set=receipt,
                 scene_set_run=result.run_id,
             )
+
+    def check_resume(
+        self, root: Path, dataset_run: UUID, checkpoint_run: UUID,
+        runtime: TrainingRuntime, settings: TrainingSettings,
+    ) -> dict:
+        """Read-only exact compatibility preflight for clients; run rechecks under its lease."""
+        root = root.resolve()
+        with self.repository.validation_evidence_operation():
+            plan = self.plan(root, dataset_run, runtime, settings)
+            if not plan.runnable:
+                return {"compatible": False, "reason": "; ".join(plan.diagnostics)}
+            datasets = self.repository.training_datasets(root, dataset_run)
+            if len(datasets) != 1:
+                return {"compatible": False, "reason": "training.resume_requires_one_component_run"}
+            _, value = self.repository.inspect_training_run(root, checkpoint_run)
+            if not isinstance(value, TrainingCheckpoint):
+                return {"compatible": False, "reason": "training.resume_requires_checkpoint"}
+            try:
+                value.require_compatible(datasets[0][1].semantic_digest, settings, plan.backend)
+            except ValueError as exc:
+                return {"compatible": False, "reason": str(exc)}
+            return {"compatible": True, "reason": "Exact dataset/settings/runtime match",
+                    "step": value.step, "checkpoint_run": str(checkpoint_run)}
 
     def _execute(self, root, owner, route):
         repo, run_id = self.repository, uuid4()

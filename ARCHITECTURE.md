@@ -32,7 +32,7 @@ alignment; GPS presence alone does not establish accuracy or metric scale.
 ## Dependency direction
 
 ```text
-CLI / future Desktop GUI / future API or SDK clients
+CLI / Desktop GUI / future API or SDK clients
                          |
                          v
 Application services -----> Core domain and contracts
@@ -58,6 +58,14 @@ contracts belong to core. Concrete adapters depend inward, never the reverse.
 
 ## Deployment, client and storage neutrality
 
+M12 implements `splatforge_gui` as an optional Qt Widgets client. Widgets delegate to
+controllers/view models, then the bootstrap-built Qt-free GuiFacade and existing
+application services. A read-only desktop index/inspection contract has concrete
+storage/native readers in adapters. Only workers call long services; fresh service
+instances avoid concurrent reuse of stateful adapters. There is no Qt in Core or
+Application, direct widget process launch, second state store or background daemon.
+See [M12](docs/M12.md) for thread ownership, bounded preview and close/cancel behavior.
+
 The current implementation is intentionally a local Windows application with local
 project storage, one project writer and locally owned worker processes. Those are the
 first concrete adapters and operating constraints, not permanent assumptions of every
@@ -66,7 +74,7 @@ Core or Application contract.
 Preserve these future options without implementing them now:
 
 - Application use cases and typed domain contracts must not require the caller to be a
-  PySide6 widget or even a desktop process. CLI and the future desktop GUI are clients of
+  PySide6 widget or even a desktop process. CLI and the desktop GUI are clients of
   the same services; a later REST/API server, Python SDK, Unreal integration or other
   production tool may map its requests to those services instead of automating UI state.
 - Processing locality is an adapter/composition decision. The supported path today is

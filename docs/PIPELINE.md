@@ -121,6 +121,15 @@ to an explicit dataset-only target without discarding saved user intent.
 
 ## View and camera rules
 
+M12's optional desktop GUI is another client of these unchanged stage contracts.
+Its explicit reconstruction action composes existing view/pair/feature/matching/
+verification/mapping/validation services and their normal independent run IDs.
+M9 selection remains a separate explicit decision; ambiguity publishes nothing.
+M10/M11 consume explicit selection/dataset/checkpoint runs. Plan, progress, cancel,
+recovery, cache and cleanup decisions stay in their existing application services.
+Preview sampling is read-only display data and never a numerical pipeline artifact.
+No whole-pipeline quality preset or production VPR claim is introduced. See [M12](M12.md).
+
 Photos and decoded video frames enter the same view contract. Preserve original
 filenames as metadata; generate filesystem-safe names from stable IDs. A frame's
 identity includes its source, stream and actual presentation timestamp/frame identity,

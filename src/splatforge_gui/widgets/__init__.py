@@ -1,0 +1,1 @@
+"""Presentation-only Qt widgets."""
