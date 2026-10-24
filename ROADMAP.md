@@ -196,7 +196,8 @@ dispersion, spikes/stalls, unknown stages, cache/skips, monotonic display aggreg
 history privacy/retention/failures, cancellation, old runs and structured FFmpeg progress.
 M7 must report views/MP and pairs; M8 must preserve nonlinear/indeterminate progress;
 M11 managed trainers must report iterations/steps through the same contract. M7a/M7b
-now implement their work models; M8a/M8b1/M8b2 use phase-only work; M11 remains planned.
+now implement their work models; M8a/M8b1/M8b2 use phase-only work; M11 implements
+step-based training work with checkpoint offsets.
 Numerical schema versions remain unchanged.
 
 ## M7 — features, matching and geometric verification
@@ -369,7 +370,8 @@ See [M10 contracts and verification](docs/M10.md).
 **Production practical multi-video E2E acceptance remains externally pending M7c
 production VPR selection.** The acceptance requirement below is preserved. Valid explicit
 reference-pairing selections can be prepared, including the local mixed pilot; this does
-not complete production retrieval, recommend a universal mapper or start M11.
+not complete production retrieval or recommend a universal mapper. M11 consumes the
+published dataset independently; its technical status is recorded below.
 
 Implement DatasetPreparation, required undistortion/resizing, camera/pose consistency
 checks and dataset export. Compose project/ingest/plan/run/status/cancel/retry/diagnose
@@ -392,21 +394,22 @@ insufficient.
 
 ## M11 — legacy evaluation and Gaussian training integration
 
-**M11a:** use available legacy research to translate recovered recipes/assumptions
-into candidate presets, then benchmark on controlled scenes before official adoption.
-Research may already have happened; inspect additional evidence read-only if needed.
-If unavailable, record the gap and evaluate independently sourced recipes without
-blocking product work. Do not require legacy code as a runtime dependency.
+**M11a implemented:** `legacy_evidence_unavailable` is recorded after read-only
+inspection. Pinned upstream recipes define explicit Default, AbsGrad and capped MCMC
+candidates, with deterministic held-out membership and a sequential comparison harness.
+No overall score or automatic winner is used. Broader preset recommendation remains
+pending; one Russian-dacha pilot cannot establish universal defaults.
 
-**M11b:** deliver a tested external LichtFeld dataset handoff, then one managed trainer
-adapter selected from verified requirements (gsplat-based or another suitable backend).
-Keep manual handoff distinct from managed execution. Add checkpoint compatibility,
-training progress/cancellation, metrics and scene export.
+**M11b implemented; technical training integration complete:** validated manual
+LichtFeld handoff (no local binary/manual GUI-open evidence), isolated gsplat 1.5.3
+worker with positive RTX 5080 CUDA/kernel/backward/optimizer evidence, exact runtime
+identity, compatible checkpoint save/resume, bounded progress/ETA, process-tree
+cancellation, cache/recovery and independently validated Gaussian PLY scenes.
+Multiple M10 components remain separate jobs/scenes. See [M11 acceptance and empirical
+evidence](docs/M11.md), including the opt-in real integration and its limitations.
 
-Acceptance: a dataset opens in the selected external workflow; a managed smoke run
-produces a loadable scene; supported checkpoint resume is tested; changing trainer
-parameters reuses SfM. Record quality/runtime/memory evidence for presets without
-claiming universal superiority. Legacy evidence unavailability is reported explicitly.
+Still pending separately: M7c production VPR, representative M8 mapper recommendation
+and broader M11 training preset recommendation. M12 has not started.
 
 ## M12 — desktop GUI
 

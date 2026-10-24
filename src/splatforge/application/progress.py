@@ -269,7 +269,7 @@ class ProgressSession:
             throughput_unit=stage.work.unit,
             eta=self._estimators[node_id].estimate(),
         )
-        self.report(node_id, 0, phase="processing", force=True)
+        self.report(node_id, stage.work.initial_completed, phase="processing", force=True)
 
     def report(
         self,
@@ -360,7 +360,8 @@ class ProgressSession:
                 "observed_at": self._clock.utcnow(),
             }
         )
-        if self._history is not None and (stage.work.total or 0) > 0 and elapsed > 0:
+        performed = (stage.work.total or 0) - stage.work.initial_completed
+        if self._history is not None and performed > 0 and elapsed > 0:
             plan = self._plans[node_id]
             try:
                 self._warnings.update(
@@ -369,9 +370,9 @@ class ProgressSession:
                             recorded_at=self._clock.utcnow(),
                             signature=plan.signature,
                             workload=plan.workload,
-                            total_work=stage.work.total,
+                            total_work=performed,
                             elapsed_seconds=elapsed,
-                            throughput=stage.work.total / elapsed,
+                            throughput=performed / elapsed,
                         )
                     )
                 )

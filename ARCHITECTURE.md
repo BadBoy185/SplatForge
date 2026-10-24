@@ -9,16 +9,18 @@ local-feature extraction through the same execution boundary. M7b adds separate 
 matching and geometric verification artifacts plus versioned feature/matching profiles.
 M7c adds neutral offline retrieval representations, bounded retrieval/hybrid PairSets
 and an M7b benchmark harness; production retrieval inference/selection remains pending.
-See [M7c contracts](docs/M7C.md). Later contracts
-remain staged by the [roadmap](ROADMAP.md). The historical
+See [M7c contracts](docs/M7C.md). M8 mapping, M9 validation/selection, M10 dataset
+preparation and [M11 managed training](docs/M11.md) now extend these foundations.
+Later contracts remain staged by the [roadmap](ROADMAP.md). The historical
 [review](docs/ARCHITECTURE_REVIEW.md) records the reasoning behind the foundation and
 intentionally deferred choices.
 
 SplatForge owns project intent, orchestration, provenance, diagnostics and a convenient
 local workflow. It delegates media processing, SfM and Gaussian optimization to
 replaceable methods. The long-term product spans import, quality control,
-reconstruction, training and viewing; the first deliverable stops at a validated
-training dataset. Windows-first, local-first desktop use remains the primary product
+reconstruction, training and viewing. The CLI can stop at a validated dataset or continue
+through an explicit isolated trainer to a validated scene. Windows-first, local-first desktop
+use remains the primary product
 and implementation path. No cloud service or account is required for ordinary local
 runs; future remote execution must remain optional rather than becoming a prerequisite.
 
@@ -290,7 +292,8 @@ existing execution foundation. No trainer enters Core and M8/M9 contracts are un
 Manual cleanup preserves manifests/JSON and records eviction/pins in existing state metadata;
 current/active/pinned dependency closures cannot be evicted. See [M10](docs/M10.md).
 Technical dataset preparation is independent of the still-pending M7c production retrieval
-gate for practical automatic multi-video E2E acceptance. M11 remains unstarted.
+gate for practical automatic multi-video E2E acceptance. M11 training consumes those
+published datasets through its own explicit downstream boundary.
 
 Separate application `state.sqlite` from every COLMAP database. Isolate databases by
 feature identity and compatible processing branch. Copy or rebuild a native database
@@ -375,7 +378,8 @@ Stages without a defensible total expose indeterminate or phase-scoped work. Map
 must not invent linear percentages. M8a explicitly opts into complete-job historical
 planning ranges at low/medium confidence; ordinary phase totals still do not authorize
 ETA. M7 features/matching/verification use this foundation;
-M11 managed training must integrate with it later. Matching and verification expose
+M11 managed training uses `training.steps_v1`, resumed-step offsets and hybrid ETA.
+Matching and verification expose
 real phases, exact planned pair totals, observed completion after output validation,
 and separate historical ETA signatures. Backend logs do not fabricate pair percentages.
 See [work models and estimator rules](docs/DEVELOPMENT.md#progress-and-eta-foundation).
@@ -385,9 +389,21 @@ See [work models and estimator rules](docs/DEVELOPMENT.md#progress-and-eta-found
 Dataset preparation is independently useful: external LichtFeld handoff must work
 without pretending an external/manual run is managed training. Managed trainers
 implement start/progress/cancel/results and, only where supported, checkpoint resume.
-gsplat is a potential trainer implementation dependency; its name alone does not
-specify a complete training recipe. Keep optimizer, densification, loss, schedule,
-camera conventions and output formats explicit in the trainer contract.
+The managed production candidate is gsplat 1.5.3 (Apache-2.0), behind the injected
+TrainingBackend and an owned external isolated Python worker. Core/application never
+import Torch, gsplat or CUDA. Default and MCMC are separate explicit strategies with
+typed frozen settings, SFM initialization, fixed camera poses and preserved world
+coordinates/unknown scale. Every runtime is positively probed and numerically pinned.
+See [M11](docs/M11.md) for the complete recipe and capability boundary.
+
+One PreparedDatasetComponent produces its own checkpoints and GaussianScene; a set
+produces separate jobs and a reference-only GaussianSceneSet. Checkpoint payloads are
+opaque backend state with exact resume compatibility. Public scenes are conventional
+Gaussian PLY, independently validated and numerically hashed from Gaussian content.
+Existing persisted attempts, cache, publication, recovery, cancellation and cleanup
+protections apply. A completed checkpoint segment survives later cancellation.
+LichtFeld stays external under GPLv3, with dataset/PLY interoperability; Graphdeco's
+commercially restricted implementation is reference-only.
 
 The developer's earlier successful 3DGS project may be inspected read-only at any
 milestone as optional, non-blocking research. Record versions, parameters, preprocessing,

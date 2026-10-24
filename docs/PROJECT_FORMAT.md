@@ -615,3 +615,41 @@ Symlinks/junctions/hardlinks fail closed. Eviction intent commits before unlink,
 interruption is diagnosable; a fresh preview can finish the remaining bounded files.
 Lookup reports intentional eviction and recomputes rather than treating it as a cache hit
 or unexplained corruption. Published manifest bytes are never rewritten by cleanup.
+
+## M11 training persistence
+
+RunSnapshot schema 1 adds `training.checkpoint`, `training.scene` and `training.set`
+routes, without changing project/state versions. A checkpoint/scene route freezes one
+exact PreparedDatasetComponent handle, TrainingSettings v1, positively validated backend
+identity, resource limits, start/terminal step and optional exact checkpoint handle.
+Each checkpoint boundary is a separate owned process/attempt; the final scene export
+consumes the completed terminal checkpoint. The set route references completed independent
+scenes; it contains no combined Gaussian data. See [M11](M11.md).
+
+Published paths and types:
+
+| Artifact type | Directory | Payload |
+| --- | --- | --- |
+| `training.checkpoint` v1 | `artifacts/training_checkpoint/<id>/` | `checkpoint/state.pt`, `checkpoint.json` |
+| `training.gaussian_scene` v1 | `artifacts/gaussian_scene/<id>/` | `scene.ply`, `scene.json` |
+| `training.gaussian_scene_set` v1 | `artifacts/gaussian_scene_set/<id>/` | `scene_set.json` |
+
+All include the normal immutable manifest. Checkpoint/scene artifacts also retain bounded
+`worker_events.jsonl`, `worker_result.json` and `worker_receipt.json` evidence. Native
+logs remain bounded attempt diagnostics. Metadata includes derived recipe/backend/semantic
+digests, exact settings, step/count, hashes/sizes, metrics and checkpoint lineage.
+Runtime/progress/log provenance does not enter numerical Gaussian semantics.
+
+Checkpoint state includes optimizer/scheduler/strategy and Python/NumPy/Torch/selected
+CUDA RNG evidence. Dataset digest, method, all numerical settings including max_steps,
+worker and numerical package/build/runtime identity and schema must match for resume.
+Temporary `.partial` files cannot publish. Previously published checkpoints survive
+cancellation; generic cleanup excludes checkpoints and public scenes. Recovery adopts
+only fully validated exact-recipe orphan output after owned process teardown.
+
+Gaussian PLY bytes are independently bounded/parsed from disk, including finite fields,
+SH dimensions, quaternion validity, exact count/size and hash. Numerical identity sorts
+canonical row hashes with bounded disk-backed storage, independent of row/run/artifact
+order or path. Cache revalidates actual payloads; corruption fails closed. A new M10
+artifact UUID with equal numerical content may reuse a valid scene with current input
+lineage recorded by the new run. SceneSet preserves separate component identity/order.

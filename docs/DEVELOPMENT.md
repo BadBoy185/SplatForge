@@ -670,3 +670,48 @@ Metadata resource tests also reject excessive component/source coverage matrices
 geometry access and enforce the 64 MiB evidence bound before a payload file is written.
 Inactive component/cell limits preserve identical measurements/recipes. Metadata grouping
 retains cancellation checkpoints and never silently drops sources or components.
+
+## M11 optional managed runtime and tests
+
+The normal Python 3.12 application environment has no Torch/gsplat requirement. All risky
+imports, CUDA probes and training execute under an explicit separate Python executable
+with `-I`. The worker registers only its own package paths, so application site-packages
+cannot shadow trainer dependencies. CLI commands and resolved runtime JSON are documented
+in [M11](M11.md). Product commands never pip-install, upgrade packages or download models.
+
+For explicitly authorized development validation, use an ignored isolated local path such
+as `sample_data/m11-runtime/`, record exact versions/build hashes and freeze the environment.
+Reuse existing toolchains; never change global Python or global PATH. The validated local
+profile is Python 3.12.10, Torch 2.7.1+cu128, CUDA 12.8 and gsplat 1.5.3 built unchanged
+from its exact release sdist. The pure-wheel MSVC JIT failure and native-wheel hash are
+recorded in M11. Capability must positively execute a raster kernel, backward and optimizer
+step on the selected GPU before claiming runnable; installation alone is insufficient.
+
+Run focused contracts/protocol/PLY/adapter/lifecycle/progress/CLI tests during changes:
+
+```powershell
+python -m pytest tests/test_training_contracts.py tests/test_training_protocol.py tests/test_gaussian_scene.py tests/test_training_adapter.py tests/test_training_execution.py tests/test_training_progress.py tests/test_training_cli.py tests/test_training_comparison.py
+```
+
+Real CUDA acceptance is opt-in and requires an explicitly provisioned runtime descriptor:
+
+```powershell
+$env:SPLATFORGE_TEST_TRAINING_RUNTIME = 'C:\LocalRuntime\runtime.json'
+python -m pytest tests/test_training_integration.py
+Remove-Item Env:SPLATFORGE_TEST_TRAINING_RUNTIME
+```
+
+These tiny analytical M10 tests exercise Default, AbsGrad and MCMC through real CUDA,
+checkpoint at 25/resume to 50, PLY export/independent reader plus `plyfile` consumer,
+cache and actual process-tree cancellation. They are transport evidence, not quality.
+Native fake-process tests additionally cancel while a descendant holds a partial
+checkpoint/PLY file, require handle release and preserve earlier published checkpoints.
+Do not enable integration implicitly in the default suite.
+
+Fair candidate comparison requires one exact M10 component and explicit identical held-out
+IDs. Report aggregate and recoverable source-group PSNR/SSIM, LPIPS availability, counts,
+time, peak **allocated** CUDA bytes and sizes separately; do not call training loss a
+validation score. No LPIPS model is downloaded. Russian-dacha uses existing M10 artifacts,
+not repeated M7–M10. Frozen settings/evidence and one-scene limitations are in M11.
+After code stabilizes, run focused tests, full default pytest, Ruff and doc/link checks;
+report unrelated pre-existing failures rather than fixing them in this milestone.

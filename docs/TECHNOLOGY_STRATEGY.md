@@ -364,7 +364,7 @@ do not automatically rewrite settings or launch a hidden fallback run.
 Technical M10 now implements the [explicit-selection flat COLMAP dataset route](M10.md):
 historical immutable pixels, independent components, bounded undistortion/resizing,
 independent numerical/file validation, cache/lifecycle and manual safe eviction. It does
-not select a trainer or imply that M11 has started. Production practical multi-video E2E
+not select a trainer; M11 is an independent downstream consumer. Production multi-video E2E
 acceptance remains pending M7c production VPR selection; reference-pairing pilot success
 does not satisfy that independent gate or choose a universal mapper.
 
@@ -384,24 +384,40 @@ benchmarkable and isolated from originals.
 
 ## 10. M11: Gaussian training
 
-A gsplat-based trainer remains a strong current candidate for the single managed trainer
-adapter contemplated by M11, but `ROADMAP.md` still permits another suitable backend.
-This note does not select gsplat in advance.
+M11 selects **gsplat / Apache-2.0** as the managed production candidate. The positively
+validated release is 1.5.3, tag commit `937e29912570c372bed6747a5c9bf85fed877bae`;
+mutable main/latest is never a runtime identity. The owned external worker isolates
+Torch/CUDA from Core/application and freezes installed numerical code/build, worker,
+Python, Torch/CUDA/driver and GPU identity. Local RTX 5080 support is demonstrated by
+kernel/backward/optimizer tests, not inferred from installation. See [M11](M11.md)
+and the pinned [upstream/license evidence](M11_EVIDENCE.md).
 
-At M11 implementation time:
+`gsplat.default` uses DefaultStrategy; typed AbsGrad and antialiasing are independently
+probed options. `gsplat.mcmc` uses MCMCStrategy with explicit cap_max, regularizers,
+noise learning rate and refinement intervals. Both initialize from M10 sparse points,
+keep pose optimization/world normalization false, preserve unknown arbitrary scale
+and produce the same validated GaussianScene PLY contract. Checkpoints are separate
+opaque resumable state. Different M10 components are never combined.
 
-- re-check current trainers and external LichtFeld requirements;
-- verify checkpoint/export compatibility actually needed by SplatForge;
-- compare at least enough candidate recipes externally to avoid adopting a clearly poor
-  default, when that can be done without expanding product scope;
-- measure held-out quality together with runtime, VRAM and Gaussian/scene size;
-- keep SfM artifacts reusable when trainer parameters change.
+LichtFeld Studio / GPLv3-or-later remains an **external workflow**, interoperating via
+conventional M10 datasets and Gaussian PLY, without copied/linked GPL implementation.
+The original Graphdeco implementation is **reference only** because its license
+restricts commercial use. A paper's license does not license derived implementations.
 
-Current gsplat capabilities worth re-checking include original-style densification,
-AbsGrad-related options, anti-aliasing, sparse/distributed functionality and
-3DGS-MCMC-style densification. These are research options, not a requirement to ship
-multiple M11 trainer profiles. The current roadmap still requires one managed trainer
-adapter after evaluation.
+Candidate benchmarking freezes dataset, resolution/data factor, steps, SH degree,
+seed and held-out membership across Default, AbsGrad and capped MCMC. It reports
+quality, failures, time, allocated CUDA peak and output size with no combined score
+or automatic winner. One-scene Russian-dacha evidence cannot establish universal
+Fast/Balanced/Quality/Max presets; broader recommendation remains pending.
+
+Research/watch: AbsGrad thresholds, Taming/Visible Adam, Mip-Splatting ideas,
+Scaffold-GS, appearance/PPISP, 2DGS, 3DGUT, compression and hierarchical Gaussian
+scenes. Sparse gradients, visible Adam, pose optimization, appearance embeddings,
+PPISP, bilateral grids, compression and multi-GPU are not baseline production options.
+The v1.5.3 runtime does not require later main-branch appearance work. 2DGS is a
+separate representation, and distorted-camera 3DGUT is unnecessary for M10's flat
+perspective baseline. Restrictive derived research implementations must not become
+managed product dependencies; future permissive implementations need separate evidence.
 
 Depth/normal regularization or other geometry priors belong in later quality research
 only after the prior source, confidence semantics and invalidation rules are explicit.
@@ -515,9 +531,9 @@ These are research priorities only, not roadmap contract changes:
   than silently adding a new mandatory stage.
 - M9 can become more explainable by consuming existing graph evidence where practical,
   but candidate extra metrics do not expand current M9 acceptance automatically.
-- For M11, benchmark a gsplat-based managed route against whatever other candidate is
-  genuinely competitive at that time; the milestone still needs only the selected
-  managed adapter plus external LichtFeld handoff unless the roadmap changes.
+- M11 implements the selected gsplat managed adapter and external LichtFeld handoff.
+  Additional trainer families require independent licensing/contract/quality evidence;
+  broader recommendation remains pending after the bounded strategy comparison.
 - M13e remains the correct roadmap location to evaluate direct/neural reconstruction
   families such as VGGT-like systems and MapAnything-style models, using honest direct
   contracts rather than forcing them through sparse-feature artifacts.

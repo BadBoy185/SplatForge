@@ -34,6 +34,7 @@ from splatforge.adapters.project_lock import (
     WindowsProjectWriterLock,
 )
 from splatforge.adapters.project_storage import LocalProjectStore
+from splatforge.adapters.training_storage import TrainingStorageMixin
 from splatforge.adapters.validation_storage import ValidationStorageMixin
 from splatforge.application.execution import (
     ExecutionCancelledError,
@@ -72,6 +73,8 @@ from splatforge.core.execution import (
     RunStatus,
     RunWarning,
     SharpestViewPreparationRoute,
+    TrainingJobRoute,
+    TrainingRoute,
     ValidationResult,
     ViewPreparationRoute,
 )
@@ -148,7 +151,9 @@ class LocalExecutionProject:
     state_version: int
 
 
-class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, CleanupStorageMixin):
+class LocalExecutionRepository(
+    ValidationStorageMixin, DatasetStorageMixin, TrainingStorageMixin, CleanupStorageMixin
+):
     def __init__(
         self,
         *,
@@ -868,7 +873,7 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
 
         validated = validate_workspace_output(
             output, artifact_type, checkpoint=dataset_checkpoint
-            if artifact_type.startswith("dataset.") else None)
+            if artifact_type.startswith(("dataset.", "training.")) else None)
         content_digest = validated.semantic_digest
         artifact_id = uuid4()
         manifest = ArtifactManifest(
@@ -890,6 +895,14 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
             validate_pair_lineage(validated.parsed, manifest)
         if isinstance(validated.parsed, LocalFeatureSet):
             validate_feature_lineage(validated.parsed, manifest)
+        if artifact_type.startswith("training."):
+            from splatforge.adapters.training_artifacts import validate_training_lineage
+
+            route = self._load_run_snapshot(root, run_id).route
+            if not isinstance(route, TrainingRoute):
+                raise ValueError("training.invalid_producer_route")
+            self.validate_training_route(root, route, validated.parsed, output)
+            validate_training_lineage(validated.parsed, manifest)
         if artifact_type.startswith("dataset."):
             from splatforge.adapters.dataset_artifacts import (
                 require_dataset_source,
@@ -1138,7 +1151,8 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
         elif isinstance(snapshot.route, (FeatureExtractionRoute, PairSelectionRoute,
                                          RetrievalBuildRoute,
                                          FeatureMatchingRoute, GeometricVerificationRoute,
-                                         MappingRoute, ReconstructionEvidenceRoute, DatasetRoute)):
+                                         MappingRoute, ReconstructionEvidenceRoute, DatasetRoute,
+                                         TrainingRoute)):
             allowed = {(snapshot.route.node_id, snapshot.route.target.output_name)}
         else:
             allowed = set()
@@ -1325,7 +1339,7 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
         if run["status"] in {"succeeded", "cancelled"}:
             return RecoveryResult(run_id=run_id, status=RunStatus(run["status"]))
         if (isinstance(snapshot.route, (FeatureMatchingRoute, GeometricVerificationRoute,
-                                        MappingRoute, DatasetComponentRoute))
+                                        MappingRoute, DatasetComponentRoute, TrainingJobRoute))
                 and active and os.name != "nt"):
             raise ProjectError("Native M7b recovery requires tested Windows Job Object owner-death "
                                "containment; an OS writer lease alone does not prove teardown")
@@ -1430,7 +1444,8 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
         elif isinstance(snapshot.route, (PairSelectionRoute, FeatureExtractionRoute,
                                          RetrievalBuildRoute,
                                          FeatureMatchingRoute, GeometricVerificationRoute,
-                                         MappingRoute, ReconstructionEvidenceRoute, DatasetRoute)):
+                                         MappingRoute, ReconstructionEvidenceRoute, DatasetRoute,
+                                         TrainingRoute)):
             required = {snapshot.route.node_id}
         elif isinstance(snapshot.route, SharpestViewPreparationRoute):
             required = {
@@ -1796,6 +1811,14 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
                 expected_literal_inputs = {}
             else:
                 raise ValueError("Attempt node is not present in the frozen fake route")
+        elif isinstance(route, TrainingRoute):
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("training.orphan_node_mismatch")
+            self.validate_training_route(root, route)
+            output = route.target
+            expected_recipe_key = route.recipe_key()
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
         elif isinstance(route, DatasetRoute):
             from splatforge.application.dataset import require_dataset_inputs
 
@@ -2026,7 +2049,9 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if isinstance(route, DatasetRoute):
+        if isinstance(route, TrainingRoute):
+            self.validate_training_route(root, route, validated.parsed, artifact_directory)
+        elif isinstance(route, DatasetRoute):
             from splatforge.adapters.dataset_artifacts import require_dataset_source
             from splatforge.application.dataset import require_dataset_payload
 
@@ -2405,6 +2430,11 @@ class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, Clea
             self.validate_validation_inputs(root, snapshot_route)
             require_validation_payload(self, root, snapshot_route, validated.parsed,
                                        exact_lineage=True)
+        if manifest.artifact_type.startswith("training."):
+            route = self._load_run_snapshot(root, manifest.producer_run_id).route
+            if not isinstance(route, TrainingRoute):
+                raise ValueError("training.invalid_producer_route")
+            self.validate_training_route(root, route, validated.parsed, artifact_directory)
         if manifest.artifact_type.startswith("dataset."):
             from splatforge.adapters.dataset_artifacts import require_dataset_source
             from splatforge.application.dataset import (

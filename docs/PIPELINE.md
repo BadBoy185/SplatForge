@@ -23,8 +23,30 @@ members or promises that every stage already has an implementation.
 | ReconstructionValidation | ReconstructionSet, immutable ValidationUniverse and normalized optional detailed geometry | Separate ValidationGeometryInput, ReconstructionMetrics and ReconstructionValidationReport v1; exact/sampled/unavailable evidence, explicit policy and scoped issues; no model mutation |
 | ReconstructionSelection (application decision) | ReconstructionSet, ValidationReport and explicit manual choices or configured policy | ReconstructionSelection: referenced set, selected component IDs, selection mode, policy/version/settings and evidence; no reconstruction mutation |
 | DatasetPreparation | Published ReconstructionSelection v1, exact reconstruction/historical pixels and current validation gate | M10 PreparedDatasetComponent v1 per component, then PreparedDatasetSet v1 receipt: undistorted images, flat cameras, preserved poses/XYZ/tracks, unknown scale and explicit metadata |
-| Training | TrainingDataset, trainer settings and optional compatible checkpoint | TrainingResult: scene payload, metrics, logs and checkpoints with recipe provenance |
+| Training | One PreparedDatasetComponent v1, frozen TrainingSettings v1, positively validated exact backend and optional compatible checkpoint | TrainingCheckpoint v1 opaque resumable state; GaussianScene v1 independently validated Gaussian PLY, metrics and provenance; GaussianSceneSet v1 separate-component receipt |
 | Export | Explicit dataset or training result, format/settings | ExportManifest: output files, consumer/format versions, checksums and any lossy conversion |
+
+M11 implements the Training row through TrainingService -> TrainingBackend -> external
+SplatForge gsplat worker. `gsplat.default` and `gsplat.mcmc` consume exactly one M10
+component, its sparse XYZ/RGB and immutable explicit settings. No pose optimization,
+world normalization, random baseline initialization or component merging occurs.
+`data_factor` changes in-memory loading and intrinsics, never M10 pixels. Scale stays
+`unknown_arbitrary`. External LichtFeld handoff validates the same directory without
+copying it; it is a manual workflow, independent of the managed backend.
+
+Training recipe inputs are dataset numerical digest, resolved settings/split and exact
+positively probed worker/backend identity. Timeouts/log/workspace limits and diagnostics
+do not invalidate numerical recipes. Changed strategy, cap, resolution, SH, steps,
+seed or runtime do; earlier stages do not rerun. Resume additionally requires the exact
+checkpoint schema/compatibility identity, originating recipe and completed step.
+`max_steps` cannot change on resume in v1. Native state is not a public scene.
+
+Checkpoint segments use persisted attempts, structured protocol v1, bounded process-tree
+cancellation and `training.steps_v1` progress/ETA. Publication/cache/recovery independently
+verify complete manifests, events, native files and final PLY values/attributes/counts.
+GaussianScene semantics derive from actual canonical numerical Gaussian content;
+SceneSet only references separate components in canonical order. See [M11](M11.md)
+for field schemas, resources, held-out metrics and acceptance evidence.
 
 The table describes the initial route. Explicit composite SfM or detector-free routes
 may use different typed inputs and omit unavailable intermediate artifacts, as defined
@@ -178,8 +200,8 @@ and verification use separate exact PAIRS work models. M8a exposes preparation, 
 native execution and validation phases. A later mapping milestone may parse
 initialization, registration, triangulation, bundle-adjustment and finalization phases,
 but nonlinear work must retain absent/phase-scoped percent and unavailable or wide
-low/medium-confidence ETA. Future M11 trainers use completed/total iterations or steps.
-M7a/M7b/M8a/M8b1/M8b2 use this boundary; training remains planned.
+low/medium-confidence ETA. M11 uses completed/total steps, including checkpoint offsets.
+M7a/M7b/M8a/M8b1/M8b2 and M11 use this boundary.
 
 M1b1 implements one concrete deterministic route for contract testing:
 `fake.sequence` consumes literal `start` plus resolved `count` and publishes
@@ -638,7 +660,8 @@ M10 emits separate datasets for multiple selected unaligned components.
 materialized pixels, never original source media. Plan and execution call M9's current
 selection/override checks. Each selected component gets its own immutable conventional
 COLMAP dataset (`images/`, `sparse/0/`, `dataset.json`); the final DatasetSet references
-component artifacts. No automatic largest choice, coordinate merge or training exists.
+component artifacts. M10 makes no automatic largest choice or coordinate merge and
+does not execute training; [M11](M11.md) consumes each component separately.
 
 The component recipe uses exact M8/M9 selected numerical content, consumed pixel hashes,
 settings and pinned undistorter runtime. Report/reason/pairing provenance and non-binding

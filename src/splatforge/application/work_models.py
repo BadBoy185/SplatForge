@@ -19,6 +19,8 @@ from splatforge.core.execution import (
     ReconstructionMeasurementRoute,
     RetrievalBuildRoute,
     SharpestViewPreparationRoute,
+    TrainingJobRoute,
+    TrainingRoute,
     ValidationGeometryRoute,
     ViewPreparationRoute,
 )
@@ -95,6 +97,55 @@ def python_backend(adapter: str) -> PerformanceBackendIdentity:
         adapter_id=adapter,
         family="python",
         runtime_version=platform.python_version(),
+    )
+
+
+def training_progress_plan(
+    route: TrainingRoute, hardware: ExecutionHardwareProfile
+) -> PlannedStage:
+    job = isinstance(route, TrainingJobRoute)
+    if not job:
+        return _stage(
+            node_id=route.node_id,
+            stage_id="training",
+            method_id=route.method_id,
+            model="training.receipt_v1",
+            unit=WorkUnit.WORK,
+            total=1.0,
+            hardware=hardware,
+            backend=python_backend("splatforge.training_receipt"),
+            settings={},
+            metrics={},
+        )
+    # Signatures include exact GPU/runtime plus explicit resolution/image-count buckets.
+    signature_settings = {
+        "settings": route.settings.numerical(),
+        "resolution_bucket": math.ceil(
+            math.log2(
+                max(1, route.megapixels / route.image_count / route.settings.data_factor**2 * 1e6)
+            )
+        ),
+        "image_count_bucket": math.ceil(math.log2(route.image_count)),
+        "gpu_uuid": route.backend.gpu_uuid,
+    }
+    plan = _stage(
+        node_id=route.node_id,
+        stage_id="training",
+        method_id=route.method_id,
+        model="training.steps_v1",
+        unit=WorkUnit.STEPS,
+        total=float(route.terminal_step),
+        hardware=hardware.model_copy(update={"device": "gpu"}),
+        backend=PerformanceBackendIdentity(
+            adapter_id="splatforge.gsplat_worker",
+            family="gsplat",
+            runtime_version=route.backend.numerical_identity,
+        ),
+        settings=signature_settings,
+        metrics={"views": route.image_count, "megapixels": route.megapixels},
+    )
+    return plan.model_copy(
+        update={"work": plan.work.model_copy(update={"initial_completed": float(route.start_step)})}
     )
 
 

@@ -156,8 +156,16 @@ def build_builtin_registry() -> MethodRegistry:
             stage=StageKind.TRAINING,
         ),
         MethodSpec(
-            id="training.gsplat", display_name="gsplat", stage=StageKind.TRAINING, experimental=True
+            id="training.gsplat", display_name="gsplat", stage=StageKind.TRAINING,
+            experimental=True,
+            notes="Legacy catalog ID only; choose explicit gsplat.default or gsplat.mcmc for M11",
         ),
+        *(MethodSpec(
+            id=f"gsplat.{strategy}", display_name=f"gsplat {strategy.title()}",
+            stage=StageKind.TRAINING,
+            notes="Implemented M11 worker protocol v1; exact optional runtime/kernel gate; "
+                  "SFM initialization, frozen settings, separate checkpoint and GaussianScene v1",
+        ) for strategy in ("default", "mcmc")),
     ]
     for method in methods:
         registry.register(method)

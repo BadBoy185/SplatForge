@@ -52,9 +52,12 @@ M8a Global mapping and M8b1 single-model Incremental Ceres / capability-gated Ca
 and M8b2 Hierarchical / capability-gated Global GPU / mapper comparison are implemented.
 M9a reconstruction measurements/policy validation and M9b explicit component selection are
 implemented. M10 adds flat-camera dataset planning/preparation, independent validation,
-per-component cache and manual safe cleanup. Production VPR inference and practical
-automatic multi-video E2E acceptance, representative mapper recommendation, training
-and GUI remain pending. See [M10 contracts](docs/M10.md).
+per-component cache and manual safe cleanup. M11 implements external LichtFeld dataset
+handoff and isolated managed gsplat Default/MCMC training, compatible checkpoints,
+validated Gaussian PLY scenes and candidate comparison. Production VPR inference,
+practical automatic multi-video E2E acceptance, representative mapper recommendation,
+broader training preset recommendation and GUI remain pending. See [M10](docs/M10.md)
+and [M11 contracts and evidence](docs/M11.md).
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 Fixed-FPS selection uses an exact ordered sweep with bounded target expansion.
@@ -403,7 +406,8 @@ and originals, and durably marks removed generated payloads evicted.
 
 DatasetPreparation can consume valid explicit selections from reference pairing now.
 **Production automatic multi-video E2E acceptance still requires M7c production VPR
-selection**; an Exhaustive pilot does not satisfy that gate. M11 is not started.
+selection**; an Exhaustive pilot does not satisfy that gate. M11 consumes these same
+published datasets independently of that production retrieval gate.
 See [M10 defaults, layout, validation, resources and cleanup](docs/M10.md).
 
 ## Intended workflow
@@ -429,8 +433,11 @@ dataset for use in an external trainer.
 - Preserve originals; show progress, failures and reconstruction quality; resume
   valid work. Training changes must not rerun decoding or SfM.
 
-The first usable release is a complete CLI pipeline producing a validated dataset.
-Training integration follows, then a GUI using the same application services.
+The CLI can stop at a validated dataset or continue through an explicitly configured
+external gsplat runtime to checkpoints and independently validated Gaussian scenes.
+Run `splatforge training handoff`, `training plan`, `training run`, `training show`
+or `training compare`; see [M11 commands and runtime setup](docs/M11.md).
+A future GUI will use the same application services. No universal quality preset is adopted.
 Later work includes masks/segmentation, GPS, LiDAR, alternative SfM/training methods,
 large-scene automation, batch jobs and 360 workflows. Previously successful 3DGS work
 may be researched read-only earlier without blocking implementation; official preset
@@ -447,6 +454,7 @@ translation/benchmarking stays with training integration.
 | [Development guide](docs/DEVELOPMENT.md) | Testing, diagnostics and Windows/backend risks |
 | [Architecture review](docs/ARCHITECTURE_REVIEW.md) | Evidence from the original foundation and deferred decisions |
 | [Legacy research](docs/LEGACY_3DGS_RESEARCH.md) | Optional read-only evidence gathering before later preset evaluation |
+| [M11 training](docs/M11.md) | External handoff, exact managed runtime, checkpoints, scenes and benchmark evidence |
 | [ROADMAP.md](ROADMAP.md) | Incremental, verifiable milestones |
 | [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
 

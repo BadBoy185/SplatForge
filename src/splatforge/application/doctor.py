@@ -223,6 +223,17 @@ class DoctorService:
                     prerequisites=prerequisites,
                 )
             )
+        for method_id in ("gsplat.default", "gsplat.mcmc"):
+            mapped.append(MethodCapability(
+                method_id=method_id, catalogued=method_id in catalog,
+                supported_by_splatforge=True,
+                implementation_status=ImplementationStatus.IMPLEMENTED,
+                backend_capability_status=CapabilityStatus.UNKNOWN, runnable=False,
+                diagnostic_code="training.runtime_not_probed",
+                message="Use training capability <runtime.json> for an isolated CUDA kernel, "
+                        "backward and optimizer probe; generic NVIDIA evidence is insufficient",
+                prerequisites=("gsplat.worker_v1",),
+            ))
         return tuple(mapped)
 
     @staticmethod

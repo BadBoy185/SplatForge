@@ -32,7 +32,8 @@ def workload_similarity(stage: PlannedStage, sample: PerformanceSample) -> float
     if sample.signature != stage.signature or stage.work.total is None:
         return 0
     historical = {metric.name: metric.value for metric in sample.workload}
-    distances = [abs(math.log2(max(stage.work.total, 1e-9) / sample.total_work))]
+    remaining_work = stage.work.total - stage.work.initial_completed
+    distances = [abs(math.log2(max(remaining_work, 1e-9) / sample.total_work))]
     for metric in stage.workload:
         previous = historical.get(metric.name)
         if previous is None:
@@ -106,9 +107,12 @@ class HybridThroughputEstimator:
     @property
     def throughput(self) -> float | None:
         observation = self._last
-        if observation is None or observation.elapsed_seconds < 1 or observation.completed <= 0:
+        if observation is None or observation.elapsed_seconds < 1:
             return None
-        cumulative = observation.completed / observation.elapsed_seconds
+        performed = observation.completed - self.stage.work.initial_completed
+        if performed <= 0:
+            return None
+        cumulative = performed / observation.elapsed_seconds
         recent = self._recent if self._recent is not None else cumulative
         recent = min(cumulative * 2, max(cumulative / 2, recent))
         return (recent + cumulative) / 2

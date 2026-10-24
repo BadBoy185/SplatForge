@@ -61,6 +61,7 @@ from splatforge.core.reconstruction_validation import (
     REPORT_ARTIFACT_TYPE,
 )
 from splatforge.core.retrieval import RETRIEVAL_ARTIFACT_TYPE, RetrievalRepresentationSet
+from splatforge.core.training import GaussianScene, GaussianSceneSet, TrainingCheckpoint
 from splatforge.core.validation_artifacts import (
     ReconstructionMetricsArtifact,
     ReconstructionReportArtifact,
@@ -93,6 +94,9 @@ class ValidatedArtifact:
         ReconstructionSet
         | PreparedDatasetComponent
         | PreparedDatasetSet
+        | GaussianScene
+        | GaussianSceneSet
+        | TrainingCheckpoint
         | ValidationGeometryArtifact
         | ReconstructionMetricsArtifact
         | ReconstructionReportArtifact
@@ -150,6 +154,10 @@ def validate_workspace_output(
         raise ValueError("Stage did not create a safe output directory")
     if artifact_type in {NUMBERS_ARTIFACT_TYPE, SCALED_ARTIFACT_TYPE}:
         return _validate_fake(output, artifact_type, verified_payloads)
+    if artifact_type.startswith("training."):
+        from splatforge.adapters.training_artifacts import read_training_output
+
+        return read_training_output(output, artifact_type, checkpoint=checkpoint or (lambda: None))
     if artifact_type in {DATASET_COMPONENT_TYPE, DATASET_SET_TYPE}:
         from splatforge.adapters.dataset_artifacts import validate_dataset_output
 
@@ -252,6 +260,10 @@ def validate_published_artifact(
             raise ValueError("Sharpest selection provenance differs from lineage")
     if isinstance(validated.parsed, PairSet):
         validate_pair_lineage(validated.parsed, manifest)
+    if isinstance(validated.parsed, (GaussianScene, GaussianSceneSet, TrainingCheckpoint)):
+        from splatforge.adapters.training_artifacts import validate_training_lineage
+
+        validate_training_lineage(validated.parsed, manifest)
     if isinstance(validated.parsed, (PreparedDatasetComponent, PreparedDatasetSet)):
         from splatforge.adapters.dataset_artifacts import validate_dataset_lineage
 

@@ -115,6 +115,17 @@ from splatforge.core.retrieval import (
     RetrievalResourceLimits,
 )
 from splatforge.core.sfm_profiles import ResolvedFeatureMatchingRoute
+from splatforge.core.training import (
+    CHECKPOINT_TYPE,
+    SCENE_TYPE,
+    SET_TYPE,
+    GaussianSceneSet,
+    TrainingBackendIdentity,
+    TrainingLimits,
+    TrainingSettings,
+    checkpoint_recipe,
+    training_recipe,
+)
 from splatforge.core.validation_artifacts import geometry_recipe
 from splatforge.core.validation_policy import ReconstructionValidationPolicy, report_recipe
 from splatforge.core.views import (
@@ -1052,6 +1063,181 @@ class DatasetSetRoute(DatasetRoute):
         return self.dataset.recipe_key
 
 
+class TrainingRuntime(FrozenModel):
+    """Machine-local locator and explicit child environment; never a numerical identity."""
+
+    python: str = Field(min_length=1, max_length=4096)
+    environment: dict[str, str] = Field(default_factory=dict, max_length=32)
+
+    @model_validator(mode="after")
+    def scoped_environment(self) -> TrainingRuntime:
+        allowed = {
+            "PATH",
+            "INCLUDE",
+            "LIB",
+            "LIBPATH",
+            "CUDA_HOME",
+            "CUDA_PATH",
+            "TORCH_CUDA_ARCH_LIST",
+            "TORCH_EXTENSIONS_DIR",
+            "MAX_JOBS",
+            "DISTUTILS_USE_SDK",
+            "MSSDK",
+            "VCTOOLSINSTALLDIR",
+            "WINDOWSSDKDIR",
+            "WINDOWSSDKVERSION",
+            "VCINSTALLDIR",
+            "VSINSTALLDIR",
+            "VSCMD_ARG_TGT_ARCH",
+        }
+        if any(k.upper() not in allowed or len(v) > 32768 for k, v in self.environment.items()):
+            raise ValueError(
+                "training.unsafe_runtime_environment: only scoped toolchain keys allowed"
+            )
+        return self
+
+
+class TrainingRoute(FrozenModel):
+    @model_validator(mode="after")
+    def output_contract(self) -> TrainingRoute:
+        expected = {
+            "training.checkpoint": ("training_checkpoint", "checkpoint", CHECKPOINT_TYPE),
+            "training.scene": ("gaussian_scene", "scene", SCENE_TYPE),
+            "training.set": ("gaussian_scene_set", "scene_set", SET_TYPE),
+        }[self.route_id]
+        if (self.node_id, self.target.output_name, self.target.artifact_type) != expected or (
+            self.target.node_id != self.node_id or self.target.contract_version != 1
+        ):
+            raise ValueError("training.invalid_output_contract")
+        return self
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        raise NotImplementedError
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(
+            ArtifactInputLineage(input_name=n, **h.model_dump(exclude={"manifest_path"}))
+            for n, h in self.input_handles()
+        )
+
+    def literal_inputs(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"target"})
+
+
+class TrainingJobRoute(TrainingRoute):
+    dataset: ArtifactHandle
+    settings: TrainingSettings
+    backend: TrainingBackendIdentity
+    runtime: TrainingRuntime
+    resource_limits: TrainingLimits = TrainingLimits()
+    resume: ArtifactHandle | None = None
+    start_step: int = Field(default=0, ge=0, strict=True)
+    terminal_step: int = Field(ge=1, strict=True)
+    image_count: int = Field(ge=3, strict=True)
+    megapixels: float = Field(gt=0)
+    source_groups: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def training_contract(self) -> TrainingJobRoute:
+        if (
+            self.dataset.artifact_type != DATASET_COMPONENT_TYPE
+            or self.dataset.contract_version != 1
+        ):
+            raise ValueError("training.requires_single_prepared_component_v1")
+        if self.resume and (
+            self.resume.artifact_type != CHECKPOINT_TYPE or self.resume.contract_version != 1
+        ):
+            raise ValueError("training.invalid_resume_contract")
+        if bool(self.resume) != bool(self.start_step):
+            raise ValueError("training.resume_step_required")
+        if not self.start_step <= self.terminal_step <= self.settings.max_steps:
+            raise ValueError("training.invalid_step_range")
+        return self
+
+    @property
+    def method_id(self) -> str:
+        return self.settings.method_id
+
+    @property
+    def training_recipe(self) -> str:
+        return training_recipe(
+            self.dataset.semantic_digest, self.settings, self.backend.numerical_identity
+        )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (("dataset", self.dataset), *((("checkpoint", self.resume),) if self.resume else ()))
+
+
+class TrainingCheckpointRoute(TrainingJobRoute):
+    route_id: Literal["training.checkpoint"] = "training.checkpoint"
+    route_version: Literal[1] = 1
+    node_id: Literal["training_checkpoint"] = "training_checkpoint"
+    target: OutputReference = OutputReference(
+        node_id="training_checkpoint",
+        output_name="checkpoint",
+        artifact_type=CHECKPOINT_TYPE,
+        contract_version=1,
+    )
+
+    def recipe_key(self) -> str:
+        from splatforge.core.features import digest_json
+
+        return checkpoint_recipe(
+            self.training_recipe,
+            self.terminal_step,
+            digest_json({"schema": 1, "recipe": self.training_recipe}),
+        )
+
+    @model_validator(mode="after")
+    def positive_work(self) -> TrainingCheckpointRoute:
+        if self.start_step >= self.terminal_step:
+            raise ValueError("training.checkpoint_requires_positive_step_work")
+        return self
+
+
+class TrainingSceneRoute(TrainingJobRoute):
+    route_id: Literal["training.scene"] = "training.scene"
+    route_version: Literal[1] = 1
+    node_id: Literal["gaussian_scene"] = "gaussian_scene"
+    target: OutputReference = OutputReference(
+        node_id="gaussian_scene", output_name="scene", artifact_type=SCENE_TYPE, contract_version=1
+    )
+
+    @model_validator(mode="after")
+    def final_export_only(self) -> TrainingSceneRoute:
+        if (
+            self.start_step != self.settings.max_steps
+            or self.terminal_step != self.start_step
+            or not self.settings.final_export
+        ):
+            raise ValueError("training.scene_requires_completed_checkpoint")
+        return self
+
+    def recipe_key(self) -> str:
+        return self.training_recipe
+
+
+class TrainingSetRoute(TrainingRoute):
+    route_id: Literal["training.set"] = "training.set"
+    route_version: Literal[1] = 1
+    method_id: Literal["training.separate_scenes_v1"] = "training.separate_scenes_v1"
+    node_id: Literal["gaussian_scene_set"] = "gaussian_scene_set"
+    target: OutputReference = OutputReference(
+        node_id="gaussian_scene_set",
+        output_name="scene_set",
+        artifact_type=SET_TYPE,
+        contract_version=1,
+    )
+    scenes: tuple[ArtifactHandle, ...]
+    scene_set: GaussianSceneSet
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return tuple((f"scene_{i}", s) for i, s in enumerate(self.scenes))
+
+    def recipe_key(self) -> str:
+        return self.scene_set.recipe_key
+
+
 class RunSnapshot(FrozenModel):
     schema_version: Literal[1] = 1
     run_id: UUID
@@ -1066,7 +1252,8 @@ class RunSnapshot(FrozenModel):
         | RetrievalBuildRoute | MappingRoute | IncrementalMappingRoute
         | HierarchicalMappingRoute | GlobalAcceleratedRoute | ValidationGeometryRoute
         | ReconstructionMeasurementRoute | ReconstructionValidationRoute
-        | ReconstructionSelectionRoute | DatasetComponentRoute | DatasetSetRoute,
+        | ReconstructionSelectionRoute | DatasetComponentRoute | DatasetSetRoute
+        | TrainingCheckpointRoute | TrainingSceneRoute | TrainingSetRoute,
         Field(discriminator="route_id"),
     ]
 

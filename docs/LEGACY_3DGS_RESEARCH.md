@@ -2,10 +2,11 @@
 
 ## Status and timing
 
-No legacy project was supplied or inspected in this documentation revision. The user
-reports good results from an earlier setup; its implementation and quality have not
-been independently evaluated here. No recovered parameters or official presets are
-claimed below.
+The M11 read-only repository and ignored local-evidence search on 2026-10-24 found no
+historical training recipes, checkpoints, LichtFeld or Nerfstudio/Splatfacto settings:
+`legacy_evidence_unavailable`. Existing Russian-dacha evidence covers SfM/M10 only.
+No recovered legacy parameters or official quality presets are claimed. Independently
+verified gsplat candidates and sources are in [M11 evidence](M11_EVIDENCE.md).
 
 Read-only inspection may happen at any milestone when the project becomes available.
 It is optional, non-blocking research: early persistence, ingest, SfM and CLI work do
@@ -31,7 +32,8 @@ notes where a descriptive locator suffices.
 
 ## Research entries
 
-No entries yet. Each future entry should state:
+The M11 search result above is an evidence gap, not a judgment about earlier results.
+Each future recovered entry should state:
 
 - What was directly observed and its exact evidence reference.
 - What remains a hypothesis or missing information, including hidden defaults.

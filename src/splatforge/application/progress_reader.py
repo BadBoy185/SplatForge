@@ -19,6 +19,7 @@ from splatforge.core.execution import (
     ReconstructionEvidenceRoute,
     RetrievalBuildRoute,
     SharpestViewPreparationRoute,
+    TrainingRoute,
 )
 from splatforge.core.progress import (
     EtaEstimate,
@@ -47,14 +48,14 @@ class RunProgressService:
             nodes = (route.sequence, route.scale)
         elif isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
                                 FeatureMatchingRoute, GeometricVerificationRoute, MappingRoute,
-                                ReconstructionEvidenceRoute, DatasetRoute)):
+                                ReconstructionEvidenceRoute, DatasetRoute, TrainingRoute)):
             nodes = ()
         elif isinstance(route, SharpestViewPreparationRoute):
             nodes = (route.candidate, route.quality, route.selection)
         else:
             nodes = (route.candidate, route.selection)
         descriptions = [(node.node_id, node.method_id) for node in nodes]
-        if isinstance(route, (ReconstructionEvidenceRoute, DatasetRoute)):
+        if isinstance(route, (ReconstructionEvidenceRoute, DatasetRoute, TrainingRoute)):
             descriptions = [(route.node_id, route.method_id)]
         if isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
                               FeatureMatchingRoute, GeometricVerificationRoute, MappingRoute)):

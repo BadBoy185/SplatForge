@@ -412,7 +412,8 @@ M9 selection checks, historical pixels, separate component artifacts and the sma
 receipt, bounded native undistortion and manual preview/apply eviction. Production
 automatic multi-video E2E acceptance still requires pending M7c production VPR selection.
 The original acceptance prompt below remains applicable to that external gate; technical
-preparation itself accepts any valid explicit selection. M11 has not started.
+preparation itself accepts any valid explicit selection. M11 is implemented downstream;
+preserve [its training contracts](M11.md).
 
 Additional reading: [PIPELINE.md](PIPELINE.md),
 [ARCHITECTURE: application boundary](../ARCHITECTURE.md#dependency-direction) and
@@ -428,7 +429,7 @@ Verify datasets with a consumer/independent reader and test interruption, reloca
 corrupt cache, disk-full and Windows paths. Add previewable manual cleanup of unpinned
 completed payloads, preserving manifests/lineage and eviction records; protect originals,
 active outputs, exports and checkpoints. Budget database copies/workspaces and exports.
-No GUI or managed training yet.
+Keep this dataset task scoped to M10; downstream training is documented separately.
 ```
 
 ## Optional early legacy research
@@ -447,6 +448,10 @@ Preset translation and benchmarking remain M11a.
 
 ## M11a Preset translation and benchmarking
 
+Implemented: [evidence ledger](M11_EVIDENCE.md), typed upstream candidates and fair
+sequential comparison. Broader preset adoption remains pending. Use the prompt below
+for additional evidence; do not replace explicit recipes with untested quality labels.
+
 Additional reading: [LEGACY_3DGS_RESEARCH.md](LEGACY_3DGS_RESEARCH.md),
 [ARCHITECTURE: training boundary](../ARCHITECTURE.md#training-legacy-work-and-future-inputs)
 and [DEVELOPMENT: testing layers](DEVELOPMENT.md#testing-layers).
@@ -461,6 +466,10 @@ Do not import legacy internals as core or label untested recipes equivalent/supe
 
 ## M11b Training integration
 
+Implemented: external manual handoff and exact isolated gsplat Default/MCMC runtime,
+checkpoint resume, independent Gaussian PLY validation and existing lifecycle integration.
+See [M11](M11.md). Preserve the invariants below for future changes; M12 is not started.
+
 Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-outputs),
 [execution](PIPELINE.md#method-execution-contract),
 [cache](PIPELINE.md#stage-fingerprints-and-cache-eligibility),
@@ -469,10 +478,12 @@ Additional reading: [PIPELINE: stage inputs](PIPELINE.md#stage-inputs-and-output
 [testing](DEVELOPMENT.md#testing-layers).
 
 ```text
-Implement a tested external LichtFeld dataset handoff, then one selected managed
-trainer. Keep manual handoff distinct from execution. Verify loadable scenes, progress/
-cancellation, compatible checkpoint resume where supported, metrics and export.
-Trainer changes must reuse SfM. A gsplat-based option needs an explicit training recipe.
+Preserve validated external LichtFeld dataset handoff and the external SplatForge gsplat
+worker boundary. Keep Default/MCMC explicit, pin numerical runtime/settings, initialize
+from SFM and preserve poses/world coordinates/unknown scale. Verify checkpoint resume,
+process-tree cancellation, metrics, cache/recovery and independent PLY validation.
+Trainer changes must reuse SfM; multiple components stay separate. Never adopt a
+universal quality preset from one scene or silently fall back between strategies.
 ```
 
 ## M12 GUI

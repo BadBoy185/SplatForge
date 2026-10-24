@@ -182,6 +182,18 @@ def build_cleanup_service() -> CleanupService:
     return CleanupService(LocalExecutionRepository(project_store=LocalProjectStore()))
 
 
+def build_training_service(*, performance_path: Path | None = None):
+    from splatforge.adapters.gsplat_training import GsplatTrainingBackend
+    from splatforge.adapters.lichtfeld import detect_lichtfeld
+    from splatforge.application.training import TrainingService
+
+    return TrainingService(
+        LocalExecutionRepository(project_store=LocalProjectStore()),
+        GsplatTrainingBackend(),
+        progress=build_progress_support(performance_path), external_probe=detect_lichtfeld,
+    )
+
+
 def build_reconstruction_validation_service(
     *, performance_path: Path | None = None
 ) -> ReconstructionValidationService:

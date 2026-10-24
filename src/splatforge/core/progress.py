@@ -113,6 +113,11 @@ class WorkMetric(ProgressValue):
         "points",
         "observations",
         "components",
+        "gaussians",
+        "loss",
+        "peak_allocated_cuda_bytes",
+        "training_step",
+        "max_steps",
     ]
     value: NonNegative
 
@@ -127,6 +132,7 @@ class WorkDescription(ProgressValue):
     unit: WorkUnit
     mode: ProgressMode = ProgressMode.DETERMINATE
     total: NonNegative | None
+    initial_completed: NonNegative = 0
     plan_revision: int = Field(default=1, ge=1, strict=True)
     # Explicit opt-in for one nonlinear complete job; generic phase totals do not
     # authorize a whole-stage ETA or a linear completion fraction.
@@ -134,6 +140,8 @@ class WorkDescription(ProgressValue):
 
     @model_validator(mode="after")
     def total_matches_mode(self) -> WorkDescription:
+        if self.initial_completed and (self.total is None or self.initial_completed > self.total):
+            raise ValueError("Initial completed work requires a sufficient explicit total")
         if self.historical_job_duration and (
             self.mode != ProgressMode.PHASE or self.unit != WorkUnit.WORK or self.total != 1
         ):
