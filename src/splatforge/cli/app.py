@@ -27,6 +27,7 @@ from splatforge.bootstrap import (
     build_sfm_profile_service,
     build_views_service,
 )
+from splatforge.cli.dataset import app as dataset_app
 from splatforge.cli.reconstruction import app as reconstruction_app
 from splatforge.core import build_builtin_registry, recommended_flat_video_profile
 from splatforge.core.features import (
@@ -85,6 +86,7 @@ from splatforge.core.views import (
 
 app = typer.Typer(no_args_is_help=True, help="SplatForge development CLI")
 app.add_typer(reconstruction_app, name="reconstruction")
+app.add_typer(dataset_app, name="dataset")
 project_app = typer.Typer(no_args_is_help=True, help="Basic project persistence")
 app.add_typer(project_app, name="project")
 run_app = typer.Typer(no_args_is_help=True, help="Run inspection and control")
@@ -520,6 +522,26 @@ def _eta_text(eta: EtaEstimate) -> str:
     return f"~{lower}–{upper} {unit} · {eta.confidence.value} confidence"
 
 
+@run_app.command("active")
+def active_runs(
+    path: Path, json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    try:
+        snapshots = build_run_progress_service().active(path)
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        typer.echo(json.dumps([s.model_dump(mode="json") for s in snapshots], indent=2))
+    else:
+        for snapshot in snapshots:
+            stage = snapshot.current_stage
+            typer.echo(f"Run {snapshot.run_id}: {snapshot.status}; "
+                       f"{stage.phase_code if stage else 'phase unavailable'}")
+        if not snapshots:
+            typer.echo("No active runs")
+
+
 @run_app.command("progress")
 def run_progress(
     path: Path, run_id: UUID, json_output: bool = typer.Option(False, "--json"),
@@ -611,6 +633,50 @@ def upgrade_project_state(path: Path) -> None:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(result.model_dump_json(indent=2))
+
+
+@project_app.command("cleanup")
+def cleanup_project(
+    project: Path,
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    apply: Annotated[bool, typer.Option("--apply")] = False,
+    preview: Annotated[str | None, typer.Option("--preview")] = None,
+    artifact: Annotated[list[UUID] | None, typer.Option("--artifact")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    from splatforge.bootstrap import build_cleanup_service
+
+    try:
+        if apply and (dry_run or not preview):
+            raise ValueError("cleanup.preview_required: --apply requires "
+                             "--preview <dry-run digest>")
+        if preview and not apply:
+            raise ValueError("--preview is only used with --apply")
+        service = build_cleanup_service()
+        plan = service.apply(project, preview_digest=preview, artifact_ids=tuple(artifact or ())) \
+            if apply else service.preview(project, tuple(artifact or ()))
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    result = {**plan.model_dump(mode="json"), "preview_digest": plan.preview_digest,
+              "applied": apply}
+    typer.echo(json.dumps(result, indent=2) if json_output else
+               f"{'Evicted' if apply else 'Preview'}: {len(plan.candidates)} artifacts; "
+               f"{plan.total_bytes:,} bytes; preview={plan.preview_digest}")
+
+
+@project_app.command("pin")
+def pin_artifact(project: Path, artifact_id: UUID,
+                 unpin: Annotated[bool, typer.Option("--unpin")] = False) -> None:
+    from splatforge.bootstrap import build_cleanup_service
+
+    try:
+        build_cleanup_service().pin(project, artifact_id, pinned=not unpin)
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo("Explicit pin removed; current lineage remains protected"
+               if unpin else "Artifact pinned")
 
 
 @run_app.command("fake")

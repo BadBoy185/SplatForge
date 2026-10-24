@@ -16,6 +16,22 @@ from pydantic import (
     model_validator,
 )
 
+from splatforge.core.dataset import (
+    COMPONENT_ARTIFACT_TYPE as DATASET_COMPONENT_TYPE,
+)
+from splatforge.core.dataset import (
+    SET_ARTIFACT_TYPE as DATASET_SET_TYPE,
+)
+from splatforge.core.dataset import (
+    DatasetBackend,
+    DatasetInputImage,
+    DatasetProvenance,
+    DatasetResourceEstimate,
+    DatasetResourceLimits,
+    DatasetSettings,
+    PreparedDatasetSet,
+    component_recipe,
+)
 from splatforge.core.features import (
     FEATURE_ARTIFACT_TYPE,
     DescriptorSignature,
@@ -78,6 +94,7 @@ from splatforge.core.reconstruction import (
 from splatforge.core.reconstruction_selection import (
     SELECTION_ARTIFACT_TYPE,
     ReconstructionSelection,
+    SelectedComponentContent,
 )
 from splatforge.core.reconstruction_validation import (
     GEOMETRY_ARTIFACT_TYPE as VALIDATION_GEOMETRY_ARTIFACT_TYPE,
@@ -945,6 +962,96 @@ class ReconstructionSelectionRoute(ReconstructionEvidenceRoute):
         return self.decision.recipe_key
 
 
+class DatasetRoute(FrozenModel):
+    """Concrete M10 restart/publication units, with mandatory M9 gate lineage."""
+
+    selection: ArtifactHandle
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (("reconstruction_selection", self.selection),)
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(ArtifactInputLineage(
+            input_name=name, **handle.model_dump(exclude={"manifest_path"})
+        ) for name, handle in self.input_handles())
+
+    def literal_inputs(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"selection", "target"})
+
+    @model_validator(mode="after")
+    def selection_contract(self) -> DatasetRoute:
+        if (self.selection.artifact_type != SELECTION_ARTIFACT_TYPE
+                or self.selection.contract_version != 1):
+            raise ValueError("M10 requires an explicit published ReconstructionSelection v1")
+        contracts = {
+            "reconstruction_selection": SELECTION_ARTIFACT_TYPE,
+            "reconstruction": RECONSTRUCTION_ARTIFACT_TYPE,
+            "candidate_views": CANDIDATE_ARTIFACT_TYPE,
+            "selected_views": SELECTED_ARTIFACT_TYPE,
+        }
+        for name, handle in self.input_handles():
+            expected = contracts.get(name, DATASET_COMPONENT_TYPE)
+            if handle.artifact_type != expected or handle.contract_version != 1:
+                raise ValueError("M10 frozen input contract mismatch")
+        if (self.target.node_id != self.node_id or self.target.contract_version != 1
+                or (self.target.output_name, self.target.artifact_type) != (
+                    ("dataset", DATASET_COMPONENT_TYPE)
+                    if self.route_id == "dataset.component.prepare"
+                    else ("dataset_set", DATASET_SET_TYPE))):
+            raise ValueError("M10 frozen output contract mismatch")
+        return self
+
+
+class DatasetComponentRoute(DatasetRoute):
+    route_id: Literal["dataset.component.prepare"] = "dataset.component.prepare"
+    route_version: Literal[1] = 1
+    method_id: Literal["dataset.colmap_undistorted_v1"] = "dataset.colmap_undistorted_v1"
+    reconstruction: ArtifactHandle
+    candidate: ArtifactHandle
+    selected: ArtifactHandle
+    content: SelectedComponentContent
+    source_sparse_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    images: tuple[DatasetInputImage, ...] = Field(min_length=3, max_length=100000)
+    settings: DatasetSettings
+    backend: DatasetBackend
+    resource_limits: DatasetResourceLimits
+    estimate: DatasetResourceEstimate
+    provenance: DatasetProvenance
+    node_id: Literal["dataset_component"] = "dataset_component"
+    target: OutputReference = OutputReference(
+        node_id="dataset_component", output_name="dataset", artifact_type=DATASET_COMPONENT_TYPE,
+        contract_version=1,
+    )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (*super().input_handles(), ("reconstruction", self.reconstruction),
+                ("candidate_views", self.candidate), ("selected_views", self.selected))
+
+    def recipe_key(self) -> str:
+        return component_recipe(self.content, self.images, self.settings,
+                                self.backend.numerical_identity, self.source_sparse_digest)
+
+
+class DatasetSetRoute(DatasetRoute):
+    route_id: Literal["dataset.prepare"] = "dataset.prepare"
+    route_version: Literal[1] = 1
+    method_id: Literal["dataset.colmap_undistorted_v1"] = "dataset.colmap_undistorted_v1"
+    components: tuple[ArtifactHandle, ...] = Field(min_length=1, max_length=1000)
+    dataset: PreparedDatasetSet
+    node_id: Literal["dataset_set"] = "dataset_set"
+    target: OutputReference = OutputReference(
+        node_id="dataset_set", output_name="dataset_set", artifact_type=DATASET_SET_TYPE,
+        contract_version=1,
+    )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (*super().input_handles(), *((f"component_{i}", h)
+                                            for i, h in enumerate(self.components)))
+
+    def recipe_key(self) -> str:
+        return self.dataset.recipe_key
+
+
 class RunSnapshot(FrozenModel):
     schema_version: Literal[1] = 1
     run_id: UUID
@@ -959,7 +1066,7 @@ class RunSnapshot(FrozenModel):
         | RetrievalBuildRoute | MappingRoute | IncrementalMappingRoute
         | HierarchicalMappingRoute | GlobalAcceleratedRoute | ValidationGeometryRoute
         | ReconstructionMeasurementRoute | ReconstructionValidationRoute
-        | ReconstructionSelectionRoute,
+        | ReconstructionSelectionRoute | DatasetComponentRoute | DatasetSetRoute,
         Field(discriminator="route_id"),
     ]
 

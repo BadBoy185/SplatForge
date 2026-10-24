@@ -281,7 +281,9 @@ index/query time and memory. Test model/corpus/index invalidation and local-feat
 reuse when retrieval alone changes, plus no-overlap clips, repetitive texture and
 near-duplicate bursts. Publish corpus-bound immutable indexes; retrieval cannot depend
 on the reconstruction it enables. Missing representation/model/index capabilities
-produce actionable errors, not silent Exhaustive fallback. M10 depends on this route;
+produce actionable errors, not silent Exhaustive fallback. M10 practical production
+multi-video E2E acceptance depends on this route; technical DatasetPreparation consumes
+any valid explicit M9 selection independently of the upstream pairing method;
 GPS/spatial pairing and advanced index/scale optimization remain in M13a.
 
 ## M8 — mapping
@@ -295,7 +297,7 @@ requested view-graph calibration, existing containment/publication/recovery/cach
 M6.5 progress. No component selection or mapper/calibration fallback occurs.
 Synthetic reader/isolation/lifecycle tests and tiny real Global transport are covered.
 See [M8a contracts and evidence](docs/M8A.md). M7c production VPR benchmarking remains
-pending independently and does not block M8a. M9 is implemented below; M10 has not started.
+pending independently and does not block M8a. M9 and technical M10 are implemented below.
 
 **M8b1: implemented Incremental Ceres CPU.** Explicit single-model Incremental publishes
 the same ReconstructionSet v1/Reader with all unregistered views recorded. Native
@@ -317,7 +319,7 @@ so Global GPU real validation is false. See [M8b2](docs/M8B2.md).
 remains pending** across drone, phone, mixed/multi-clip/unordered/difficult/larger scenes.
 No universal winner, automatic fallback or production default change follows from tiny
 fixtures. M7c production VPR benchmarking remains independently pending. M9 now consumes
-these immutable M8 artifacts as documented below; M10 has not started.
+these immutable M8 artifacts as documented below; M10 consumes explicit M9 selections.
 
 ## M9 — reconstruction validation and component selection
 
@@ -353,9 +355,21 @@ and scoped gates are inspectable. No score, largest tie-break, merge or M8 feedb
 
 See [M9 contracts, thresholds and verification](docs/M9.md). M9 technical implementation
 is complete. Representative M7c VPR benchmarking and representative M8 mapper recommendation
-benchmarking remain independently pending. M10 has not started.
+benchmarking remain independently pending. Technical M10 is documented below.
 
 ## M10 — complete flat-camera CLI and training dataset
+
+**M10 technical dataset-preparation implementation complete.** Explicit ReconstructionSelection v1 ->
+exact historical registered pixels -> independently prepared/cached component datasets ->
+PreparedDatasetSet v1 receipt. Includes bounded native undistortion/resizing, independent
+image/camera/pose/point/track validation, dry-run resources/capability/cache/gate diagnostics,
+generic lifecycle controls and manual preview/apply cleanup with durable eviction/pins.
+See [M10 contracts and verification](docs/M10.md).
+
+**Production practical multi-video E2E acceptance remains externally pending M7c
+production VPR selection.** The acceptance requirement below is preserved. Valid explicit
+reference-pairing selections can be prepared, including the local mixed pilot; this does
+not complete production retrieval, recommend a universal mapper or start M11.
 
 Implement DatasetPreparation, required undistortion/resizing, camera/pose consistency
 checks and dataset export. Compose project/ingest/plan/run/status/cancel/retry/diagnose

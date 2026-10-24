@@ -182,7 +182,7 @@ def test_no_colmap_is_a_valid_report_and_planned_methods_are_not_runnable() -> N
         "implemented" if method.method_id.startswith(("feature_extraction.", "feature_matching.",
                                                      "geometric_verification."))
         or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental",
-                                "mapping.colmap_hierarchical"}
+                                "mapping.colmap_hierarchical", "dataset.colmap_undistorted_v1"}
         else "planned"
     ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)
@@ -204,7 +204,7 @@ def test_deep_flag_is_forwarded_and_backend_status_never_marks_stage_runnable() 
         CapabilityStatus.UNKNOWN if method.method_id.startswith(("feature_extraction.",
             "feature_matching.", "geometric_verification."))
         or method.method_id in {"mapping.colmap_global", "mapping.colmap_incremental",
-                                "mapping.colmap_hierarchical"}
+                                "mapping.colmap_hierarchical", "dataset.colmap_undistorted_v1"}
         else CapabilityStatus.AVAILABLE
     ) for method in report.methods)
     assert all(method.runnable is False for method in report.methods)

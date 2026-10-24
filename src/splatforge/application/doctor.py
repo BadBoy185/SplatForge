@@ -180,6 +180,7 @@ class DoctorService:
             ("mapping.colmap_global", ("colmap.mapper.global",)),
             ("mapping.colmap_incremental", ("colmap.mapper.incremental",)),
             ("mapping.colmap_hierarchical", ("colmap.mapper.hierarchical",)),
+            ("dataset.colmap_undistorted_v1", ("colmap.dataset.undistorter",)),
         )
         mapped = []
         for method_id, prerequisites in routes:
@@ -203,8 +204,8 @@ class DoctorService:
             implemented = method_id.startswith((
                 "feature_extraction.", "feature_matching.", "geometric_verification.",
             )) or method_id in {"mapping.colmap_global", "mapping.colmap_incremental",
-                                "mapping.colmap_hierarchical"}
-            if implemented:
+                                "mapping.colmap_hierarchical", "dataset.colmap_undistorted_v1"}
+            if implemented and not method_id.startswith("dataset."):
                 backend_status = required_status((backend_status, report.database.evidence.status))
             mapped.append(
                 MethodCapability(

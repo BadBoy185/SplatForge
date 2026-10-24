@@ -6,6 +6,11 @@ def build_builtin_registry() -> MethodRegistry:
     registry = MethodRegistry()
     methods = [
         MethodSpec(
+            id="dataset.colmap_undistorted_v1", display_name="Flat COLMAP dataset preparation",
+            stage=StageKind.DATASET_PREPARATION,
+            notes="Implemented M10; explicit M9 selection, separate components, tested undistorter",
+        ),
+        MethodSpec(
             id="quality_assessment.pillow_edge_dhash",
             display_name="Pillow edge variance and dHash",
             stage=StageKind.QUALITY_ASSESSMENT,

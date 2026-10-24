@@ -361,6 +361,13 @@ do not automatically rewrite settings or launch a hidden fallback run.
 
 ## 9. M10: trainer-ready dataset preparation
 
+Technical M10 now implements the [explicit-selection flat COLMAP dataset route](M10.md):
+historical immutable pixels, independent components, bounded undistortion/resizing,
+independent numerical/file validation, cache/lifecycle and manual safe eviction. It does
+not select a trainer or imply that M11 has started. Production practical multi-video E2E
+acceptance remains pending M7c production VPR selection; reference-pairing pilot success
+does not satisfy that independent gate or choose a universal mapper.
+
 Keep the first M10 conservative: validated images, camera/pose consistency,
 undistortion/resizing and reproducible export as defined by the current roadmap.
 

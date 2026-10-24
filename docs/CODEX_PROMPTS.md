@@ -388,7 +388,7 @@ threshold changes without remapping. Do not select components or rewrite models.
 
 Implemented after the M9a focused gate. Follow-up work must preserve
 [M9 selection/override/content identities](M9.md), conservative dominance/ambiguity,
-manual multi-component separation and unchanged M8. M10 remains unstarted.
+manual multi-component separation and unchanged M8. M10 consumes this decision unchanged.
 
 Additional reading: [PIPELINE: component selection](PIPELINE.md#reconstruction-component-selection)
 and [PROJECT_FORMAT: authoritative records](PROJECT_FORMAT.md#authoritative-records).
@@ -406,6 +406,13 @@ override, and Validation continues to report every component. No new workflow fr
 ```
 
 ## M10 Complete flat-camera CLI
+
+Technical DatasetPreparation is implemented; preserve [M10 contracts](M10.md), exact
+M9 selection checks, historical pixels, separate component artifacts and the small set
+receipt, bounded native undistortion and manual preview/apply eviction. Production
+automatic multi-video E2E acceptance still requires pending M7c production VPR selection.
+The original acceptance prompt below remains applicable to that external gate; technical
+preparation itself accepts any valid explicit selection. M11 has not started.
 
 Additional reading: [PIPELINE.md](PIPELINE.md),
 [ARCHITECTURE: application boundary](../ARCHITECTURE.md#dependency-direction) and
@@ -521,4 +528,5 @@ in [M8B2.md](M8B2.md) through the same ReconstructionSet/Reader. Representative 
 recommendation remains pending and must not be inferred from tiny transport fixtures. Do not expose internal overlapping clusters
 as components, mutate M7, enable calibration or fall back to another mapper/BA backend.
 M7c representative production VPR and M8 representative mapper recommendation benchmarks
-remain independently pending. [M9a/M9b](M9.md) are implemented; M10 has not started.
+remain independently pending. [M9a/M9b](M9.md) and [technical M10](M10.md) are implemented;
+production practical multi-video E2E acceptance remains externally pending M7c.

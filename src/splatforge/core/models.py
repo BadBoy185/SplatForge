@@ -16,6 +16,7 @@ class StageKind(StrEnum):
     MAPPING = "mapping"
     VALIDATION = "validation"
     RECONSTRUCTION_SELECTION = "reconstruction_selection"
+    DATASET_PREPARATION = "dataset_preparation"
     TRAINING = "training"
     EXPORT = "export"
 

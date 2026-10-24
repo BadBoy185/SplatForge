@@ -26,6 +26,8 @@ from splatforge.adapters.retrieval_artifacts import LocalRetrievalAdapter
 from splatforge.adapters.source_files import LocalSourceFiles
 from splatforge.adapters.state_schema import LocalStateSchemaUpgrader
 from splatforge.adapters.view_workspace import LocalViewWorkspace
+from splatforge.application.cleanup import CleanupService
+from splatforge.application.dataset import DatasetService
 from splatforge.application.doctor import DoctorService
 from splatforge.application.execution import FakeExecutionService
 from splatforge.application.features import FeaturesService
@@ -167,6 +169,17 @@ def build_sfm_profile_service() -> SfmProfileService:
 def build_mapping_service(*, performance_path: Path | None = None) -> MappingService:
     return MappingService(LocalExecutionRepository(project_store=LocalProjectStore()),
                           ColmapMappingAdapter(), progress=build_progress_support(performance_path))
+
+
+def build_dataset_service(*, performance_path: Path | None = None) -> DatasetService:
+    from splatforge.adapters.colmap_dataset import ColmapDatasetAdapter
+
+    return DatasetService(LocalExecutionRepository(project_store=LocalProjectStore()),
+                          ColmapDatasetAdapter(), progress=build_progress_support(performance_path))
+
+
+def build_cleanup_service() -> CleanupService:
+    return CleanupService(LocalExecutionRepository(project_store=LocalProjectStore()))
 
 
 def build_reconstruction_validation_service(

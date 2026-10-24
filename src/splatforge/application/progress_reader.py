@@ -9,6 +9,7 @@ from splatforge.application.eta import zero_eta
 from splatforge.application.progress import RuntimeClock, aggregate_pipeline
 from splatforge.application.progress_contracts import ProgressClock, ProgressRepository
 from splatforge.core.execution import (
+    DatasetRoute,
     FakeRoute,
     FeatureExtractionRoute,
     FeatureMatchingRoute,
@@ -35,6 +36,9 @@ class RunProgressService:
         self._repository = repository
         self._clock = clock or RuntimeClock()
 
+    def active(self, root: Path) -> tuple[PipelineProgressSnapshot, ...]:
+        return tuple(self.get(root, run) for run in self._repository.active_run_ids(root))
+
     def get(self, root: Path, run_id: UUID) -> PipelineProgressSnapshot:
         evidence = self._repository.read_progress_evidence(root, run_id)
         now = self._clock.utcnow()
@@ -43,14 +47,14 @@ class RunProgressService:
             nodes = (route.sequence, route.scale)
         elif isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
                                 FeatureMatchingRoute, GeometricVerificationRoute, MappingRoute,
-                                ReconstructionEvidenceRoute)):
+                                ReconstructionEvidenceRoute, DatasetRoute)):
             nodes = ()
         elif isinstance(route, SharpestViewPreparationRoute):
             nodes = (route.candidate, route.quality, route.selection)
         else:
             nodes = (route.candidate, route.selection)
         descriptions = [(node.node_id, node.method_id) for node in nodes]
-        if isinstance(route, ReconstructionEvidenceRoute):
+        if isinstance(route, (ReconstructionEvidenceRoute, DatasetRoute)):
             descriptions = [(route.node_id, route.method_id)]
         if isinstance(route, (PairSelectionRoute, FeatureExtractionRoute, RetrievalBuildRoute,
                               FeatureMatchingRoute, GeometricVerificationRoute, MappingRoute)):

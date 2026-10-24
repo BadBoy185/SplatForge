@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from PIL import Image
 
+from splatforge.core.dataset import (
+    COMPONENT_ARTIFACT_TYPE as DATASET_COMPONENT_TYPE,
+)
+from splatforge.core.dataset import (
+    SET_ARTIFACT_TYPE as DATASET_SET_TYPE,
+)
+from splatforge.core.dataset import (
+    PreparedDatasetComponent,
+    PreparedDatasetSet,
+)
 from splatforge.core.execution import ArtifactManifest, PayloadFile
 from splatforge.core.fake_pipeline import (
     NUMBERS_ARTIFACT_TYPE,
@@ -80,6 +91,8 @@ class ValidatedArtifact:
     semantic_digest: str
     parsed: (
         ReconstructionSet
+        | PreparedDatasetComponent
+        | PreparedDatasetSet
         | ValidationGeometryArtifact
         | ReconstructionMetricsArtifact
         | ReconstructionReportArtifact
@@ -131,11 +144,17 @@ def validate_workspace_output(
     output: Path, artifact_type: str, *, decode_pixels: bool = True,
     verified_payloads: dict[str, PayloadFile] | None = None,
     mapping_integrity_only: bool = False,
+    checkpoint: Callable[[], None] | None = None,
 ) -> ValidatedArtifact:
     if not output.is_dir() or output.is_symlink() or output.is_junction():
         raise ValueError("Stage did not create a safe output directory")
     if artifact_type in {NUMBERS_ARTIFACT_TYPE, SCALED_ARTIFACT_TYPE}:
         return _validate_fake(output, artifact_type, verified_payloads)
+    if artifact_type in {DATASET_COMPONENT_TYPE, DATASET_SET_TYPE}:
+        from splatforge.adapters.dataset_artifacts import validate_dataset_output
+
+        return validate_dataset_output(output, artifact_type, verified_payloads,
+                                       checkpoint=checkpoint)
     if artifact_type == CANDIDATE_ARTIFACT_TYPE:
         return _validate_candidate(output, decode_pixels=decode_pixels,
                                    verified_payloads=verified_payloads)
@@ -180,7 +199,9 @@ def validate_published_artifact(
         len(manifest.payloads) != 1 or manifest.payloads[0].path != "pair_set.json"
     ):
         raise ValueError("PairSet manifest requires exactly pair_set.json")
-    if len(manifest.payloads) > MAX_PAYLOADS:
+    payload_limit = (MAX_VIEWS + 4
+                     if manifest.artifact_type == DATASET_COMPONENT_TYPE else MAX_PAYLOADS)
+    if len(manifest.payloads) > payload_limit:
         raise ValueError("Artifact manifest declares too many payload files")
     paths = [payload.path for payload in manifest.payloads]
     if len(paths) != len(set(paths)):
@@ -231,6 +252,10 @@ def validate_published_artifact(
             raise ValueError("Sharpest selection provenance differs from lineage")
     if isinstance(validated.parsed, PairSet):
         validate_pair_lineage(validated.parsed, manifest)
+    if isinstance(validated.parsed, (PreparedDatasetComponent, PreparedDatasetSet)):
+        from splatforge.adapters.dataset_artifacts import validate_dataset_lineage
+
+        validate_dataset_lineage(validated.parsed, manifest)
     if isinstance(validated.parsed, ReconstructionSet):
         from splatforge.adapters.mapping_artifacts import validate_mapping_lineage
 

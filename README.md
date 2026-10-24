@@ -51,8 +51,10 @@ availability and real integration validation are reported separately. M7c offlin
 M8a Global mapping and M8b1 single-model Incremental Ceres / capability-gated Caspar BA
 and M8b2 Hierarchical / capability-gated Global GPU / mapper comparison are implemented.
 M9a reconstruction measurements/policy validation and M9b explicit component selection are
-implemented. Production VPR inference, representative mapper recommendation, dataset
-preparation, training and GUI remain pending.
+implemented. M10 adds flat-camera dataset planning/preparation, independent validation,
+per-component cache and manual safe cleanup. Production VPR inference and practical
+automatic multi-video E2E acceptance, representative mapper recommendation, training
+and GUI remain pending. See [M10 contracts](docs/M10.md).
 Catalog entries describe intended methods, not installed or implemented capabilities.
 
 Fixed-FPS selection uses an exact ordered sweep with bounded target expansion.
@@ -319,7 +321,7 @@ separate geometry digests. It never selects model 0/largest/first or retries ano
 The backend-neutral reader exposes cameras, registered views/poses and unregistered UUIDs;
 point/track streaming is unavailable (`not_published`), while native files/counts are preserved.
 Coordinates are right-handed camera-from-world, X right/Y down/Z forward, wxyz quaternion;
-SfM scale is unknown/arbitrary. M10 will own consumer-specific conversion.
+SfM scale is unknown/arbitrary. M10 preserves it in the undistorted dataset.
 
 Calibration defaults to preserve-priors. Explicit view-graph calibration modifies only an
 independent private DB, preserves original priors and records its estimator result separately
@@ -336,7 +338,7 @@ M8b2 adds Hierarchical internal clustering/native merging, separate explicit Glo
 gates and sequential mapper comparison. Final Hierarchical overlaps and requested GPU CPU
 fallback are refused. Technical M8 is complete; representative recommendation remains pending.
 M7c's production VPR benchmark remains pending independently. M9 validation is described
-below; M10 has not started.
+below; M10 dataset preparation is documented next.
 See [M8a](docs/M8A.md), [M8b1](docs/M8B1.md) and [M8b2 contracts/evidence](docs/M8B2.md).
 
 ### Reconstruction validation and explicit selection (M9)
@@ -366,7 +368,43 @@ selection; largest/first is never a tie-break. Applicable FAIL gates require exa
 `--override-issue` IDs and a non-empty `--override-reason`, bound to reconstruction,
 report and selected content. Changed geometry under the same component UUID invalidates
 old choices/overrides. Reason/policy changes with identical selected content preserve
-downstream numerical semantics. M10 separate dataset generation has not started.
+downstream numerical semantics. M10 consumes this selection and prepares separate datasets.
+
+### Trainer-ready flat-camera datasets (M10)
+
+```powershell
+splatforge dataset plan "C:\Scenes\Example" --selection-run <selection-run-id> --colmap "C:\Runtime\bin\colmap.exe" --json
+splatforge dataset prepare "C:\Scenes\Example" --selection-run <selection-run-id> --json
+splatforge dataset prepare "C:\Scenes\Example" --selection-run <selection-run-id> --max-image-size 2400 --json
+splatforge dataset show "C:\Scenes\Example" <dataset-run-id> --json
+splatforge run active "C:\Scenes\Example" --json
+splatforge project cleanup "C:\Scenes\Example" --dry-run --json
+splatforge project cleanup "C:\Scenes\Example" --apply --preview <dry-run-preview-digest>
+splatforge project pin "C:\Scenes\Example" <artifact-uuid>
+```
+
+Continue the explicit M9 selection above; a mapping run alone is insufficient. The plan
+checks current selection/override, exact historical pixels, undistorter capability,
+registered membership, disk estimates, cache and warnings. `prepare` uses COLMAP 4.2.1
+`image_undistorter` with independent input copies and publishes validated images,
+flat PINHOLE/SIMPLE_PINHOLE cameras, unchanged poses and sparse points/tracks under
+`images/`, `sparse/0/` and `dataset.json`. Each selected component remains independent.
+The DatasetSet receipt references these ready component directories without copying
+their images. No second export is needed and no training is invoked.
+
+Original source files may be unavailable after M3: M10 reads the exact immutable
+CandidateViewSet selected by historical M9 lineage. Corrupt/missing historical pixels
+fail without reopening originals. Default resolution is native undistorted resolution;
+an explicit max side changes cameras and pixels together through COLMAP and invalidates
+M10 only. Scale remains unknown/arbitrary. `run show/progress/cancel/recover` inspect
+or control component/receipt runs; restart with `dataset prepare` reuses completed
+components. Cleanup requires an exact preview, protects current/pinned/active lineage
+and originals, and durably marks removed generated payloads evicted.
+
+DatasetPreparation can consume valid explicit selections from reference pairing now.
+**Production automatic multi-video E2E acceptance still requires M7c production VPR
+selection**; an Exhaustive pilot does not satisfy that gate. M11 is not started.
+See [M10 defaults, layout, validation, resources and cleanup](docs/M10.md).
 
 ## Intended workflow
 

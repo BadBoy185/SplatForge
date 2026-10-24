@@ -27,6 +27,8 @@ from splatforge.adapters.artifact_validation import (
     validate_published_artifact,
     validate_workspace_output,
 )
+from splatforge.adapters.cleanup_storage import CleanupStorageMixin
+from splatforge.adapters.dataset_storage import DatasetStorageMixin
 from splatforge.adapters.project_lock import (
     ProjectWriterLockFactory,
     WindowsProjectWriterLock,
@@ -54,6 +56,8 @@ from splatforge.core.execution import (
     CacheLookup,
     CancellationRequest,
     CancellationRequestResult,
+    DatasetComponentRoute,
+    DatasetRoute,
     FailureCategory,
     FakeRoute,
     FeatureExtractionRoute,
@@ -144,7 +148,7 @@ class LocalExecutionProject:
     state_version: int
 
 
-class LocalExecutionRepository(ValidationStorageMixin):
+class LocalExecutionRepository(ValidationStorageMixin, DatasetStorageMixin, CleanupStorageMixin):
     def __init__(
         self,
         *,
@@ -853,7 +857,18 @@ class LocalExecutionRepository(ValidationStorageMixin):
         root = root.resolve()
         workspace = Path(attempt.workspace)
         output = workspace / "output"
-        validated = validate_workspace_output(output, artifact_type)
+        next_checkpoint = 0.0
+
+        def dataset_checkpoint():
+            nonlocal next_checkpoint
+            if time.monotonic() >= next_checkpoint:
+                next_checkpoint = time.monotonic() + 0.25
+                if self.accept_cancellation(root, run_id=run_id, attempt_id=attempt.attempt_id):
+                    raise ExecutionCancelledError(attempt.attempt_id)
+
+        validated = validate_workspace_output(
+            output, artifact_type, checkpoint=dataset_checkpoint
+            if artifact_type.startswith("dataset.") else None)
         content_digest = validated.semantic_digest
         artifact_id = uuid4()
         manifest = ArtifactManifest(
@@ -875,6 +890,24 @@ class LocalExecutionRepository(ValidationStorageMixin):
             validate_pair_lineage(validated.parsed, manifest)
         if isinstance(validated.parsed, LocalFeatureSet):
             validate_feature_lineage(validated.parsed, manifest)
+        if artifact_type.startswith("dataset."):
+            from splatforge.adapters.dataset_artifacts import (
+                require_dataset_source,
+                validate_dataset_lineage,
+            )
+            from splatforge.application.dataset import (
+                require_dataset_inputs,
+                require_dataset_payload,
+            )
+
+            route = self._load_run_snapshot(root, run_id).route
+            if not isinstance(route, DatasetRoute):
+                raise ValueError("M10 publication requires its exact producer route")
+            validate_dataset_lineage(validated.parsed, manifest)
+            require_dataset_inputs(self, root, route)
+            require_dataset_payload(route, validated.parsed, exact_lineage=True)
+            require_dataset_source(root, self, route, output, validated.parsed,
+                                   checkpoint=dataset_checkpoint)
         if isinstance(validated.parsed, RetrievalRepresentationSet):
             from splatforge.adapters.retrieval_artifacts import validate_retrieval_lineage
 
@@ -1105,7 +1138,7 @@ class LocalExecutionRepository(ValidationStorageMixin):
         elif isinstance(snapshot.route, (FeatureExtractionRoute, PairSelectionRoute,
                                          RetrievalBuildRoute,
                                          FeatureMatchingRoute, GeometricVerificationRoute,
-                                         MappingRoute, ReconstructionEvidenceRoute)):
+                                         MappingRoute, ReconstructionEvidenceRoute, DatasetRoute)):
             allowed = {(snapshot.route.node_id, snapshot.route.target.output_name)}
         else:
             allowed = set()
@@ -1292,7 +1325,7 @@ class LocalExecutionRepository(ValidationStorageMixin):
         if run["status"] in {"succeeded", "cancelled"}:
             return RecoveryResult(run_id=run_id, status=RunStatus(run["status"]))
         if (isinstance(snapshot.route, (FeatureMatchingRoute, GeometricVerificationRoute,
-                                        MappingRoute))
+                                        MappingRoute, DatasetComponentRoute))
                 and active and os.name != "nt"):
             raise ProjectError("Native M7b recovery requires tested Windows Job Object owner-death "
                                "containment; an OS writer lease alone does not prove teardown")
@@ -1397,7 +1430,7 @@ class LocalExecutionRepository(ValidationStorageMixin):
         elif isinstance(snapshot.route, (PairSelectionRoute, FeatureExtractionRoute,
                                          RetrievalBuildRoute,
                                          FeatureMatchingRoute, GeometricVerificationRoute,
-                                         MappingRoute, ReconstructionEvidenceRoute)):
+                                         MappingRoute, ReconstructionEvidenceRoute, DatasetRoute)):
             required = {snapshot.route.node_id}
         elif isinstance(snapshot.route, SharpestViewPreparationRoute):
             required = {
@@ -1618,6 +1651,17 @@ class LocalExecutionRepository(ValidationStorageMixin):
         }
         return json.dumps(rendered, ensure_ascii=False, indent=2)
 
+    def active_run_ids(self, root: Path) -> tuple[UUID, ...]:
+        self.inspect_project(root)
+        with self._read_connection(root) as connection:
+            rows = connection.execute(
+                "SELECT run_id FROM runs WHERE status='running' "
+                "ORDER BY started_at,run_id LIMIT 101"
+            ).fetchall()
+        if len(rows) > 100:
+            raise ValueError("Too many active runs for bounded inspection; inspect state recovery")
+        return tuple(UUID(row[0]) for row in rows)
+
     def read_progress_evidence(self, root: Path, run_id: UUID) -> RunProgressEvidence:
         """No writer lock, mutation, source access or artifact validation required."""
         root = root.resolve()
@@ -1752,6 +1796,16 @@ class LocalExecutionRepository(ValidationStorageMixin):
                 expected_literal_inputs = {}
             else:
                 raise ValueError("Attempt node is not present in the frozen fake route")
+        elif isinstance(route, DatasetRoute):
+            from splatforge.application.dataset import require_dataset_inputs
+
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("Attempt node absent from frozen M10 route")
+            require_dataset_inputs(self, root, route)
+            output = route.target
+            expected_recipe_key = route.recipe_key()
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
         elif isinstance(route, ReconstructionEvidenceRoute):
             if attempt["node_id"] != route.node_id:
                 raise ValueError("Attempt node absent from frozen M9 route")
@@ -1972,7 +2026,13 @@ class LocalExecutionRepository(ValidationStorageMixin):
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if isinstance(route, ReconstructionEvidenceRoute):
+        if isinstance(route, DatasetRoute):
+            from splatforge.adapters.dataset_artifacts import require_dataset_source
+            from splatforge.application.dataset import require_dataset_payload
+
+            require_dataset_payload(route, validated.parsed, exact_lineage=True)
+            require_dataset_source(root, self, route, artifact_directory, validated.parsed)
+        elif isinstance(route, ReconstructionEvidenceRoute):
             from splatforge.application.reconstruction_validation import require_validation_payload
 
             require_validation_payload(self, root, route, validated.parsed, exact_lineage=True)
@@ -2232,6 +2292,7 @@ class LocalExecutionRepository(ValidationStorageMixin):
         context: ArtifactValidationContext | None = None,
     ) -> tuple[ArtifactManifest, Path, ValidatedArtifact]:
         root = root.resolve()
+        self.require_not_evicted(root, handle.artifact_id)
         context = context or self._validation_context or ArtifactValidationContext()
         if handle.artifact_id in _seen:
             raise ValueError("Artifact lineage contains a cycle")
@@ -2344,6 +2405,19 @@ class LocalExecutionRepository(ValidationStorageMixin):
             self.validate_validation_inputs(root, snapshot_route)
             require_validation_payload(self, root, snapshot_route, validated.parsed,
                                        exact_lineage=True)
+        if manifest.artifact_type.startswith("dataset."):
+            from splatforge.adapters.dataset_artifacts import require_dataset_source
+            from splatforge.application.dataset import (
+                require_dataset_inputs,
+                require_dataset_payload,
+            )
+
+            route = self._load_run_snapshot(root, manifest.producer_run_id).route
+            if not isinstance(route, DatasetRoute):
+                raise ValueError("M10 publication requires its exact frozen producer route")
+            require_dataset_inputs(self, root, route)
+            require_dataset_payload(route, validated.parsed, exact_lineage=True)
+            require_dataset_source(root, self, route, artifact_directory, validated.parsed)
         context.results[identity] = (strength, manifest, artifact_directory, validated)
         return manifest, artifact_directory, validated
 

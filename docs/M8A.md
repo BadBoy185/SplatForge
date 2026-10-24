@@ -8,7 +8,8 @@ or M9b component selection. [M8b1](M8B1.md) now adds explicit single-model Incre
 Ceres and capability-gated Caspar BA through these unchanged portable contracts.
 [M8b2](M8B2.md) adds Hierarchical, explicit Global GPU gates and comparison infrastructure. Caspar is not a mapper.
 M7c's representative production VPR benchmark is pending independently. [M9](M9.md) now
-implements downstream validation/selection; M10 has not started. No training, GUI,
+implements downstream validation/selection; [M10](M10.md) implements dataset preparation separately.
+No training, GUI,
 dense/MVS/mesh or direct-geometry route is implemented.
 
 ## Supported backend and explicit settings

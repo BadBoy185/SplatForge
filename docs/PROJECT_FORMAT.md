@@ -583,3 +583,35 @@ indexed producer/manifest and every native payload hash before reusing the origi
 structural validation evidence. It enforces independent plain files and required model
 entries. Policy-only cache hits do not parse sparse observations. This context is discarded
 after each operation; ordinary M8 cache/publication/recovery still uses full native scans.
+
+## M10 datasets and manual eviction
+
+RunSnapshot schema 1 adds dataset.component.prepare and dataset.prepare. Each component
+run freezes exact published M9 selection, ReconstructionSet and historical candidate/selected
+handles, selected component content, pixel identity, preparation settings, native/runtime
+identity and refusal resources. The final small receipt binds the current selection and
+canonical independent component handles. Project/state/M8/M9 versions are unchanged.
+
+`dataset.prepared_component` v1 publishes images, sparse/0/cameras.bin, images.bin,
+points3D.bin and dataset.json; `dataset.prepared_set` v1 publishes only dataset_set.json.
+Normal manifests cover all files and exact lineage. No large image copies enter the set.
+Dataset JSON records numerical identity, hashes/dimensions, stable view names, flat cameras,
+poses, unknown_arbitrary scale, selected content/geometry, settings and backend identity,
+warnings/override and non-numerical pairing readiness provenance. Cache preserves original
+component producer lineage; each new receipt records its actual current decision.
+Independent file parsing and source-preservation validation are required at publication,
+cache and orphan adoption. Partial output cannot publish or recover. See [M10](M10.md).
+
+Manual cleanup/pins use the bounded versioned `storage.retention_v1` metadata value in
+state.sqlite, without schema migration. It stores explicit artifact pins and per-artifact
+evicting/evicted evidence, preview/manifest/payload-list digests. The latest successful
+output binding of each kind (including older cache hits), newest successful publication
+and the exact closure of current, pinned and active
+inputs/outputs are protected. Historical lineage alone is not a permanent pin. Preview
+mutates no project data; apply rechecks the exact preview under the writer lease, hashes
+and all owned paths before deleting only listed completed generated payload files. JSON,
+manifests, inventories, state, originals, active work, exports and checkpoints survive.
+Symlinks/junctions/hardlinks fail closed. Eviction intent commits before unlink, so an
+interruption is diagnosable; a fresh preview can finish the remaining bounded files.
+Lookup reports intentional eviction and recomputes rather than treating it as a cache hit
+or unexplained corruption. Published manifest bytes are never rewritten by cleanup.

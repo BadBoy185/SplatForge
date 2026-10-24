@@ -8,6 +8,8 @@ import platform
 from fractions import Fraction
 
 from splatforge.core.execution import (
+    DatasetComponentRoute,
+    DatasetRoute,
     FeatureExtractionRoute,
     FeatureMatchingRoute,
     GeometricVerificationRoute,
@@ -438,6 +440,26 @@ def matching_progress_plan(
             "matches": route.estimate.raw_matches,
         },
     )
+
+
+def dataset_progress_plan(route: DatasetRoute, hardware: ExecutionHardwareProfile) -> PlannedStage:
+    component = isinstance(route, DatasetComponentRoute)
+    backend = PerformanceBackendIdentity(
+        adapter_id=route.backend.adapter_id, family="colmap",
+        runtime_version=route.backend.numerical_identity,
+        executable_sha256=route.backend.selection.identity.sha256,
+    ) if component else python_backend("splatforge.dataset_receipt")
+    plan = _stage(
+        node_id=route.node_id, stage_id="dataset_preparation", method_id=route.method_id,
+        model="dataset.undistortion_phases_v1" if component else "dataset.receipt_v1",
+        unit=WorkUnit.WORK, total=1.0, hardware=hardware, backend=backend,
+        settings=route.settings.model_dump(mode="json") if component else {},
+        metrics={"views": len(route.images), "megapixels": route.estimate.input_megapixels}
+        if component else {"components": len(route.components)},
+    )
+    return plan.model_copy(update={"work": plan.work.model_copy(update={
+        "mode": ProgressMode.PHASE, "historical_job_duration": True,
+    })})
 
 
 def mapping_progress_plan(route: MappingRoute, hardware: ExecutionHardwareProfile) -> PlannedStage:

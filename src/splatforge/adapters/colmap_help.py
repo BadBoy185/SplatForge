@@ -56,6 +56,11 @@ def parse_option_help(text: str, option: str) -> ParsedOptionHelp:
             if default and len(default.group(1)) <= 1024:
                 defaults.append((name, default.group(1).strip()))
     selected = [block for name, block in blocks if name == option]
+    if option == "ImageUndistorter":
+        required = {"image_path", "input_path", "output_path", "output_type", "max_image_size",
+                    "copy_policy", "blank_pixels", "min_scale", "max_scale"}
+        return ParsedOptionHelp("-h [ --help ]" in text and required <= set(names), (), names,
+                                tuple(defaults), "dataset_options_v1")
     if option == "HierarchicalMapper":
         required = {"database_path", "image_path", "output_path", "Mapper.multiple_models",
                     "HierarchicalMapper.branching", "HierarchicalMapper.num_threads",

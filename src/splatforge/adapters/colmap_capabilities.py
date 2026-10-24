@@ -77,6 +77,7 @@ _REQUIRED_COMMANDS = (
     "model_converter",
     "matches_importer",
     "geometric_verifier",
+    "image_undistorter",
 )
 _REQUIRED_SCHEMA = {
     "cameras": {"camera_id", "model", "width", "height", "params", "prior_focal_length"},
@@ -99,6 +100,9 @@ _MODEL_OPTIONS = {
     **{f"loma.matcher.{v}": f"LomaMatching.{v}_model_path" for v in ("b", "b128", "r", "l", "g")},
 }
 _CAPABILITY_IDS = (
+    "colmap.dataset.version",
+    "colmap.dataset.undistorter",
+    "colmap.dataset.integration",
     *(f"colmap.operation.{operation}" for operation in _REQUIRED_COMMANDS),
     "colmap.feature.sift.cpu",
     "colmap.feature.sift.gpu",
@@ -381,7 +385,7 @@ class ColmapCapabilityAdapter:
             for command in ("feature_extractor", "exhaustive_matcher", "sequential_matcher",
                             "matches_importer", "geometric_verifier") +
                            (("global_mapper", "view_graph_calibrator", "mapper", "bundle_adjuster",
-                             "hierarchical_mapper")
+                             "hierarchical_mapper", "image_undistorter")
                             if supported_global_version(version_line) else ())
         )
         feature_parsed = help_results[0][2]
@@ -454,6 +458,10 @@ class ColmapCapabilityAdapter:
         from splatforge.adapters.mapping_capabilities import mapping_evidence
 
         capabilities = mapping_evidence(self, capabilities, help_results, identity,
+                                        observed_at, freshness)
+        from splatforge.adapters.dataset_capabilities import dataset_evidence
+
+        capabilities = dataset_evidence(self, capabilities, help_results, identity,
                                         observed_at, freshness)
         from splatforge.adapters.incremental_capabilities import incremental_evidence
 
@@ -851,6 +859,7 @@ class ColmapCapabilityAdapter:
                     status, code, message = problem
                 else:
                     option = ("GlobalMapper" if command == "global_mapper" else
+                              "ImageUndistorter" if command == "image_undistorter" else
                               "HierarchicalMapper" if command == "hierarchical_mapper" else
                               "Mapper" if command == "mapper" else
                               "BundleAdjustment" if command == "bundle_adjuster" else

@@ -22,7 +22,7 @@ members or promises that every stage already has an implementation.
 | Mapping (initial sparse route) | Verified geometry, views, cameras and optional declared priors | ReconstructionSet: all components, camera/pose/point metadata, native payloads, ID mappings and coordinate frames |
 | ReconstructionValidation | ReconstructionSet, immutable ValidationUniverse and normalized optional detailed geometry | Separate ValidationGeometryInput, ReconstructionMetrics and ReconstructionValidationReport v1; exact/sampled/unavailable evidence, explicit policy and scoped issues; no model mutation |
 | ReconstructionSelection (application decision) | ReconstructionSet, ValidationReport and explicit manual choices or configured policy | ReconstructionSelection: referenced set, selected component IDs, selection mode, policy/version/settings and evidence; no reconstruction mutation |
-| DatasetPreparation | ReconstructionSelection, its referenced ReconstructionSet, views, validation gate and target input format | TrainingDataset: images, cameras/poses, sparse points where required, masks if used, units/transforms and conversion manifest |
+| DatasetPreparation | Published ReconstructionSelection v1, exact reconstruction/historical pixels and current validation gate | M10 PreparedDatasetComponent v1 per component, then PreparedDatasetSet v1 receipt: undistorted images, flat cameras, preserved poses/XYZ/tracks, unknown scale and explicit metadata |
 | Training | TrainingDataset, trainer settings and optional compatible checkpoint | TrainingResult: scene payload, metrics, logs and checkpoints with recipe provenance |
 | Export | Explicit dataset or training result, format/settings | ExportManifest: output files, consumer/format versions, checksums and any lossy conversion |
 
@@ -578,7 +578,7 @@ geometry need not fabricate M7 artifacts. Reader contracts own M9/M10 interchang
 Coordinate convention is right-handed camera_from_world, x right/y down/z forward,
 wxyz quaternion and pixel centers at (.5,.5); scale is unknown_arbitrary. No component
 is selected. Full identities, optional-record states, settings, cache and failure contracts
-are in [M8A.md](M8A.md). M9 is downstream as described below; M10 remains future.
+are in [M8A.md](M8A.md). M9 and M10 consume it downstream as described below.
 The M7c production benchmark is independent.
 
 M8b1 adds explicit Incremental Ceres CPU / capability-gated Caspar BA, consuming the same
@@ -630,4 +630,25 @@ bound to reconstruction, detailed geometry, report and canonical selected conten
 failure survives deselection. Warnings remain visible. Selection recipes include decision
 evidence; numerical downstream semantics exclude policy/reasons/artifact UUIDs and include
 selected camera/pose/detailed sparse content. Same component ID with changed content is stale.
-Future M10 must emit separate datasets for multiple selected unaligned components.
+M10 emits separate datasets for multiple selected unaligned components.
+
+## M10 dataset preparation
+
+`dataset.colmap_undistorted_v1` consumes the explicit selection and exact historical
+materialized pixels, never original source media. Plan and execution call M9's current
+selection/override checks. Each selected component gets its own immutable conventional
+COLMAP dataset (`images/`, `sparse/0/`, `dataset.json`); the final DatasetSet references
+component artifacts. No automatic largest choice, coordinate merge or training exists.
+
+The component recipe uses exact M8/M9 selected numerical content, consumed pixel hashes,
+settings and pinned undistorter runtime. Report/reason/pairing provenance and non-binding
+resources do not invalidate numerical preparation. Separate components cache independently.
+Native undistortion/resizing transforms cameras/pixels/observations together; only flat
+PINHOLE/SIMPLE_PINHOLE outputs pass the independent consumer. Poses and XYZ/public track
+membership remain equivalent to M8; scale stays unknown_arbitrary. Publication, recovery,
+cache and cancellation retain the existing lifecycle. See [M10](M10.md) for frozen defaults,
+numerical tolerances, resources, progress, cleanup and real integration instructions.
+
+Technical preparation accepts any valid explicit selection. Production automatic
+multi-video E2E acceptance still requires the unresolved M7c production VPR route;
+reference Exhaustive success is not that acceptance.

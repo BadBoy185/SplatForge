@@ -510,7 +510,7 @@ redaction. Logs and telemetry remain local unless the user explicitly exports th
 | Descriptor-family/weight mismatch | Validate representation and model identity; isolated native databases; refuse unsafe conversion or reuse |
 | Mutable native databases and WAL sidecars | Use consistent snapshots, no writable hardlinks, and private downstream assembly with current camera/ID metadata; verify upstream payloads remain unchanged after matching/mapping |
 | Variable-frame-rate video, EXIF rotation, zoom/stabilization and rolling shutter | Preserve time bases/transforms, separate calibration groups, flag unsupported assumptions; do not claim rolling-shutter correction without an implementation |
-| Exhaustive pairs and large frame/image collections | Budget candidates before decode and include workspaces, native database copies, publication, exports and backups in peak disk estimates. Stream/chunk data, bound logs, require measured M7c retrieval before M10 and manual safe cleanup by M10 |
+| Exhaustive pairs and large frame/image collections | Budget candidates before decode and include workspaces, native database copies, publication, exports and backups in peak disk estimates. Stream/chunk data, bound logs, require measured M7c retrieval for production multi-video E2E acceptance and manual safe cleanup in M10 |
 | Expensive source rereads or unreliable change indicators | Full hash at ingest; recorded Balanced/local default and Strict option, explicit evidence quality on network storage, no silent downgrade after verification failure |
 | Insufficient overlap, repetitive texture, vegetation, moving objects or weak baseline | Per-group quality/coverage diagnostics and later masks/adaptive selection; process exit zero cannot imply scene quality |
 | Model/weight drift and incompatible Python packages | Optional versioned environments, recorded model digests and explicit provisioning; preserve resolved settings and report nondeterminism |
@@ -543,6 +543,26 @@ change. Inspect the final diff for unrelated files and generated data. Documenta
 work checks links, terminology, milestone/prompt alignment and implemented/planned
 claims; run code checks when needed to verify such claims or explicitly requested.
 No automatic commit or dependency/model installation.
+
+## M10 verification
+
+Focused acceptance uses test_dataset_contracts.py, test_dataset_capabilities.py,
+test_dataset_execution.py, test_dataset_cli.py and test_cleanup.py. Analytical sparse
+fixtures exercise independent reader/hash/dimension/camera/pose/point/track checks and
+native-ID-independent identity. Lifecycle fixtures cover exact M9 gate/override and
+historical pixels after original relocation, separate components, component cache reuse,
+resize-only invalidation, cancellation before/during native work, workspace refusal,
+corrupt/partial orphan refusal and restart. Cleanup checks no-op preview, exact apply,
+pins/current/active protection, unknown/original IDs, Unicode/space paths, filesystem
+redirection and durable interrupted eviction/recompute. Default tests need no native tools.
+
+Set SPLATFORGE_TEST_DATASET=1 and SPLATFORGE_TEST_COLMAP to the provisioned supported
+executable for test_dataset_cameras_integration.py and test_dataset_integration.py.
+The first actually undistorts all six supported perspective models with native and
+bounded dimensions; the second executes tiny M7/M8/M9/M10 transport plus reader/cache/
+resize/cancellation. They do not establish production VPR acceptance or mapper quality.
+No downloads, model installation, ImageMagick, Python CV or training library are required.
+See [M10](M10.md) for exact output and verification contracts.
 
 
 ## M8a verification
@@ -605,7 +625,7 @@ Hierarchy uses mapping.hierarchical_phases_v1 with observed headings and diagnos
 counts, never a leaf-count percentage. Global GPU retains Global phase semantics and
 separates performance signatures for each acceleration axis/device. Incomplete evidence,
 CPU fallback and final overlapping Hierarchical hypotheses fail without automatic retries.
-M7c production VPR benchmarks remain pending; M9 is documented below and M10 has not started.
+M7c production VPR benchmarks remain pending; M9 and technical M10 are documented separately.
 
 ## M9 verification
 

@@ -277,7 +277,20 @@ Equal/tradeoff/unknown evidence stays ambiguous. Project-wide FAIL cannot be wai
 deselection; selected component failures require exact issue-bound reasoned overrides.
 Selection recipe/provenance is separate from downstream selected-content identity,
 including detailed sparse geometry. Same UUID plus changed geometry is stale. Multiple
-selected components remain separate datasets for future M10; no merge or M8 rerun exists.
+selected components remain separate datasets in M10; no merge or M8 rerun exists.
+
+M10 implements `dataset.colmap_undistorted_v1` behind a narrow injected DatasetPreparer.
+Core owns immutable PreparedDatasetComponent/PreparedDatasetSet and settings/identity;
+Application revalidates M9 selection and orchestrates per-component runs; adapters recover
+historical pixels, construct owned native input, launch verified image_undistorter and
+independently read/validate conventional COLMAP output. Each component publishes/cache-hits
+separately; the small final receipt binds current selection/gates without duplicating
+pixels. Resource refusal, cancellation, publication/recovery and M6.5 phase ETA use the
+existing execution foundation. No trainer enters Core and M8/M9 contracts are unchanged.
+Manual cleanup preserves manifests/JSON and records eviction/pins in existing state metadata;
+current/active/pinned dependency closures cannot be evicted. See [M10](docs/M10.md).
+Technical dataset preparation is independent of the still-pending M7c production retrieval
+gate for practical automatic multi-video E2E acceptance. M11 remains unstarted.
 
 Separate application `state.sqlite` from every COLMAP database. Isolate databases by
 feature identity and compatible processing branch. Copy or rebuild a native database
