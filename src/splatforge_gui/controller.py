@@ -36,6 +36,7 @@ class ProjectController(QObject):
         self.cancelled_runs: set[str] = set()
         self.request = None
         self.reconstruction_plan = None
+        self._pending_save = None
         self.executor.result.connect(self._result)
         self.executor.error.connect(self._error)
         self.executor.finished.connect(self._finished)
@@ -61,15 +62,29 @@ class ProjectController(QObject):
         return bool(
             self.overview
             and any(
-                r.values["status"] == "interrupted"
-                or "unresolved" in (r.values.get("teardown") or "")
+                r.values["status"] == "running" or "unresolved" in (r.values.get("teardown") or "")
                 for r in self.overview.index.runs
             )
         )
 
-    def submit(self, name: str, action: Callable, *, mutation: bool = False) -> str:
+    def submit(
+        self,
+        name: str,
+        action: Callable,
+        *,
+        mutation: bool = False,
+        allow_unresolved: bool = False,
+    ) -> str:
+        if self.operation == "save" and name != "save":
+            self.error.emit(
+                TaskError("Wait for project metadata to finish saving", "ProjectBusy", "", name)
+            )
+            return ""
         if mutation and (
-            self.mutating or self.active or (self.has_unresolved and name != "create")
+            self.mutating
+            or (
+                not allow_unresolved and (self.active or (self.has_unresolved and name != "create"))
+            )
         ):
             self.error.emit(
                 TaskError(
@@ -123,7 +138,7 @@ class ProjectController(QObject):
         self.refresh()
 
     def refresh(self) -> None:
-        if self.root is None or self.refreshing:
+        if self.root is None or self.refreshing or self.operation == "save":
             return
         root = self.root
         self.refreshing = True
@@ -131,7 +146,7 @@ class ProjectController(QObject):
 
     @Slot()
     def poll(self) -> None:
-        if self.root is None or self.polling:
+        if self.root is None or self.polling or self.operation == "save":
             return
         root = self.root
         self.polling = True
@@ -148,8 +163,27 @@ class ProjectController(QObject):
 
     def save(self) -> None:
         root, draft = self.root, self.draft
-        if root and draft:
+        if not root or not draft:
+            return
+        if self.mutating or self.active or self.has_unresolved:
             self.submit("save", lambda f: f.save(root, draft), mutation=True)
+            return
+        # Windows readers may hold project.json without delete sharing. Drain owned
+        # reads before atomic metadata replacement; long processing still polls normally.
+        self._pending_save = (root, draft)
+        self.mutating, self.operation = True, "save"
+        self.ingest_cancel.clear()
+        self.busy_changed.emit(True)
+        self._start_pending_save()
+
+    def _start_pending_save(self) -> None:
+        if self._pending_save is None or self.jobs:
+            return
+        root, draft = self._pending_save
+        self._pending_save = None
+        self.mutating, self.operation = False, None
+        self.busy_changed.emit(False)
+        self.submit("save", lambda f: f.save(root, draft), mutation=True)
 
     def discard(self) -> None:
         self.draft = None
@@ -399,7 +433,9 @@ class ProjectController(QObject):
     def recover_run(self, run) -> None:
         root = self.root
         # Recovery, unlike an ordinary mutation, must remain reachable with unresolved work.
-        self.submit("recovery", lambda f: f.recover(root, run))
+        self.submit(
+            "recovery", lambda f: f.recover(root, run), mutation=True, allow_unresolved=True
+        )
 
     def cleanup(self, plan=None) -> None:
         root = self.root
@@ -429,6 +465,8 @@ class ProjectController(QObject):
         if generation != self.generation:
             return
         if name == "refresh":
+            if self.operation == "save":
+                return  # A fresh overview follows the reserved metadata write.
             self.overview, self.active = result, result.active
             self.changed.emit(result)
         elif name == "progress":
@@ -486,3 +524,4 @@ class ProjectController(QObject):
             self.operation = None
             self.busy_changed.emit(False)
             self.refresh()
+        self._start_pending_save()

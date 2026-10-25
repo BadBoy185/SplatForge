@@ -28,6 +28,9 @@ splatforge-gui = "splatforge_gui.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+splatforge_gui = ["qml/**/*.qml", "qml/**/qmldir", "qml/**/*.qmltypes", "qml/icons/*.svg", "qml/icons/LICENSE"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

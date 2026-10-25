@@ -16,7 +16,7 @@ inputs come later through preprocessing into perspective views.
 
 The optional desktop application is launched with `splatforge-gui` after installing
 `python -m pip install -e ".[dev,gui]"` in the development environment. It uses
-PySide6 6.12.0 / Qt Widgets and the same application services, project settings,
+PySide6 6.12.0 / Qt Quick / QML and the same application services, project settings,
 runs and artifacts as CLI. Home, Sources, Reconstruct, Dataset, Train, Results and
 Diagnostics provide Guided/Advanced operation without a separate processing pipeline.
 See [desktop usage, threading and limitations](docs/M12.md). Base CLI installation
@@ -64,7 +64,7 @@ per-component cache and manual safe cleanup. M11 implements external LichtFeld d
 handoff and isolated managed gsplat Default/MCMC training, compatible checkpoints,
 validated Gaussian PLY scenes and candidate comparison. Production VPR inference,
 practical automatic multi-video E2E acceptance, representative mapper recommendation,
-broader training preset recommendation remain pending. M12 adds the optional Qt Widgets
+broader training preset recommendation remain pending. M12 adds the optional Qt Quick / QML
 desktop client described in [M12](docs/M12.md). See [M10](docs/M10.md)
 and [M11 contracts and evidence](docs/M11.md).
 Catalog entries describe intended methods, not installed or implemented capabilities.

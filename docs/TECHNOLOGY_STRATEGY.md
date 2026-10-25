@@ -23,13 +23,15 @@ from measured end-to-end evidence on representative SplatForge data.
 
 ## 1. Decision principles
 
-M12's implemented desktop decision is PySide6 6.12.0 / Qt Widgets as an optional
-dependency, with standard Qt System/Light/Dark behavior and a lightweight bounded
-QPainter point-center viewport. This client consumes existing services; it adds no
-QtQuick/QML, browser UI, web server, third-party theme, Torch renderer, Open3D/VTK,
-installer or updater. Future renderer/packaging evaluation requires separate scope.
-This decision changes no processing methods/defaults or benchmark recommendations.
-See [M12](M12.md) for the implemented boundary and verification.
+M12's desktop presentation is PySide6 6.12.0 / Qt Quick 6.12 with app-owned
+Basic controls and designed System/Light/Dark themes. The Widgets frontend was
+replaced after parity checks. Narrow QObject view models delegate to the existing
+ProjectController and GuiFacade; no processing pipeline is duplicated. A bounded
+QQuickPaintedItem preserves the QPainter point-center preview. There is no browser
+UI, web server, third-party theme, Torch renderer, Open3D/VTK, installer or updater.
+Future renderer/packaging evaluation requires separate scope. This decision changes
+no processing methods/defaults or benchmark recommendations and does not start M13.
+See [M12](M12.md) and [GUI design](GUI_DESIGN.md) for boundaries and visual conventions.
 
 ### 1.1 Preserve a strong baseline
 

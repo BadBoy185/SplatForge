@@ -10,13 +10,16 @@ on every later Python release.
 ## Testing layers
 
 M12's GUI extra is optional: `python -m pip install -e ".[dev,gui]"` installs the
-validated PySide6 6.12.0 target; `splatforge-gui` launches Qt Widgets. Base CLI/core
+validated PySide6 6.12.0 target; `splatforge-gui` launches Qt Quick / QML. Base CLI/core
 imports remain Qt-free. Run focused acceptance with:
 
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"
-python -m pytest tests/test_gui.py tests/test_gui_workflows.py tests/test_gui_architecture.py tests/test_desktop.py
+python -m pytest tests/test_gui.py tests/test_qml.py tests/test_qml_workflows.py tests/test_qml_interaction.py tests/test_gui_architecture.py tests/test_desktop.py
 ```
+
+Run `pyside6-qmllint -I src/splatforge_gui/qml` over all QML sources.
+See [GUI design](GUI_DESIGN.md) for native screenshot capture and review.
 
 These tests use QtTest/direct state assertions, deterministic fake work and tiny
 published artifacts. They cover responsiveness, shared project intent/history,

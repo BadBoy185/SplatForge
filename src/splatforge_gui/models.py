@@ -31,18 +31,12 @@ class RecordModel(QAbstractTableModel):
             return self.columns[section][1]
         return None
 
-    def replace(self, rows, view=None) -> None:
+    def replace(self, rows) -> None:
         if rows == self.rows:
             return
-        selected = view.currentIndex().data(Qt.ItemDataRole.UserRole) if view else None
         self.beginResetModel()
         self.rows = tuple(rows)
         self.endResetModel()
-        if view and selected:
-            for i, row in enumerate(self.rows):
-                if row.identity == selected:
-                    view.setCurrentIndex(self.index(i, 0))
-                    break
 
 
 SOURCE_COLUMNS = (

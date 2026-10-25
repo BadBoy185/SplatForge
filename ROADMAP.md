@@ -413,7 +413,7 @@ and broader M11 training preset recommendation. M12 is implemented below.
 
 ## M12 — desktop GUI
 
-**M12 desktop GUI implemented.** Optional PySide6 6.12.0 / Qt Widgets client, shared
+**M12 desktop GUI implemented.** Optional PySide6 6.12.0 / Qt Quick / QML client, shared
 project/application facade, worker executor, guided/advanced goal pages, M9 explicit
 selection, M10/M11 plans/execution/resume, bounded inspection, Doctor and preview/apply
 cleanup. See [M12 contracts, verification and limitations](docs/M12.md).
@@ -427,7 +427,7 @@ diagnostics and reconstruction/scene inspection. Processing runs off the UI thre
 
 Acceptance: the same project can be created/run/reopened by CLI and GUI; persisted
 settings and cache decisions agree; UI stays responsive during a fake long stage and
-real smoke run; architecture checks reject backend imports/process calls in widgets.
+real smoke run; architecture checks reject backend imports/process calls in presentation code.
 
 ## M13 — advanced methods and automation
 

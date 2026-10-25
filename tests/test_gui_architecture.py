@@ -25,7 +25,7 @@ def test_dependency_boundaries():
     for directory in (root / "splatforge/core", root / "splatforge/application"):
         for file in directory.rglob("*.py"):
             assert "PySide6" not in file.read_text(encoding="utf-8"), file
-    for file in (root / "splatforge_gui/widgets").rglob("*.py"):
+    for file in (root / "splatforge_gui").rglob("*.py"):
         tree = ast.parse(file.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -37,7 +37,14 @@ def test_dependency_boundaries():
             assert not any(
                 any(
                     part in name
-                    for part in ("subprocess", "process_runner", "adapters", "torch", "gsplat")
+                    for part in (
+                        "subprocess",
+                        "process_runner",
+                        "adapters",
+                        "torch",
+                        "gsplat",
+                        "QtWidgets",
+                    )
                 )
                 for name in names
             ), (file, names)

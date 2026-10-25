@@ -1,0 +1,13 @@
+import QtQuick.tooling 1.2
+
+Module {
+    Component {
+        name: "PointPreview"
+        prototype: "QQuickPaintedItem"
+        exports: ["SplatForge.Preview/PointPreview 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "source"; type: "QObject"; isPointer: true }
+        Property { name: "dark"; type: "bool" }
+        Method { name: "reset" }
+    }
+}

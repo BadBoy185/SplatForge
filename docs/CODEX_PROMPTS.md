@@ -488,7 +488,7 @@ universal quality preset from one scene or silently fall back between strategies
 
 ## M12 GUI
 
-Status: implemented as the optional PySide6 6.12.0 / Qt Widgets desktop client.
+Status: implemented as the optional PySide6 6.12.0 / Qt Quick / QML desktop client.
 See [M12](M12.md) for exact application boundaries, UI/storage/threading contracts,
 verification and limitations. Preserve these boundaries in later edits. M13 is not started.
 
@@ -500,7 +500,7 @@ Inspect the implemented application use-case/event interfaces for screen-specifi
 Implement PySide6 as a client of existing application services: projects/sources,
 profiles/settings, plan/progress, cancel/retry, diagnostics, component choice and
 inspection. Keep processing off the UI thread. Test CLI/GUI interchange and prevent
-backend/process calls from widgets. Do not duplicate pipeline/cache/persistence logic.
+backend/process calls from QML/view models. Do not duplicate pipeline/cache/persistence logic.
 ```
 
 ## M13 Advanced methods and automation
