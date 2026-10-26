@@ -1,5 +1,13 @@
 # Codex implementation tasks
 
+Legacy reference after M12: the prompts and status statements below record earlier
+work, plus unactivated M13/M14 outlines. They are not mandatory startup context or
+current assignments. Preserve this history; put new substantial tasks in
+[active plans](plans/active/README.md), using the [template](plans/TEMPLATE.md).
+Current engineering rules and verification are owned by [AGENTS](../AGENTS.md) and
+[DEVELOPMENT](DEVELOPMENT.md#verification-workflow), including where they supersede
+the historical common prompt's blanket full-suite instruction.
+
 Use one bounded task at a time. [ROADMAP.md](../ROADMAP.md) owns milestone acceptance;
 read only the selected milestone, not the whole roadmap for every task. AGENTS.md is
 always required. Each task lists its additional contract reading below; follow other

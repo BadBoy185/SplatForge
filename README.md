@@ -454,18 +454,11 @@ translation/benchmarking stays with training integration.
 
 ## Documentation
 
-| Document | Responsibility |
-| --- | --- |
-| [AGENTS.md](AGENTS.md) | Authoritative engineering rules and task completion checks |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Product boundaries, dependency direction and decisions |
-| [Pipeline contracts](docs/PIPELINE.md) | Stage inputs/outputs, compatibility and invalidation |
-| [Project format and state](docs/PROJECT_FORMAT.md) | Storage ownership, migrations, attempts and recovery |
-| [Development guide](docs/DEVELOPMENT.md) | Testing, diagnostics and Windows/backend risks |
-| [Architecture review](docs/ARCHITECTURE_REVIEW.md) | Evidence from the original foundation and deferred decisions |
-| [Legacy research](docs/LEGACY_3DGS_RESEARCH.md) | Optional read-only evidence gathering before later preset evaluation |
-| [M11 training](docs/M11.md) | External handoff, exact managed runtime, checkpoints, scenes and benchmark evidence |
-| [ROADMAP.md](ROADMAP.md) | Incremental, verifiable milestones |
-| [Codex prompts](docs/CODEX_PROMPTS.md) | Scoped implementation tasks aligned with the roadmap |
+Use the [documentation map](docs/index.md) to find authoritative owners, active plans,
+research and historical milestone notes. Contributors start with [AGENTS.md](AGENTS.md)
+and read only the sections relevant to the task. The
+[development workflow](docs/DEVELOPMENT.md#verification-workflow) defines affected/full
+checks; [durable plans](docs/DEVELOPMENT.md#durable-plans) replace growing prompt lists.
 
 Keep source media, generated projects, model weights and training output outside the
 repository. M6 PairSet is implemented. The separate pre-M7 scalability/operability

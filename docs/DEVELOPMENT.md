@@ -7,6 +7,110 @@ Use the project virtual environment and the [README commands](../README.md#curre
 Python 3.12 is the baseline; wider `requires-python` metadata is not evidence of testing
 on every later Python release.
 
+## Verification workflow
+
+Run commands from the repository root with the project environment active (on
+Windows: `& .venv/Scripts/Activate.ps1`). Pytest configuration stays in
+[pyproject.toml](../pyproject.toml); no second test-selection configuration is needed.
+
+### Fast / affected verification
+
+During development, run the tests for the changed behavior and its actual consumers,
+relevant contract tests and lint for changed Python files. Select explicit test paths
+or node IDs; never use bare pytest as a placeholder for an undecided fast selection.
+For example, for a dependency-boundary change:
+
+```powershell
+python -m pytest tests/test_gui_architecture.py
+python -m ruff check tests/test_gui_architecture.py
+python scripts/check_docs.py
+```
+
+Choose other tests for other changes; that example is not a universal smoke suite.
+Documentation-only work checks local links/anchors, contract/claim consistency and
+diff scope. Harness/script changes also need their affected tests and lint. Expand
+verification when failures or uncovered consumers justify it, not after every edit.
+
+### Full verification
+
+Run once for the final tree before milestone completion, merge/release, changes
+crossing many boundaries, an explicit user request, or when affected checks cannot
+provide confidence. A small bounded change can finish with affected evidence if no
+full gate applies. Report that scope explicitly.
+
+```powershell
+python -m pytest
+python -m ruff check .
+python scripts/check_docs.py
+```
+
+This is the default suite, not GPU/backend acceptance. Keep integration opt-ins
+(`SPLATFORGE_TEST_*`) unset for a default run; explicitly provisioned integrations
+remain separate and must be named in the report. GUI-specific checks require the
+optional GUI environment described below. Do not install dependencies or run
+native/GPU workloads implicitly. Documentation moves alone do not require full pytest.
+
+Record the command, tree/revision plus relevant dirty files, environment, outcome
+and skips. User-supplied full results count when those details establish that they
+cover the same relevant tree/environment. Attribute them to the user. Reuse valid
+results; rerun after changes that invalidate their coverage, not just because a new
+internal step occurred. Never claim a check passed without an actual result, and
+never present affected checks as full verification.
+
+### Documentation link check
+
+`python scripts/check_docs.py` checks repository Markdown (root, `docs/`, repo-local
+skills), local inline links and reference definitions, file existence/exact case and
+Markdown heading fragments. It skips fenced examples and remote URLs; it does not
+validate remote availability, prose claims or every Markdown extension. Explicit paths
+can be supplied for focused checks. A failure must identify the source and target;
+do not suppress an inconvenient broken link without checking its intent.
+
+## Durable plans
+
+For substantial bounded work, copy the [template](plans/TEMPLATE.md) into
+`docs/plans/active/<task-id>-<name>.md`. Record goal/non-goals, exact contract sections,
+affected areas, acceptance, verification, decisions/unknowns and final status.
+Small routine edits do not need a plan file. A future roadmap item is not an active
+assignment until selected; [legacy prompts](CODEX_PROMPTS.md) are background outlines.
+
+Keep the plan current as evidence arrives. On completion, record actual outcomes and
+remaining limitations, move it to `docs/plans/completed/`, repair relative/incoming
+links and update the [map](index.md). Do not rewrite dated decisions as if later
+knowledge existed then. Old milestone notes remain at their stable paths; no bulk
+migration is required. Plans coordinate work, not application contracts.
+
+## Documentation hygiene
+
+- One fact has one authoritative owner, listed in the [map](index.md). Other
+  documents link to it instead of copying its normative sections.
+- Change the authoritative document when a contract changes. A plan, prompt, README
+  summary or research note cannot silently override it.
+- Completed plans/implementation notes describe their delivered slice and evidence;
+  they are not current assignments or replacement contracts. Research is not
+  implemented support. The roadmap plans capability, not proof of implementation.
+- Preserve dated findings and results. Add a dated clarification when necessary;
+  do not retroactively rewrite a historical decision or test result.
+- Check local links after edits/moves, including relative links inside moved files.
+  Put new information in an existing owner when it fits; create a new Markdown file
+  only for a distinct purpose, durable plan or evidence set, and route it in the map.
+
+## Architecture guardrails
+
+[test_gui_architecture.py](../tests/test_gui_architecture.py) checks static imports:
+Core depends only on Core within the product; Application depends only on Core and
+Application. Both exclude UI/process/SQLite/backend library imports. GUI checks
+exclude direct adapter/process/trainer imports. A disposable base/GUI-entry import
+smoke blocks optional heavy libraries (and Qt on the base CLI path).
+
+These are cheap regression checks, not a proof of architectural purity. Dynamic
+imports, filesystem I/O through `Path`, indirect process launch and semantic business
+rules still need review and appropriate behavioral tests. Next guardrail candidates,
+only when a concrete regression warrants them: literal dynamic-import checks and
+specific Core I/O-call checks. Do not build a universal linter or ban `Path` values.
+
+For decomposition decisions, follow the [AGENTS coding rules](../AGENTS.md#coding-and-external-execution).
+
 ## Testing layers
 
 M12's GUI extra is optional: `python -m pip install -e ".[dev,gui]"` installs the
@@ -24,8 +128,8 @@ See [GUI design](GUI_DESIGN.md) for native screenshot capture and review.
 These tests use QtTest/direct state assertions, deterministic fake work and tiny
 published artifacts. They cover responsiveness, shared project intent/history,
 cancel/recovery, exact M9/M10/M11 requests and bounded preview without benchmarking.
-The final verification includes affected application regressions, one full default
-pytest, Ruff and documentation/link checks. Native Windows smoke at 100%/150% DPI
+GUI milestone completion includes affected application regressions and the full gate
+above. Native Windows smoke at 100%/150% DPI
 is separate from offscreen tests; do not describe headless testing as manual GUI
 validation. The tested baseline is Python 3.12.10, PySide6/Qt 6.12.0, Windows Server
 2022 build 20348. See [M12](M12.md) for architecture and scope limitations.
@@ -557,8 +661,8 @@ the concrete backend identity actually used.
 
 ## Definition of done
 
-For implementation changes, run scoped tests, full pytest and `ruff check .`; report
-exact failures/skips and integrations actually executed. Review public contracts,
+Choose affected/full checks using the [verification workflow](#verification-workflow);
+report exact failures/skips and integrations actually executed. Review public contracts,
 migrations, fingerprint changes, diagnostics and user-data safety for each behavioral
 change. Inspect the final diff for unrelated files and generated data. Documentation-only
 work checks links, terminology, milestone/prompt alignment and implemented/planned
@@ -734,5 +838,6 @@ IDs. Report aggregate and recoverable source-group PSNR/SSIM, LPIPS availability
 time, peak **allocated** CUDA bytes and sizes separately; do not call training loss a
 validation score. No LPIPS model is downloaded. Russian-dacha uses existing M10 artifacts,
 not repeated M7–M10. Frozen settings/evidence and one-scene limitations are in M11.
-After code stabilizes, run focused tests, full default pytest, Ruff and doc/link checks;
-report unrelated pre-existing failures rather than fixing them in this milestone.
+For training milestone completion, apply the full gate in the
+[verification workflow](#verification-workflow); report unrelated pre-existing
+failures rather than fixing them in that milestone.

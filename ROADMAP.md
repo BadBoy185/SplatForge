@@ -3,7 +3,8 @@
 Every milestone ends in an executable command, inspectable artifact or automated
 acceptance check. M0, M1a1, M1a2, M1b1 and M1b2 are implemented. Later deliverables
 and CLI command names remain planned unless explicitly marked available. Use the
-[task prompts](docs/CODEX_PROMPTS.md) one bounded task at a time.
+[active plans](docs/plans/active/README.md) one bounded task at a time; the
+[documentation map](docs/index.md) routes contracts and historical evidence.
 
 Cache/state foundations precede processing. Minimal PairSelection precedes matching
 because matching needs a verifiable PairSet. Practical cross-clip retrieval/hybrid

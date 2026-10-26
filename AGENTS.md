@@ -1,9 +1,23 @@
 # SplatForge engineering constitution
 
-This file is authoritative for engineering work. [ARCHITECTURE.md](ARCHITECTURE.md)
-defines boundaries; [docs/PIPELINE.md](docs/PIPELINE.md) defines stage contracts;
-[docs/PROJECT_FORMAT.md](docs/PROJECT_FORMAT.md) defines persistence and state.
-The roadmap describes planned work, not implemented capabilities.
+This file owns engineering invariants and context routing. Always read it first;
+use [docs/index.md](docs/index.md) as a map, not a mandatory reading list.
+
+## Read by task
+
+Read relevant sections and code, not every document end to end:
+
+- System/dependency boundaries -> [ARCHITECTURE.md](ARCHITECTURE.md).
+- Stage/method/compatibility/cache -> [docs/PIPELINE.md](docs/PIPELINE.md).
+- Persistence/state/storage/recovery -> [docs/PROJECT_FORMAT.md](docs/PROJECT_FORMAT.md).
+- Processes/progress/testing/diagnostics -> [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+- GUI presentation -> [docs/GUI_DESIGN.md](docs/GUI_DESIGN.md).
+- Planned scope/acceptance -> only the relevant [ROADMAP.md](ROADMAP.md) section
+  and selected [active plan](docs/plans/active/README.md).
+- Technology evaluation -> the relevant research entry in the documentation map.
+
+Completed milestone notes and legacy prompts are optional history/detail lookups,
+not startup context. Follow their links only for a concrete dependency.
 
 ## Product and scope
 
@@ -62,6 +76,8 @@ The roadmap describes planned work, not implemented capabilities.
 - Use Python 3.12 as the tested baseline, Pydantic v2, Typer, pytest and Ruff. Public
   APIs have type hints. Prefer small modules, dependency injection and explicit errors;
   avoid global mutable state and unrelated refactors.
+- Decompose by independent reasons to change or semantic responsibilities, not a line
+  limit. File size is a review signal, never authorization for an unrelated refactor.
 - Use `pathlib.Path`. Persist project-owned paths relative to the project; preserve
   external source locators separately from identity. Test spaces, Unicode, drive
   changes, case collisions, long paths and unavailable sources. Never concatenate
@@ -85,9 +101,7 @@ The roadmap describes planned work, not implemented capabilities.
   Strict policy; metadata-based reuse must not be reported as a fresh content check.
 - Refuse project creation in a non-empty destination. Back up before migrations;
   refuse unsupported newer formats without rewriting them. Use transactional state
-  writes and recoverable atomic file publication on the same volume. M1a1 is a
-  controlled persistence development slice; M1a2 completes durability/concurrency
-  before processing uses persisted projects.
+  writes and recoverable atomic file publication on the same volume.
 - Cleanup requires explicit scope and authorization, a preview, ownership and path
   containment checks, and protection against symlink/junction traversal. Cache
   invalidation is not deletion. Protect exports and checkpoints from generic cleanup.
@@ -103,10 +117,11 @@ The roadmap describes planned work, not implemented capabilities.
 3. Add/update meaningful tests for changed behavior, especially compatibility,
    dependency invalidation, persistence, migrations and interruption recovery.
    Documentation-only tasks need documentation checks, not artificial code tests.
-4. For implementation changes, run relevant tests, full default `pytest`, and
-   `ruff check .`. For documentation-only work, check contracts, links and diff scope;
-   rerun code checks when verifying runtime claims or explicitly requested. Report
-   existing failures/skipped integrations; do not repair unrelated code.
-5. Update affected contracts, roadmap/prompts and user documentation. Check links,
-   terminology, implemented/planned claims and the final diff for scope and data.
+4. Use affected tests/lint during development; use full verification at completion
+   gates defined in [DEVELOPMENT](docs/DEVELOPMENT.md#verification-workflow).
+   Documentation-only work needs links/claims/diff checks. Report failures/skips and
+   who ran each check; do not repair unrelated code or repeat unchanged full results.
+5. Update the authoritative owner of each changed fact; link rather than duplicate.
+   Follow [documentation hygiene](docs/DEVELOPMENT.md#documentation-hygiene) and
+   close the selected plan when applicable. Check the final diff for scope and data.
 6. Report what changed, verification results, limitations and the next useful step.
