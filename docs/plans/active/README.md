@@ -7,3 +7,5 @@ and follow the [plan lifecycle](../../DEVELOPMENT.md#durable-plans).
 Completed work is routed through the [documentation map](../../index.md#historical--completed-implementation-slices).
 
 [M12b2 Sources workflow](../completed/2026-10-27-m12b2-folder-browser.md) is complete; user UX acceptance passed 2026-10-27.
+
+[M12b2a Source Participation](../completed/2026-10-27-m12b2a-source-participation.md) is complete; user UX acceptance passed 2026-10-27.

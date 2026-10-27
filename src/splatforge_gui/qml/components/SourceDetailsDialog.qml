@@ -86,8 +86,17 @@ SplatDialog {
                     font.weight: Font.DemiBold
                 }
                 SplatLabel {
-                    text: "Included by default"
+                    objectName: "sourceParticipationLabel"
+                    text: dialog.sourceRecord.participationLabel || "Included"
                     color: Theme.secondary
+                }
+                SplatButton {
+                    objectName: "detailsParticipation"
+                    text: dialog.sourceRecord.isIncluded === false ? "Restore" : "Exclude from processing"
+                    enabled: dialog.vm.sources.selectedId !== "" && dialog.vm.state.canMutate
+                             && dialog.vm.state.participationSupported
+                    onClicked: dialog.vm.setSourceIncluded(dialog.vm.sources.selectedId,
+                                                          dialog.sourceRecord.isIncluded === false)
                 }
                 DetailsPanel {
                     id: technical

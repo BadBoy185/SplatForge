@@ -224,9 +224,12 @@ class MediaService:
             added_sources=tuple(self._summary(source) for source in prepared),
         )
 
-    def list(self, root: Path) -> SourceInventory | None:
-        committed = self._repository.inspect_project(root)
-        return self._repository.load_current_inventory(root, committed.document)
+    def list(
+        self, root: Path, *, document: ProjectDocument | None = None,
+    ) -> SourceInventory | None:
+        if document is None:
+            document = self._repository.inspect_project(root).document
+        return self._repository.load_current_inventory(root, document)
 
     def verify(
         self,

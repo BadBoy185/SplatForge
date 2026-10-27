@@ -568,6 +568,8 @@ class ProjectController(QObject):
             self.changed.emit(self.overview)
             self.dirty_changed.emit(False)
         elif name == "save":
+            if isinstance(result, ProjectDocument) and self.overview is not None:
+                self.overview = self.overview.model_copy(update={"document": result})
             self.discard()
         elif name == "ingest":
             self.ingest_status = "succeeded"

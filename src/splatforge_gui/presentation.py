@@ -151,7 +151,12 @@ def source_summary(rows: tuple[IndexRow, ...]) -> dict:
         message = "Source files have not been checked this session."
     else:
         message = "All source files were available when checked this session."
-    return {"photos": photos, "videos": videos, "checkMessage": message}
+    included = sum(r.values.get("isIncluded", True) is True for r in rows)
+    excluded = sum(r.values.get("isIncluded", True) is False for r in rows)
+    return {
+        "photos": photos, "videos": videos, "checkMessage": message,
+        "registered": len(rows), "included": included, "excluded": excluded,
+    }
 
 
 def progress_state(controller, metrics: dict) -> dict:

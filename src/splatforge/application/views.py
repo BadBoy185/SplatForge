@@ -249,7 +249,19 @@ class ViewsService:
             inventory = self._media.load_current_inventory(root, project_copy)
             if inventory is None or not inventory.sources:
                 raise ProjectError("Project has no registered media sources")
-            selected_sources = self._select_sources(inventory, source_ids)
+            # Resolve current project intent under the same writer lease as the
+            # immutable run snapshot. A CLI subset cannot bypass an exclusion.
+            from splatforge.core.source_participation import resolve_effective_sources
+
+            effective = resolve_effective_sources(
+                (source.source_id for source in inventory.sources),
+                project_copy.source_participation,
+            )
+            try:
+                selected_ids = effective.processing_source_ids(source_ids)
+            except ValueError as exc:
+                raise ProjectError(str(exc)) from exc
+            selected_sources = self._select_sources(inventory, selected_ids)
             for source in selected_sources:
                 if source.extension == ".png" and source.probe.orientation is None:
                     raise ProjectError(

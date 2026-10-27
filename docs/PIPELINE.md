@@ -64,6 +64,19 @@ publishes a new immutable inventory revision only after a writer-locked CAS rech
 Balanced/local and Strict verification evidence is durable state, not an inventory
 rewrite.
 
+M12b2a resolves [portable source participation](PROJECT_FORMAT.md#source-participation-intent-m12b2a)
+before a new Prepare run. `resolve_effective_sources` returns registered, Included,
+Excluded and unknown excluded UUIDs without reading originals. `processing_source_ids`
+supplies the default Included set or validates an explicit run subset. `ViewsService.prepare`
+does this inside its writer lease before snapshot/run creation; `--source-id` continues
+to select a subset, and explicitly requesting an Excluded source requires Restore.
+An empty effective selection fails clearly without creating a run. Excluded video
+never enters that new route's frame extraction. Candidate recipes consume the resolved
+source semantics; project revision/label and the participation envelope are not added
+as numerical keys. Restore can reuse matching historical outputs. Existing results
+remain immutable/inspectable for their original inputs; no recompute, deletion or
+global invalidation/currentness flag is introduced.
+
 M3 implements an explicit two-node route. `view_preparation.ffmpeg_fixed_pool` consumes
 selected immutable inventory records and publishes `views.candidate_set` contract 1:
 one explicitly oriented materialized view per photo and a bounded presentation-time

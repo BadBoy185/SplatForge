@@ -11,7 +11,7 @@ ColumnLayout {
     objectName: "sourcesPage"
     required property var vm
     property real viewportHeight: 512
-    readonly property bool populated: vm.sources.count > 0
+    readonly property bool populated: vm.state.sourcesSummary.registered > 0
     readonly property real listHeight: Math.max(128, viewportHeight - header.implicitHeight
                                                 - (check.visible ? check.implicitHeight + 16 : 0)
                                                 - (videoHint.visible ? videoHint.implicitHeight + 16 : 0)
@@ -21,10 +21,11 @@ ColumnLayout {
         id: header
         title: "Sources"
         subtitle: page.populated
-                  ? page.vm.state.sourcesSummary.photos
-                    + (page.vm.state.sourcesSummary.photos === 1 ? " photo · " : " photos · ")
-                    + page.vm.state.sourcesSummary.videos
-                    + (page.vm.state.sourcesSummary.videos === 1 ? " video" : " videos")
+                  ? !page.vm.state.participationSupported
+                    ? page.vm.state.sourcesSummary.registered + " registered · Participation unavailable"
+                    : page.vm.state.sourcesSummary.registered + " registered · "
+                    + page.vm.state.sourcesSummary.included + " included · "
+                    + page.vm.state.sourcesSummary.excluded + " excluded"
                   : "Add the photos and videos you want to use."
         Layout.fillWidth: true
         Loader {
@@ -74,7 +75,9 @@ ColumnLayout {
                 spacing: 4
                 SplatLabel {
                     objectName: "sourceCheckSummary"
-                    text: page.vm.state.sourcesSummary.checkMessage
+                    text: page.vm.state.participationWarnings.length > 0
+                          ? page.vm.state.participationWarnings.join("\n")
+                          : page.vm.state.sourcesSummary.checkMessage
                     font.weight: Font.DemiBold
                     Layout.fillWidth: true
                 }
@@ -167,11 +170,22 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: 8
-                SplatLabel {
-                    text: "Source files"
-                    font.weight: Font.DemiBold
-                    Layout.fillWidth: true
+                Repeater {
+                    model: ["Included", "Excluded", "All"]
+                    delegate: SplatButton {
+                        required property string modelData
+                        objectName: "filter" + modelData
+                        text: modelData + " " + (modelData === "Included"
+                              ? page.vm.state.sourcesSummary.included : modelData === "Excluded"
+                              ? page.vm.state.sourcesSummary.excluded
+                              : page.vm.state.sourcesSummary.registered)
+                        kind: page.vm.state.sourceFilter === modelData ? "primary" : "ghost"
+                        enabled: page.vm.state.participationSupported || modelData === "All"
+                        onClicked: page.vm.setSourceFilter(modelData)
+                        Accessible.name: text + " sources"
+                    }
                 }
+                Item { Layout.fillWidth: true }
                 SplatButton {
                     objectName: "sourceListMode"
                     text: "List"
@@ -193,10 +207,48 @@ ColumnLayout {
                     enabled: page.vm.sources.selectedId !== ""
                     onClicked: details.open()
                 }
+                SplatButton {
+                    objectName: "sourceParticipation"
+                    text: page.vm.sources.selected.isIncluded === false ? "Restore" : "Exclude"
+                    enabled: page.vm.sources.selectedId !== "" && page.vm.state.canMutate
+                             && page.vm.state.participationSupported
+                    Accessible.name: text === "Exclude" ? "Exclude from processing" : "Restore"
+                    ToolTip.visible: hovered
+                    ToolTip.text: text === "Exclude" ? "Exclude from processing. Original file stays in place." : "Restore to processing"
+                    onClicked: page.vm.setSourceIncluded(page.vm.sources.selectedId,
+                                                        page.vm.sources.selected.isIncluded === false)
+                }
             }
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width - 32, 520)
+                    visible: page.vm.sources.count === 0
+                    SplatLabel {
+                        objectName: "participationEmptyState"
+                        text: page.vm.state.sourceFilter === "Excluded" ? "No excluded sources."
+                              : "All sources are excluded from processing."
+                        font.pixelSize: Theme.section
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                    SplatLabel {
+                        visible: page.vm.state.sourceFilter === "Included"
+                        text: "Restore sources to use them in Prepare Data."
+                        color: Theme.secondary
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                    SplatButton {
+                        objectName: "viewExcluded"
+                        visible: page.vm.state.sourceFilter === "Included"
+                        text: "View Excluded"
+                        Layout.alignment: Qt.AlignHCenter
+                        onClicked: page.vm.setSourceFilter("Excluded")
+                    }
+                }
                 Repeater {
                     model: 2
                     delegate: Loader {
@@ -207,7 +259,7 @@ ColumnLayout {
                             && (page.vm.state.sourceView === "Grid" ? index === 1 : index === 0)
                         anchors.fill: parent
                         active: visited || current
-                        visible: current
+                        visible: current && page.vm.sources.count > 0
                         onCurrentChanged: { if (current) visited = true; }
                         Component.onCompleted: { if (current) visited = true; }
                         sourceComponent: index === 0 ? listBrowser : gridBrowser
@@ -239,7 +291,7 @@ ColumnLayout {
                     hoverEnabled: true
                     focusPolicy: Qt.StrongFocus
                     objectName: "source-" + recordId
-                    Accessible.name: record.filename + ", " + record.description + ", " + record.availability
+                    Accessible.name: record.filename + ", " + record.description + ", " + record.availability + ", " + (record.participationLabel || "Included")
                     onClicked: page.vm.media.selectSource(recordId)
                     onDoubleClicked: {
                         if (record.type === "photo") page.vm.media.previewSource(recordId);
@@ -270,6 +322,12 @@ ColumnLayout {
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 wrapMode: Text.NoWrap
+                            }
+                            SplatLabel {
+                                visible: source.record.isIncluded === false
+                                text: source.record.participationLabel || "Excluded from processing"
+                                color: Theme.secondary
+                                font.pixelSize: Theme.caption
                             }
                         }
                         SourceAvailability { record: source.record; Layout.preferredWidth: 205 }
@@ -319,7 +377,7 @@ ColumnLayout {
                 objectName: "tile-" + recordId
                 hoverEnabled: true
                 focusPolicy: Qt.StrongFocus
-                Accessible.name: record.filename + ", " + record.description + ", " + record.availability
+                Accessible.name: record.filename + ", " + record.description + ", " + record.availability + ", " + (record.participationLabel || "Included")
                 onClicked: page.vm.media.selectSource(recordId)
                 onDoubleClicked: {
                     if (record.type === "photo") page.vm.media.previewSource(recordId);
@@ -377,6 +435,13 @@ ColumnLayout {
                         record: tile.record
                         Layout.fillWidth: true
                     }
+                    SplatLabel {
+                        visible: tile.record.isIncluded === false
+                        text: "Excluded from processing"
+                        font.pixelSize: Theme.caption
+                        color: Theme.secondary
+                        Layout.fillWidth: true
+                    }
                     SplatButton {
                         Layout.alignment: Qt.AlignRight
                         text: "Details"
@@ -392,7 +457,7 @@ ColumnLayout {
     SplatLabel {
         id: videoHint
         visible: page.populated && page.vm.state.sourcesSummary.videos > 0
-        text: "Video frames will be extracted during Prepare Data."
+        text: "Frames from included videos will be extracted during Prepare Data."
         color: Theme.secondary
         font.pixelSize: Theme.small
         Layout.fillWidth: true
@@ -422,6 +487,12 @@ ColumnLayout {
         target: page.vm
         function onDialogRequested(name: string) {
             if (name === "closeSourceDetails") details.close();
+        }
+    }
+    Connections {
+        target: page.vm.sources
+        function onSelectionChanged() {
+            if (page.vm.sources.selectedId === "") details.close();
         }
     }
     FileDialog {

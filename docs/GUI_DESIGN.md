@@ -211,7 +211,31 @@ a different saved identity. Legacy entries without identity require confirmation
 Remove touches only the preference. Import counts completed hash/probe checks and
 reports the real current file/phase; M6.5 live throughput supplies ETA only after
 stable evidence, with no synthetic progress or persistent performance samples.
-Durable source exclusion is the separate M12b2a follow-up contract.
+M12b2 user UX acceptance passed on 2026-10-27; its
+[completed plan](plans/completed/2026-10-27-m12b2-folder-browser.md) retains the evidence.
+
+### M12b2a source participation
+
+Sources defaults to Included, with compact Included/Excluded/All filters and separate
+registered/included/excluded counts. Both List and Grid show Excluded text independently
+of session availability. Selection offers Exclude/Restore; Details spells out Exclude
+from processing. Excluded photos retain Preview, thumbnails and provenance; videos
+retain Details. All-excluded Included view offers View Excluded; empty Excluded view
+says No excluded sources and contains no import prompt.
+
+The application resolver owns processing membership. Qt filters already-loaded rows
+without filesystem reads, verification or thumbnail namespace resets. Existing visible
+delegate/queue/cache limits remain. QSettings contains no participation data.
+
+Actions use the existing project draft + Save path and reader-draining mutation slot.
+Existing unsaved edits first receive Save/Discard/Cancel. Action rows/counts change
+after Save and committed overview readback; failure retains committed rows, clears the
+action's transient draft, and shows the existing human-readable error. No destructive
+confirmation is needed. Project switch clears selection and resets the filter to Included.
+Single selection remains shared by List/Grid/preview; Ctrl/Shift batch selection is
+deferred. The application intent edit supports one atomic batch Save.
+See [persistence](PROJECT_FORMAT.md#source-participation-intent-m12b2a) and the
+[completed plan](plans/completed/2026-10-27-m12b2a-source-participation.md).
 
 ## Accessibility and desktop layout
 

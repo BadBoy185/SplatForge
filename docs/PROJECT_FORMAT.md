@@ -9,6 +9,7 @@ manifests and individual methods are separate; the prototype
 ## Storage layout and ownership
 
 M12 adds no project/state/manifest schema version or GUI-owned numerical fields.
+M12b2a adds optional portable source participation intent as described below.
 CLI and desktop use ProjectService for intent saves, including revision checks and
 unknown method/settings preservation. GUI edits remain drafts until Save; closing
 offers Save/Discard/Cancel. Run-only settings stay in existing immutable snapshots.
@@ -109,6 +110,31 @@ are unchanged. See [progress rules](DEVELOPMENT.md#progress-and-eta-foundation).
 compares the committed revision under the writer lock, publishes exactly the next
 revision and returns it to the caller. Stale saves are refused. Save refreshes
 `updated_at` while retaining project identity and creation time.
+
+### Source participation intent (M12b2a)
+
+Optional `source_participation` in `project.json` is an independently versioned
+envelope: `schema_version: 1`, `excluded_source_ids: [UUID, ...]`. IDs serialize as
+sorted unique UUIDs. Missing data defaults to empty exclusions: all registered
+sources are Included, including newly imported occurrences. Open performs no eager
+rewrite/migration. Project/state versions remain 1/4. This is additive read
+compatibility in the current CLI/GUI; older binaries can refuse the new field.
+
+Participation changes use the existing ProjectService Save, writer lock, revision
+comparison and atomic JSON replacement. They change neither the immutable inventory
+nor originals, source revisions, verification evidence, run snapshots or artifacts.
+Unknown JSON extension fields in the participation/method envelopes survive Save;
+unknown top-level project fields still fail explicitly under the existing contract.
+Unsupported participation versions remain inspectable/preserved through unrelated
+saves, but refuse participation edits and Prepare. Missing inventory UUIDs are retained
+as historical intent and returned as typed `unknown_excluded_sources` diagnostics;
+they neither become sources nor prevent opening. New edits reject unregistered IDs.
+
+Relink preserves UUID/revision and participation after verifying identical content.
+Repeated import creates a new UUID occurrence, Included by default even when another
+occurrence at that path/content is Excluded. Paths are locators, never exclusion keys.
+See [processing resolution](PIPELINE.md#stage-inputs-and-outputs) and
+[GUI behavior](GUI_DESIGN.md#m12b2a-source-participation).
 
 `settings.config_schema_version` is **1**, independent of the project format.
 Its six required slots are `frame_selection`, `feature_extraction`,

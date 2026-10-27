@@ -93,6 +93,8 @@ class SourceBrowserModel(PresentationModel):
         self._source_indices = {}
         self._signature = ()
         self._context = None
+        self.all_rows = ()
+        self.participation_filter = "Included"
         self.thumbnails.dataChanged.connect(self._thumbnail_changed)
 
     def roleNames(self) -> dict:
@@ -105,6 +107,7 @@ class SourceBrowserModel(PresentationModel):
             self._photo_indices.clear()
             self.thumbnails.replace(())
             self.select("")
+            self.participation_filter = "Included"
 
     def replace(self, rows, view=None) -> None:
         from pathlib import Path
@@ -129,8 +132,21 @@ class SourceBrowserModel(PresentationModel):
                     identity=f"source/{token}/{identity}", path=path, caption=identity,
                 ))
             self.thumbnails.replace(references)
+        self.all_rows = rows
+        self._apply_filter()
+
+    def set_filter(self, value: str) -> None:
+        if value in {"Included", "Excluded", "All"}:
+            self.participation_filter = value
+            self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        rows = tuple(r for r in self.all_rows if (
+            self.participation_filter == "All"
+            or r.values.get("isIncluded", True) == (self.participation_filter == "Included")
+        ))
         self._source_indices = {str(r.identity): i for i, r in enumerate(rows)}
-        super().replace(rows, view)
+        super().replace(rows)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if role in {self.ImageRole, self.StatusRole}:
@@ -229,7 +245,7 @@ class MediaViewModel(QObject):
         else:
             self._gallery.replace(())
             self._message = (
-                "Video added. Frames will be extracted during Prepare Data."
+                "Frames from included videos will be extracted during Prepare Data."
             )
         self.changed.emit()
 

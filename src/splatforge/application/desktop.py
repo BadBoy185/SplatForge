@@ -17,6 +17,7 @@ from splatforge.application.media_scan import (
 from splatforge.core.execution import CancellationRequestResult, RecoveryResult
 from splatforge.core.progress import PipelineProgressSnapshot
 from splatforge.core.project import ProjectDocument
+from splatforge.core.source_participation import EffectiveSources, resolve_effective_sources
 from splatforge.core.views import FrozenModel
 
 
@@ -46,6 +47,7 @@ class ProjectOverview(FrozenModel):
     index: ProjectIndex
     active: tuple[PipelineProgressSnapshot, ...]
     workflow: tuple[WorkflowItem, ...]
+    participation: EffectiveSources | None = None
 
 
 class PreviewData(FrozenModel):
@@ -161,8 +163,13 @@ class GuiFacade:
 
     def overview(self, root: Path) -> ProjectOverview:
         document = self.service("project").open(root)
-        inventory = self.service("media").list(root)
+        inventory = self.service("media").list(root, document=document)
         index = self.reader.index(root)
+        participation = resolve_effective_sources(
+            (s.source_id for s in inventory.sources) if inventory else (),
+            document.source_participation,
+        )
+        included_ids = set(participation.included_source_ids)
 
         def verification(source) -> str:
             evidence = index.source_verifications.get(str(source.source_id))
@@ -190,6 +197,13 @@ class GuiFacade:
                         "sourceRevision": s.source_revision,
                         "lastHashedAt": s.last_full_hash_at.isoformat(),
                         "locator": s.external_locator,
+                        "isIncluded": (
+                            s.source_id in included_ids if participation.supported else None
+                        ),
+                        "participationLabel": (
+                            "Included" if s.source_id in included_ids
+                            else "Excluded from processing"
+                        ) if participation.supported else "Participation unavailable",
                     },
                 )
                 for s in inventory.sources
@@ -203,6 +217,7 @@ class GuiFacade:
             index=index,
             active=self.service("progress").active(root) if index.state_version >= 3 else (),
             workflow=summarize_workflow(index, len(sources)),
+            participation=participation,
         )
 
     def inspect(self, root: Path, artifact_id: UUID) -> PreviewData:

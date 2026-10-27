@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from PySide6.QtCore import Property, QObject, QStringListModel, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QGuiApplication
@@ -61,6 +61,7 @@ class DesktopViewModel(QObject):
         if self._source_view not in {"List", "Grid"}:
             self._source_view = "List"
         self._notice = ""
+        self._participation_pending = None
         self._source_summary = source_summary(())
         self._mode = self.preferences.get("mode", "Guided")
         self._theme = self.preferences.get("theme", "System")
@@ -79,6 +80,7 @@ class DesktopViewModel(QObject):
         self.controller.error.connect(self._failed)
         self.controller.completed.connect(self._completed)
         self.controller.scan_progress.connect(self._scanning)
+        self._source.countChanged.connect(self._source_count_changed)
         self.refresh_recents()
 
     @Property(QObject, constant=True)
@@ -156,7 +158,51 @@ class DesktopViewModel(QObject):
                 "progress": self._scan_progress,
             },
             "sourceView": self._source_view,
+            "sourceFilter": self._source.participation_filter,
+            "participationSupported": not self.controller.overview
+            or not self.controller.overview.participation
+            or self.controller.overview.participation.supported,
+            "participationWarnings": [
+                diagnostic.message
+                for diagnostic in self.controller.overview.participation.diagnostics
+            ] if self.controller.overview and self.controller.overview.participation else [],
         }
+
+    @Slot(str)
+    def setSourceFilter(self, value: str) -> None:
+        self._source.set_filter(value)
+        self._media.sources_changed()
+        self.changed.emit()
+
+    def _source_count_changed(self) -> None:
+        self._source_summary = source_summary(self._source.all_rows)
+        self.changed.emit()
+
+    @Slot(str, bool)
+    @guarded
+    def setSourceIncluded(self, identity: str, included: bool) -> None:
+        source_id = UUID(identity)
+        self._switch(lambda: self._save_source_participation(source_id, included))
+
+    @guarded
+    def _save_source_participation(self, source_id: UUID, included: bool) -> None:
+        from splatforge.application.source_participation import participation_draft
+
+        overview = self.controller.overview
+        if overview is None:
+            raise ValueError("Open a project first")
+        document = participation_draft(
+            overview.document, (r.identity for r in overview.sources),
+            {source_id}, included=included,
+        )
+        self._participation_pending = document.source_participation
+        self._participation_notice = (
+            "Source restored to processing." if included else
+            "Source excluded from processing. Original file was not deleted."
+        )
+        self._notice = ""
+        self.controller.edit(document)
+        self.controller.save()
 
     @Slot(str)
     def setSourceView(self, value: str) -> None:
@@ -451,6 +497,7 @@ class DesktopViewModel(QObject):
         if self._source_session.enter(context):
             self._source.set_context(context)
             self.dialogRequested.emit("closeSourceDetails")
+            self._participation_pending = None
         first = not self._project
         self._project = {
             "id": str(value.document.project_id),
@@ -499,7 +546,11 @@ class DesktopViewModel(QObject):
                 for r in value.sources
             )
         )
-        self._source_summary = source_summary(self._source.rows)
+        if value.participation and not value.participation.supported:
+            self._source.set_filter("All")
+        if self._participation_pending == value.document.source_participation:
+            self._participation_pending = None
+            self._notice = self._participation_notice
 
     def _finish_overview(self, value, first: bool) -> None:
         important = {
@@ -565,8 +616,11 @@ class DesktopViewModel(QObject):
 
     def _failed(self, error) -> None:
         self._pending_close, self._after_save = False, None
+        if error.stage == "save" and self._participation_pending is not None:
+            self._participation_pending = None
+            self.controller.discard()
         if error.stage == "verify" and self.controller.overview:
-            self._source_session.uncertain(self._source.rows, "Source check could not finish.")
+            self._source_session.uncertain(self._source.all_rows, "Source check could not finish.")
             self._project_sources(self.controller.overview)
         message = error.message
         if error.stage == "create" and message == "Project destination must be missing or empty":
@@ -616,7 +670,7 @@ class DesktopViewModel(QObject):
             self._folder = value
             existing = {
                 os.path.normcase(os.path.abspath(self.local_path(r.values["locator"])))
-                for r in self._source.rows
+                for r in self._source.all_rows
             }
             self._scan_summary = {
                 "photos": sum(e.media_type == "photo" for e in value.entries),
@@ -636,7 +690,7 @@ class DesktopViewModel(QObject):
             self.controller.refresh()
         elif name == "cancelled":
             if self.controller.operation == "verify" and self.controller.overview:
-                self._source_session.uncertain(self._source.rows, "Source check was cancelled.")
+                self._source_session.uncertain(self._source.all_rows, "Source check was cancelled.")
                 self._project_sources(self.controller.overview)
             self.cancelFolder()
             self._notice = "Cancelled — application teardown confirmed"
