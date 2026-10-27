@@ -196,12 +196,13 @@ Sources
 Prepare
 Reconstruction
 Gaussian Splat
-Viewer
 Exports
 ────────────
 Project Settings
 
-The exact visual layout may evolve, but this information architecture should remain stable.
+The exact visual layout may evolve, but this v1 information architecture should remain stable.
+
+Reconstruction Viewer opens within Reconstruction → Reconstruction Result / Review → 3D Reconstruction Viewer. A separate primary Viewer destination is not required in v1. Fullscreen remains tied to the inspected reconstruction and component; a universal Viewer may be considered later.
 
 Do not expose every internal processing artifact as a navigation item.
 
@@ -416,6 +417,8 @@ Drone video
 ✓ Ready
 
 The underlying architecture may represent these as Source Sets.
+
+User-visible source groups are presentation concepts. Group labels, colors and viewer filters must not automatically change calibration groups, camera_group_id or historical processing semantics.
 
 ⸻
 
@@ -836,7 +839,7 @@ Video frames
 ✓ Good
 1 connected scene
 312,482 sparse points
-[ Open 3D Review ]
+[ Open 3D Reconstruction Viewer ]
 63 images not aligned
 [ Review Issues ]
 [ Export Reconstruction ▾ ]
@@ -891,6 +894,10 @@ Never expose only:
 
 The user needs to understand what those components represent.
 
+Show each component separately in the Reconstruction Viewer, with its own coordinate system. Never arrange disconnected components together as though they share a spatial frame. Component switching and summaries are specified in section 59.
+
+Reconstruction Review must clearly identify the component(s) selected for export and training through the existing [ReconstructionSelection / validation flow](PIPELINE.md#reconstruction-component-selection). Viewing a component does not select it for downstream use. Do not introduce a second selection mechanism or silently choose the largest component. If the existing flow selects several components, they remain separate datasets/scenes.
+
 ⸻
 
 32. Unaligned images
@@ -918,6 +925,8 @@ Low overlap with nearby images
 Unlike Prepare Review, do not use Keep Anyway for an unregistered camera.
 
 A camera either has a valid pose or it does not.
+
+Unaligned images have no valid reconstructed pose and must never appear as fictitious cameras in 3D. Show their count and Review Issues action in Reconstruction Review (for example, “63 images not aligned”), with the separate Aligned / Not Aligned / All image review above. Show possible causes only when supported by backend evidence.
 
 ⸻
 
@@ -951,47 +960,57 @@ After
 
 34. 3D Reconstruction Review
 
-A 3D review is required before the user proceeds to training.
+A fully integrated Reconstruction Viewer is a required v1 capability and M12f deliverable:
 
-Viewer should support:
+Reconstruction
+→ Reconstruction Result / Review
+→ 3D Reconstruction Viewer
+
+A 3D review is required before the user proceeds to training. It stays in the context of the specific reconstruction/component, including in fullscreen mode; it does not require a primary Viewer navigation destination.
+
+Default scene layers:
 
 ☑ Cameras
-☑ Sparse points
-☐ Image thumbnails
+☑ Sparse point cloud
+☐ World axes
 
-Camera groups should be visually distinguishable by source.
+Cameras and sparse points must be independently toggleable. Render cameras as camera frustums / orientation indicators, not only points: position, orientation and the capture's spatial arrangement must be understandable. A connected camera path is optional and requires reliable ordering (section 60).
 
-Example groups:
+Use trustworthy reconstructed RGB point colors by default when available; otherwise use a neutral display color without implying a quality metric. World axes are optional. Do not show a large metric ground grid by default: ordinary SfM reconstruction can have arbitrary orientation and scale.
 
-* Drone
-* iPhone
-* Video frames
+Camera colors should distinguish user-visible source groups by default when reliable source provenance is available. Provide independent source visibility controls, for example:
 
-The specific colors are a visual design decision.
+Sources
+☑ Drone photos
+☑ iPhone
+☑ Video frames
 
-Do not hard-code semantic meaning around one fixed color palette unless intentionally defined later.
+The specific colors are a visual design decision; do not hard-code semantic meaning around one fixed palette. These controls filter camera presentation only. They must not alter calibration groups, camera_group_id, historical processing semantics, reconstruction content or downstream selection. Do not infer sparse-point source ownership from camera groups without trustworthy evidence.
+
+Optional image thumbnails may complement the review. Required component/navigation controls and bounded rendering are specified in section 59.
 
 ⸻
 
 35. Camera inspection
 
-Clicking a camera should expose relevant information:
+Selecting a camera frustum must open the corresponding camera/image details using stable identities. Show the following when supplied by the backend:
 
-IMG_3849.jpg
-Apple iPhone
+Image filename
 Source
-iPhone
+Device metadata, if available
 Status
-Aligned
-Quality
-Good
+Resolution
+Camera model
+
+Actions:
+
 [ View Image ]
+[ Look Through Camera ]
+[ Focus ]
 
-For problematic cameras:
+Do not invent missing metadata, per-camera quality or failure reasons. Mark unavailable fields/actions honestly; View Image uses the actual available image. Unaligned-image details belong in image review (section 32), not on fictitious 3D cameras.
 
-Status
-Not aligned
-[ Review Issue ]
+Look Through Camera is a required target capability: where the viewer architecture supports the camera model and pose conventions correctly, set the virtual view from the reconstructed camera pose. Provide [ Back to Orbit View ] to restore the previous orbit context. Implement and validate this as a separate bounded slice after the base viewer if necessary; do not replace it with an approximate view presented as exact.
 
 ⸻
 
@@ -1163,20 +1182,17 @@ Elapsed
 28 min
 Remaining
 ≈ 11 min
-[ Preview Current Result ]
 [ Technical Details ▾ ]
 
-Only expose a percentage when it has meaningful backend semantics.
+Only expose a percentage when it has meaningful backend semantics. Show iteration/step, loss, Gaussian count, elapsed time and ETA when useful trustworthy trainer evidence is available; leave unavailable metrics absent or explicitly unavailable.
 
 ⸻
 
-44. Live preview
+44. Training feedback
 
-If supported safely by the training backend, allow users to inspect intermediate results while training continues.
+v1 training feedback uses status, progress and the numerical metrics described in section 43. Spatial live Gaussian rendering and checkpoint spatial preview are not required in v1 or M12; they are deferred with the built-in Gaussian Splat Viewer (section 60.1).
 
-Do not require the user to stop training merely to view an available checkpoint.
-
-Allow cancellation if the result is clearly unusable.
+Checkpoint availability and compatible resume may still be shown through the existing backend contracts. Cancellation remains available through the normal operation flow; neither progress monitoring nor cancellation requires spatial preview.
 
 ⸻
 
@@ -1185,36 +1201,30 @@ Allow cancellation if the result is clearly unusable.
 Example:
 
 ✓ Gaussian Splat Ready
-Scene Quality
-GOOD
-1,536 cameras used
-3.4M Gaussians
 Training preset
 High
-[ Open Viewer ]
-[ Export ▾ ]
-[ Improve Result ]
+Gaussians
+3.4M
+[ Export Result ]
+[ Open Output Folder ]
+
+View the exported result in your preferred Gaussian Splat viewer.
+
+The preset and metrics must reflect the actual run; this example does not establish a new backend preset or assert visual quality. Provide external browser/local viewer handoff through the exported result and its output folder. Do not promise built-in visualization or silently upload local output to a browser service.
 
 ⸻
 
 46. Gaussian Splat review
 
-Primary review is spatial, not image-grid based.
+v1 result review retains:
 
-Viewer options may include:
+* training status and available training metrics;
+* run/history and result provenance;
+* export and Open Output Folder;
+* external browser/local viewer handoff;
+* retry/retrain through the existing workflow, preserving previous successful results.
 
-☑ Gaussian Splat
-☐ Sparse Reconstruction
-☐ Cameras
-
-Future diagnostic features may include:
-
-* low-confidence areas;
-* insufficient coverage;
-* suspected floating artifacts;
-* problematic regions.
-
-Do not expose such diagnostics as authoritative unless they are actually computed reliably.
+Internal Gaussian spatial review, splat + sparse overlays, Gaussian problem-area visualization, Gaussian rendering and checkpoint spatial preview are outside required M12/v1 scope. They belong to the future built-in Gaussian Splat Viewer (section 60.1). Do not infer spatial quality from training completion or expose diagnostics as authoritative without reliable evidence.
 
 ⸻
 
@@ -1484,44 +1494,69 @@ Never silently destroy an older successful training result when retraining.
 
 ⸻
 
-59. Viewer
+59. Reconstruction Viewer
 
-Viewer should be a first-class project workspace.
+The v1 viewer is part of Reconstruction Result / Review (section 34), with clear reconstruction/run and component context. It is a bounded sparse/camera viewer, not a general-purpose Blender/CloudCompare workspace.
 
-Conceptual layout:
+When multiple components exist, provide a selector, for example:
 
-┌────────────────────────────────────┐
-│                                    │
-│              3D VIEW               │
-│                                    │
-└────────────────────────────────────┘
-Layers
-☑ Gaussian Splat
-☐ Sparse points
-☐ Cameras
-Sources
-☑ Drone
-☑ iPhone
-☑ Video
+Component
+● Main component
+○ Component 2
+○ Component 3
 
-Additional controls can remain compact.
+Show only the viewed component in its own coordinate system. “Main component” is an illustrative user-visible label, not a largest-component policy or an automatic downstream choice. Each component must expose camera count and sparse point count, plus source breakdown when trustworthy and validation/health summary when available. Unknown evidence stays unavailable. Keep the component selected for export/training visible through the existing selection flow (section 31); switching the viewed component changes presentation only.
+
+Required navigation:
+
+* Orbit;
+* Pan;
+* Zoom;
+* Select camera;
+* Fit Scene;
+* Reset View;
+* Fullscreen.
+
+Camera picking must resolve the stable camera/view identity and open section 35's details/actions. Preserve reconstruction/component identity and layer/source visibility in fullscreen and when returning to review. Look Through Camera and Back to Orbit View are the required target capability described in section 35.
+
+Keep secondary/advanced display controls compact:
+
+* Camera size;
+* Point size;
+* Camera opacity.
+
+These controls affect presentation only. Optional World axes and the default Cameras / Sparse point cloud layers follow section 34; no default metric ground grid is implied.
+
+Rendering and loading must remain bounded and responsive. If display data is sampled or capped, disclose that limitation and retain correct IDs, layer/source membership and camera picking. Component counts describe the reconstruction, not just the displayed sample. Existing PointPreview is a prototype/reuse candidate, not proof that these requirements are met; the implementation must support the necessary IDs, layers and picking.
 
 ⸻
 
-60. Viewer goals
+60. Reconstruction Viewer enhancements
 
-Viewer should support:
+The following are useful additions, not blockers for the base Reconstruction Viewer:
 
-* reconstruction inspection;
-* Gaussian Splat inspection;
-* camera inspection;
-* source-group filtering;
-* sparse point display;
-* optional image thumbnails;
-* fullscreen;
-* basic scene navigation.
+☐ Camera path
 
-Do not overload the initial Viewer with specialist visualization tooling unless needed.
+May show a sequential capture trajectory only when ordering is reliable. Never connect cameras using an unverified order.
+
+Show connections
+
+An advanced diagnostic may show matched/reliable neighbours of the selected camera when supported by trustworthy evidence. It is outside the MVP viewer.
+
+Future camera color modes:
+
+* By source (the v1 default when source groups are known);
+* Uniform;
+* Registration quality;
+* Reprojection error.
+
+A color-mode chooser is an enhancement. Registration quality and Reprojection error require reliable per-camera metrics; never manufacture them from aggregate reconstruction health.
+
+60.1 Future — Built-in Gaussian Splat Viewer
+
+A built-in Gaussian renderer/viewer is a separate future capability/milestone after M12, with no milestone number assigned here. It does not block M12 completion or the first production-ready release. v1 users inspect exported Gaussian Splats in an external browser/local viewer.
+
+Future scope may include internal Gaussian spatial review, splat + sparse overlays, reliable problem-area visualization, spatial live training preview and checkpoint spatial preview. A universal Viewer destination may be added later if useful. Do not choose renderer technology now or introduce CUDA ownership into the Qt process for this future capability.
 
 ⸻
 
@@ -2035,15 +2070,19 @@ Prioritize excellent implementation of:
 6. Reconstruction Review.
 7. ETA / progress.
 8. Reconstruction export.
-9. Gaussian Splat.
+9. Gaussian Splat training, metrics, export and external viewer handoff.
 10. Project Overview.
 11. Resume/restart/recovery states.
-12. Viewer.
+12. Reconstruction Viewer within Reconstruction Review (M12f).
 13. Exports.
 14. Project Settings.
 15. Clear error handling.
 
-Advanced automated diagnostics may improve incrementally.
+Advanced automated diagnostics may improve incrementally. Built-in Gaussian visualization is outside the first production release.
+
+88.1 M12 implementation direction
+
+The [M12 sub-milestone plan](../ROADMAP.md#m12--desktop-gui) defines M12a–M12j. M12f delivers Reconstruction Review + Sparse 3D Viewer; M12h delivers Gaussian Splat Training UX without a built-in Gaussian viewer. The future built-in Gaussian Splat Viewer is a separate milestone after M12 and is not a completion gate for this plan.
 
 ⸻
 
@@ -2089,7 +2128,7 @@ and override decisions.
 
 Scenario D — Split reconstruction
 
-User receives a clear explanation that the scene is split into components and can attempt recovery.
+User receives a clear explanation that the scene is split into components and can attempt recovery. They can view each component independently, inspect counts and available source/health evidence, and identify the component(s) selected for export/training through ReconstructionSelection. Viewing another component never merges coordinate frames or changes downstream selection.
 
 Scenario E — External training
 
@@ -2117,6 +2156,14 @@ Scenario J — Repeat experimentation
 
 User may create multiple Reconstruction / Gaussian Splat runs and select which result is active.
 
+Scenario K — Reconstruction Viewer
+
+User can independently toggle cameras and sparse points, inspect camera orientation and spatial arrangement, filter visible cameras by known source group, pick a camera and inspect available metadata/image, and navigate with Orbit / Pan / Zoom / Focus / Fit Scene / Reset View / Fullscreen. Trustworthy point RGB is used by default. Unaligned images remain in image review. Look Through Camera / Back to Orbit View must use the reconstructed pose correctly; this target may be delivered as the bounded follow-up described in section 35.
+
+Scenario L — Gaussian result handoff
+
+After training, the user sees status and available metrics, retains run/history and provenance, exports the result, opens its output folder and inspects it in an external browser/local viewer. Retry/retrain preserves successful results. No built-in Gaussian renderer or spatial training/checkpoint preview is needed to complete this v1 workflow.
+
 ⸻
 
 90. Final intended experience
@@ -2132,10 +2179,11 @@ I can review what it rejected.
 It reconstructs the cameras.
 It tells me whether the reconstruction is actually healthy.
 If something failed, it helps me fix it.
-I can inspect everything in 3D.
+I can inspect reconstructed cameras and sparse geometry in 3D.
 I can export at any important stage.
 I can use another trainer if I want.
 I can train a Gaussian Splat inside SplatForge if I want.
+I can export it and view it in my preferred external Gaussian Splat viewer.
 My previous successful results are never silently destroyed.
 If I close the application, I can continue later.
 If something goes wrong, the application explains what happened and what I should do next.
@@ -2171,7 +2219,7 @@ The resulting application should be understandable to a first-time user while re
 
 92. Immediate instruction for the current audit
 
-Before continuing the architecture/UX audit:
+Historical initial specification-capture instructions (later authorized updates have their own scope):
 
 1. Create:
     docs/UX_UI_SPEC.md
@@ -2185,3 +2233,10 @@ Before continuing the architecture/UX audit:
 8. Treat this document as the primary UX/UI source of truth.
 9. Re-check any preliminary audit conclusions against this complete specification.
 10. Explicitly flag conflicts between this specification and existing documented/backend contracts rather than silently resolving them.
+
+
+92.1 Audit scope update — 2026-10-27
+
+Reclassify the earlier “Full Gaussian viewer — MISSING” conclusion as a future capability, not a blocker or required M12 backend gap. Internal Gaussian rendering and spatial training/result/checkpoint review are deferred to section 60.1.
+
+Conversely, the bounded sparse/camera Reconstruction Viewer is a required M12f deliverable. Assess existing PointPreview as a prototype/reuse candidate against sections 34–35 and 59, including stable IDs, layers, source presentation filtering, camera picking and separate component context. Its existence alone does not close this gap. Preserve the existing ReconstructionSelection / validation flow and processing semantics; this scope update does not claim viewer implementation is complete.

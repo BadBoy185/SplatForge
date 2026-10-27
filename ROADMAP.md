@@ -414,17 +414,47 @@ and broader M11 training preset recommendation. M12 is implemented below.
 
 ## M12 — desktop GUI
 
-**M12 desktop GUI implemented.** Optional PySide6 6.12.0 / Qt Quick / QML client, shared
+**M12 desktop baseline implemented; revised production UX remains planned.**
+Optional PySide6 6.12.0 / Qt Quick / QML client, shared
 project/application facade, worker executor, guided/advanced goal pages, M9 explicit
 selection, M10/M11 plans/execution/resume, bounded inspection, Doctor and preview/apply
 cleanup. See [M12 contracts, verification and limitations](docs/M12.md).
-M7c production VPR, representative M8 recommendation, broader M11 quality presets,
-true Gaussian rasterization and installer/updater remain separately pending. M13 has
-not started. The original acceptance contract remains below.
+M7c production VPR, representative M8 recommendation, broader M11 quality presets
+and installer/updater remain separately pending. M13 has not started. The original
+baseline acceptance contract remains below.
+
+The [primary UX/UI specification](docs/UX_UI_SPEC.md) owns the revised v1 scope.
+Planning direction (not a claim that these slices are implemented):
+
+| Slice | Scope |
+| --- | --- |
+| M12a | Project Shell & Create/Open |
+| M12b | Sources & Import |
+| M12c | Prepare Data & Image Review |
+| M12d | Result Selection / Currentness |
+| M12e | Reconstruction Workflow |
+| M12f | Reconstruction Review + Sparse 3D Viewer |
+| M12g | Prepared Data / Reconstruction Export |
+| M12h | Gaussian Splat Training UX — WITHOUT built-in Gaussian viewer |
+| M12i | Overview / History / Exports / Settings |
+| M12j | Recovery / Errors / Notifications / Polish |
+
+M12f is required: a bounded sparse/camera viewer within Reconstruction Result / Review,
+with component context and the existing ReconstructionSelection / validation flow for
+export/training. No separate primary Viewer destination is required in v1. Existing
+PointPreview is a prototype/reuse candidate, not completion evidence for the required
+IDs, layers and picking; see UX/UI specification sections 34–35 and 59–60.
+
+**Future — Built-in Gaussian Splat Viewer:** a separate milestone after M12, with no
+number or renderer technology assigned. Gaussian spatial review, splat + sparse overlay,
+problem-area visualization, spatial live training and checkpoint previews move with it.
+This is not a required M12 backend gap or a blocker for the first production release.
+M12h retains status/metrics, history/provenance, retry/retrain, export and external
+browser/local viewer handoff. Do not add CUDA ownership to the Qt process for future viewing.
 
 Build PySide6 as a client of existing application services: project/source management,
 guided profiles, advanced stage settings, plan preview, progress/cancel/retry,
-diagnostics and reconstruction/scene inspection. Processing runs off the UI thread.
+diagnostics and reconstruction inspection. Processing runs off the UI thread.
 
 Acceptance: the same project can be created/run/reopened by CLI and GUI; persisted
 settings and cache decisions agree; UI stays responsive during a fake long stage and

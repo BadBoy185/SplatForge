@@ -3,6 +3,9 @@
 The M12 desktop uses PySide6 6.12.0 / Qt Quick 6.12. The client area belongs to
 SplatForge; the operating system owns the native title bar, resizing and window
 management. This migration does not start M13 or introduce Gaussian rasterization.
+The [primary UX/UI specification](UX_UI_SPEC.md), sections 34–35 and 59–60, requires
+Reconstruction Review + Sparse 3D Viewer in M12f. Built-in Gaussian visualization is
+reserved for a separate future milestone after M12 and is not a v1 completion gate.
 
 ## Presentation architecture
 
@@ -43,6 +46,17 @@ The first preview path is a QQuickPaintedItem using the
 existing bounds: 20,000 point centers and 2,000 camera centers. Orbit, zoom and reset
 change only presentation. The label always says **Point-center preview — not final
 Gaussian rasterization**. Sparse preview retains the first-component-only label.
+These are current prototype limits, not M12f acceptance. PointPreview may be reused,
+but the required viewer must support stable IDs, independent layers, camera frustums
+and picking, source presentation filtering and explicit per-component viewing.
+Downstream selection stays in the existing ReconstructionSelection / validation flow.
+
+The v1 navigation target in UX/UI specification section 3 has no required primary
+Viewer destination. Open Reconstruction Viewer from Reconstruction Result / Review;
+fullscreen preserves that reconstruction/component context. Gaussian training/results
+use metrics, history, export and external browser/local viewer handoff. Spatial live
+training and checkpoint previews are deferred with the future Gaussian viewer;
+no renderer technology or Qt-process CUDA ownership is introduced for that scope.
 
 ## Theme and typography
 
