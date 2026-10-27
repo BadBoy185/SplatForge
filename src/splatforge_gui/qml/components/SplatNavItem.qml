@@ -18,11 +18,6 @@ AbstractButton {
                                                                   ? Theme.hover : "transparent"
         border.width: control.visualFocus ? 2 : 0
         border.color: Theme.accent
-        Behavior on color {
-            ColorAnimation {
-                duration: Theme.motion
-            }
-        }
         Rectangle {
             visible: control.checked
             width: 3

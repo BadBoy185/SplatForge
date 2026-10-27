@@ -36,6 +36,10 @@ ApplicationWindow {
         target: window.vm
         function onChanged() {
             Theme.choice = window.vm.state.theme;
+            if (window.vm.state.scan.scanning)
+                scanProgress.open();
+            else
+                scanProgress.close();
         }
         function onCloseReady() {
             window.close();
@@ -49,6 +53,8 @@ ApplicationWindow {
                 closeDialog.open();
             else if (name === "folder")
                 folderConfirmation.open();
+            else if (name === "closeFolder")
+                folderConfirmation.close();
             else if (name === "exact")
                 exactDialog.open();
             else if (name === "components")
@@ -59,6 +65,10 @@ ApplicationWindow {
                 imageDialog.close();
             else if (name === "cleanup")
                 cleanupDialog.open();
+            else if (name === "locateRecent")
+                locateRecentDialog.open();
+            else if (name === "confirmRecentLocation")
+                confirmRecentDialog.open();
         }
     }
     Shortcut {
@@ -325,7 +335,7 @@ ApplicationWindow {
                             font.pixelSize: Theme.small
                         }
                         SplatLabel {
-                            text: window.vm.state.progress.eta ? "ETA ~" + window.vm.state.progress.eta :
+                            text: window.vm.state.progress.eta ? window.vm.state.progress.eta :
                                                                  ""
                             color: Theme.secondary
                             font.pixelSize: Theme.small
@@ -439,13 +449,51 @@ ApplicationWindow {
         title: "Choose a parent location"
         onAccepted: projectPath.text = window.vm.localPath(String(selectedFolder))
     }
+    FolderDialog {
+        id: locateRecentDialog
+        title: "Locate SplatForge project"
+        onAccepted: window.vm.locateRecent(window.vm.state.locateRecentPath, String(selectedFolder))
+    }
+    SplatDialog {
+        id: confirmRecentDialog
+        objectName: "confirmRecentLocation"
+        title: "Confirm project location"
+        ColumnLayout {
+            width: parent.width
+            spacing: 16
+            SplatLabel {
+                text: "This older recent entry has no saved project identity. Use the selected project?"
+                Layout.fillWidth: true
+            }
+            SplatLabel {
+                text: (window.vm.state.recentCandidate.name || "") + "\n"
+                      + (window.vm.state.recentCandidate.path || "")
+                Layout.fillWidth: true
+                wrapMode: Text.WrapAnywhere
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                SplatButton { text: "Cancel"; onClicked: confirmRecentDialog.close() }
+                SplatButton {
+                    text: "Use this project"
+                    onClicked: {
+                        window.vm.confirmRecentLocation();
+                        confirmRecentDialog.close();
+                    }
+                }
+            }
+        }
+    }
     SplatDialog {
         id: projectDialog
         objectName: "createProjectDialog"
         title: "Create New Project"
         readonly property var destination: window.vm.projectDestination(projectPath.text,
                                                                         projectName.text)
-        onOpened: projectName.forceActiveFocus()
+        onOpened: {
+            projectPath.text = window.vm.lastProjectParent();
+            projectName.forceActiveFocus();
+        }
         ColumnLayout {
             width: parent.width
             spacing: 16
@@ -678,32 +726,34 @@ ApplicationWindow {
             }
         }
     }
-    SplatDialog {
+    ImportPreviewDialog {
         id: folderConfirmation
-        title: "Review folder inventory"
+        vm: window.vm
+    }
+    SplatDialog {
+        id: scanProgress
+        objectName: "folderScanProgress"
+        title: "Scanning source folders…"
+        onRejected: window.vm.cancel()
         ColumnLayout {
             width: parent.width
             spacing: 16
+            BusyIndicator { running: window.vm.state.scan.scanning }
             SplatLabel {
-                text: window.vm.state.folderCount + " supported files · "
-                      + window.vm.state.folderIgnored
-                      + " ignored entries. Subfolders are not traversed."
+                text: window.vm.state.scan.progress.entries + " entries · "
+                      + window.vm.state.scan.progress.directories + " folders scanned"
                 Layout.fillWidth: true
             }
-            RowLayout {
-                SplatButton {
-                    text: "Cancel"
-                    onClicked: folderConfirmation.close()
-                }
-                SplatButton {
-                    text: "Add files"
-                    kind: "primary"
-                    enabled: window.vm.state.folderCount > 0
-                    onClicked: {
-                        window.vm.confirmFolder();
-                        folderConfirmation.close();
-                    }
-                }
+            SplatLabel {
+                text: "Looking for supported photos and videos. Your project has not changed."
+                color: Theme.secondary
+                Layout.fillWidth: true
+            }
+            SplatButton {
+                objectName: "cancelFolderScan"
+                text: "Cancel"
+                enabled: !window.vm.state.progress.cancelling
+                onClicked: window.vm.cancel()
             }
         }
     }

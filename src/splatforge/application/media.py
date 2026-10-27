@@ -19,7 +19,9 @@ from splatforge.application.media_contracts import (
     SourceUnavailableError,
     SourceUnstableError,
     StrictSourceUnavailableError,
+    classify_media_path,
 )
+from splatforge.application.media_progress import ImportReporter, MediaImportProgress
 from splatforge.application.projects import ProjectError
 from splatforge.core.media import (
     InventoryHeader,
@@ -147,11 +149,13 @@ class MediaService:
         source_group_id: UUID | None = None,
         camera_group_id: UUID | None = None,
         cancellation: MediaCancellation | None = None,
+        progress: Callable[[MediaImportProgress], None] | None = None,
     ) -> MediaAddResult:
         paths = tuple(path.absolute() for path in sources)
         if not paths:
             raise ProjectError("At least one source is required")
         typed_paths = tuple((path, self._media_type(path)) for path in paths)
+        reporter = ImportReporter(len(paths), progress)
         committed = self._require_v4(root)
         document = committed.document
         current = self._repository.load_current_inventory(root, document)
@@ -162,8 +166,12 @@ class MediaService:
                 if cancellation is not None:
                     cancellation.checkpoint()
                 lease = stack.enter_context(self._source_files.lease(path))
+                reporter.emit("hashing", len(prepared), path.name)
                 hashed = self._source_files.hash_lease(lease, cancellation)
+                reporter.emit("metadata", len(prepared), path.name)
                 probe = self._probe.probe(path, media_type, cancellation=cancellation)
+                if cancellation is not None:
+                    cancellation.checkpoint()
                 evidence = lease.current_evidence()
                 if evidence != hashed.evidence.evidence_after:
                     raise SourceUnstableError(f"Source changed during probe: {path}")
@@ -194,15 +202,20 @@ class MediaService:
                     )
                 )
                 validations.append((path, lease, evidence))
+                reporter.emit("checked", len(prepared), path.name)
             inventory = self._next_inventory(
                 document, current, [*(current.sources if current else ()), *prepared]
             )
+            reporter.emit("finalizing", len(prepared))
+            if cancellation is not None:
+                cancellation.checkpoint()
             saved = self._repository.commit_inventory(
                 root,
                 expected_document=document,
                 inventory=inventory,
                 validate_sources=lambda: self._validate_leases(validations),
             )
+        reporter.emit("succeeded", len(prepared))
         return MediaAddResult(
             project_revision=saved.revision,
             inventory_id=inventory.header.inventory_id,
@@ -466,11 +479,9 @@ class MediaService:
 
     @staticmethod
     def _media_type(path: Path) -> MediaType:
-        extension = path.suffix.lower()
-        if extension in {".jpg", ".jpeg", ".png"}:
-            return MediaType.PHOTO
-        if extension in {".mp4", ".mov"}:
-            return MediaType.VIDEO
+        media_type = classify_media_path(path)
+        if media_type is not None:
+            return media_type
         raise ProjectError(
             f"Unsupported media extension '{path.suffix}'; expected JPG, JPEG, PNG, MP4 or MOV"
         )

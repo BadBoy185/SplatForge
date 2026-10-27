@@ -439,6 +439,11 @@ Planning direction (not a claim that these slices are implemented):
 | M12i | Overview / History / Exports / Settings |
 | M12j | Recovery / Errors / Notifications / Polish |
 
+M12b1 explicit import/source preview passed user UX review and is separately committed.
+The selected [M12b2 plan](docs/plans/completed/2026-10-27-m12b2-folder-browser.md) covers
+mixed folder discovery/confirmation and List/Grid only; device/logical grouping,
+relink and Prepare remain subsequent work.
+
 M12f is required: a bounded sparse/camera viewer within Reconstruction Result / Review,
 with component context and the existing ReconstructionSelection / validation flow for
 export/training. No separate primary Viewer destination is required in v1. Existing

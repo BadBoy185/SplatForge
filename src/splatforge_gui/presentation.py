@@ -5,6 +5,8 @@ import traceback
 from datetime import UTC, datetime
 from functools import wraps
 
+from PySide6.QtCore import QDateTime, QTimeZone
+
 from splatforge.application.desktop import IndexRow
 from splatforge_gui.tasks import TaskError
 
@@ -71,6 +73,20 @@ def timestamp(value) -> str:
         return str(value)
 
 
+def recent_opened_label(value: str) -> str:
+    if not value:
+        return "Last opened: Not recorded"
+    try:
+        parsed = datetime.fromisoformat(value)
+        zone = QTimeZone.systemTimeZone()
+        local = QDateTime.fromMSecsSinceEpoch(int(parsed.timestamp() * 1000), zone)
+        today = QDateTime.currentDateTimeUtc().toTimeZone(zone).date()
+        date = "Today" if local.date() == today else local.toString("dd MMM yyyy")
+        return "Last opened: " + date + ", " + local.toString("HH:mm")
+    except (ValueError, OverflowError):
+        return "Last opened: Not recorded"
+
+
 def verification_label(value: str) -> str:
     """Format the facade's verified evidence without upgrading its assurance."""
     parts = value.split(" · ")
@@ -110,24 +126,31 @@ def source_description(values: dict) -> str:
     return " · ".join(p for p in parts if p)
 
 
+def source_duration(values: dict) -> str:
+    description = source_description(values)
+    return description.rsplit(" · ", 1)[-1] if (
+        values["type"] == "video" and description.count(" · ") >= 2
+    ) else "Not recorded"
+
+
 def source_summary(rows: tuple[IndexRow, ...]) -> dict:
     """Cheap inventory projection, with no source reads or verification side effects."""
     photos = sum(r.values["type"] == "photo" for r in rows)
     videos = sum(r.values["type"] == "video" for r in rows)
-    statuses = [source_availability(r.values["verification"]) for r in rows]
-    missing = statuses.count("Missing at last check")
-    unknown = statuses.count("Not checked recently")
-    issues = sum(s in {"File changed", "Could not check"} for s in statuses)
+    statuses = [r.values.get("availabilityState", "neutral") for r in rows]
+    missing = statuses.count("missing")
+    unknown = statuses.count("neutral")
+    issues = statuses.count("warning")
     if missing:
         noun = "source file was" if missing == 1 else "source files were"
-        message = f"{missing} {noun} missing at last check."
+        message = f"{missing} {noun} missing when checked this session."
     elif issues:
         noun = "source file needs" if issues == 1 else "source files need"
         message = f"{issues} {noun} attention. See their recorded check in Details."
     elif not statuses or unknown:
-        message = "File availability has not been checked recently."
+        message = "Source files have not been checked this session."
     else:
-        message = "All source files were available at their last check."
+        message = "All source files were available when checked this session."
     return {"photos": photos, "videos": videos, "checkMessage": message}
 
 
@@ -135,7 +158,10 @@ def progress_state(controller, metrics: dict) -> dict:
     active = controller.active
     result = {
         "visible": bool(active) or controller.mutating,
-        "title": {"ingest": "Adding source files…", "verify": "Checking source files…"}.get(
+        "title": {
+            "ingest": "Adding source files…", "verify": "Checking source files…",
+            "folder": "Scanning source folders…",
+        }.get(
             controller.operation, (controller.operation or "Processing").replace("_", " ").title()
         ),
         "phase": "Waiting for application progress",
@@ -147,7 +173,42 @@ def progress_state(controller, metrics: dict) -> dict:
         "canCancel": controller.can_cancel,
         "metrics": [],
         "runId": "",
+        "status": getattr(controller, "ingest_status", "idle"),
     }
+    if controller.operation == "ingest":
+        observation = controller.ingest_progress
+        result.update(phase="Waiting for project readers", eta="Estimating…")
+        if observation:
+            work = observation.observation
+            completed, total = int(work.completed), int(work.work.total)
+            phase = {
+                "hashing": "Hashing source file", "metadata": "Reading metadata",
+                "checked": "Source files checked", "finalizing": "Finalizing project",
+                "succeeded": "Import complete",
+            }[observation.phase]
+            estimate = observation.eta
+            age = max(0.0, (datetime.now(UTC) - work.observed_at).total_seconds())
+            eta = "Estimating…"
+            if observation.phase == "finalizing" or (
+                observation.phase != "succeeded" and (
+                    age > 5 or controller.ingest_cancel.is_set()
+                    or {"live_stalled", "variable_live"}.intersection(estimate.reasons)
+                )
+            ):
+                eta = "Time remaining unavailable"
+            elif estimate.likely_seconds is not None:
+                eta = (
+                    f"About {duration(estimate.lower_seconds)}–"
+                    f"{duration(estimate.upper_seconds)} remaining"
+                    if observation.phase != "succeeded" else "Complete"
+                )
+            result.update(
+                phase=phase, fraction=completed / total if total else 0,
+                work=f"{completed} / {total} files checked"
+                + (f" · {observation.filename}" if observation.filename else ""),
+                elapsed=duration(work.elapsed_seconds + age), eta=eta,
+            )
+        return result
     if not active:
         return result
     run = active[0]
@@ -163,7 +224,8 @@ def progress_state(controller, metrics: dict) -> dict:
             work=f"{stage.completed:g} / "
             + (f"{stage.work.total:g}" if stage.work.total is not None else "?")
             + f" {stage.work.unit}",
-            eta=duration(stage.eta.likely_seconds) if stage.eta.likely_seconds is not None else "",
+            eta=f"ETA ~{duration(stage.eta.likely_seconds)}"
+            if stage.eta.likely_seconds is not None else "",
             fraction=stage.fraction
             if stage.fraction is not None
             and stage.status in {"running", "cached", "succeeded", "skipped"}

@@ -136,7 +136,7 @@ def test_gallery_reports_loading_ready_and_unavailable_without_blocking(app, tmp
         assert model.data(model.index(row), model.ImageRole) == ""
     until(lambda: len(model.cache) == 2 and not model.executor.busy)
     assert model.data(model.index(0), model.StatusRole) == "Ready"
-    assert model.data(model.index(0), model.ImageRole) == "image://media/0"
+    assert model.data(model.index(0), model.ImageRole) == model.image_url("0")
     assert model.data(model.index(1), model.StatusRole) == "Preview unavailable"
     assert model.data(model.index(1), model.ImageRole) == ""
     assert any(model.StatusRole in roles and model.ImageRole in roles for roles in updates)

@@ -7,6 +7,13 @@ from uuid import UUID
 
 from pydantic import Field
 
+from splatforge.application.media_contracts import MediaCancellation, classify_media_path
+from splatforge.application.media_scan import (
+    MediaScanner,
+    MediaScanResult,
+    ScanLimits,
+    ScanProgress,
+)
 from splatforge.core.execution import CancellationRequestResult, RecoveryResult
 from splatforge.core.progress import PipelineProgressSnapshot
 from splatforge.core.project import ProjectDocument
@@ -72,7 +79,7 @@ def enumerate_media(directory: Path, limit: int = 2000) -> MediaCandidates:
             raise ValueError(f"desktop.folder_limit: more than {limit} entries; choose files")
         if path.is_symlink() or path.is_junction():
             ignored += 1
-        elif path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".mp4", ".mov"}:
+        elif path.is_file() and classify_media_path(path) is not None:
             supported.append(path)
         else:
             ignored += 1
@@ -141,6 +148,14 @@ class GuiFacade:
     def create(self, root: Path, label: str) -> ProjectDocument:
         return self.service("project").create(root, label)
 
+    def scan_media(
+        self, paths: tuple[Path, ...], *, cancellation: MediaCancellation | None = None,
+        progress: Callable[[ScanProgress], None] | None = None,
+        limits: ScanLimits | None = None,
+    ) -> MediaScanResult:
+        scanner: MediaScanner = self.service("media_scanner")
+        return scanner.scan(paths, limits=limits, cancellation=cancellation, progress=progress)
+
     def save(self, root: Path, document: ProjectDocument) -> ProjectDocument:
         return self.service("project").save(root, document)
 
@@ -172,6 +187,8 @@ class GuiFacade:
                         "duration": s.probe.duration,
                         "codec": s.probe.codec_name,
                         "sha256": s.content_sha256,
+                        "sourceRevision": s.source_revision,
+                        "lastHashedAt": s.last_full_hash_at.isoformat(),
                         "locator": s.external_locator,
                     },
                 )

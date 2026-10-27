@@ -27,10 +27,12 @@ obsolete gallery, plan, capability, selection and resume responses. Recovery own
 exclusive mutation slot but remains reachable during unresolved lifecycle state.
 An interrupted historical run with confirmed teardown does not itself block new work.
 Unresolved teardown still blocks it. Backend writer leases remain authoritative.
-Atomic project Save reserves the controller mutation slot, drains already owned reads
-and pauses metadata polling until replacement finishes. This avoids Windows sharing
+Atomic project Save and source ingest reserve the controller mutation slot, drain owned reads
+and pause metadata polling until replacement finishes. This avoids Windows sharing
 violations caused by the UI's own readers. Processing progress/cancellation keeps its
 reserved pool; no persistence retry or backend contract is introduced.
+Save-to-project-switch callbacks wait for the mutation slot's confirmed release;
+result delivery alone is not worker completion.
 
 `PresentationModel` extends the stable-UUID table model with `recordId`, `record`
 and `cellText` roles. ListView, GridView and TableView instantiate bounded visible
@@ -110,6 +112,8 @@ app-owned. Control icons use Qt's theme-aware tint, without an icon runtime depe
 Motion is brief (160 ms) and limited to control state/progress. No blur, animated
 gradient or decorative continuous animation is used. Indeterminate progress animates
 only while active. Automatic Windows reduced-motion preference mapping is not claimed.
+Button/navigation backgrounds apply theme and selection directly, so their contrast
+and selected state do not depend on animation scheduling.
 
 ## Guided and Advanced
 
@@ -170,6 +174,44 @@ responses. Errors remain inspectable inside the popup. Published-view browsing i
 secondary in Source Details, with no empty result picker or irrelevant pagination.
 Continue is visibly disabled with an explanation until the Prepare Data screen exists;
 it never starts processing. See the [bounded plan](plans/completed/2026-10-27-m12b1-sources-preview.md).
+
+### M12b2 mixed-folder preview and browser
+
+Sources routes mixed drops through a read-only application scanner and filesystem
+adapter before explicit confirmation. QML receives scan progress/counts and a
+virtualized detail model; it never traverses the filesystem. Scanner limits and
+partial/unreadable results are visible. See [M12 behavior and bounds](M12.md#navigation-and-settings).
+
+Empty Sources centers equal primary photo/video actions and secondary Add Folder.
+After import, a compact toolbar and List/Grid switch leave the browser central.
+Both views share source UUIDs, selection and ordering. Grid-only image roles request
+lazy bounded photo thumbnails through MediaProvider; hidden/list views do not preload
+them. Video tiles remain source assets with stored metadata and a play marker.
+Existing SourcePreviewDialog owns photo preview/navigation. QSettings stores the view
+choice and last successful Create parent; neither belongs to portable project intent.
+
+Each thumbnail-model replacement rotates its URL namespace, clears cached/queued
+work and rejects late replies from an older generation. Providers serve only current
+references. Project Open/Create also revokes large previews and source selection,
+including reopening the same identity. Video tiles have no photo Image component.
+Selection has a persistent accent outline; per-card/video-row Details selects and
+opens the same source inspector. Human type, dimensions, duration, location and status
+come first; identity/hash/codec/evidence stay under collapsed Technical Details.
+
+Availability is session evidence, never monitoring: successful ingest and explicit
+checks show Available, reopening shows Not checked this session, missing originals
+show Missing, and changed/unreadable/incomplete checks show Needs attention. Text
+and semantic indicators accompany color. Historical evidence remains in Details.
+Check Source Files explains that it checks originals at their saved locations.
+
+Home shows Recent Projects with or without an open workspace. Existing QSettings
+stores label, project identity, path and successful last-opened time. Missing paths
+offer Locate and Remove from list; Locate validates through ProjectService and refuses
+a different saved identity. Legacy entries without identity require confirmation.
+Remove touches only the preference. Import counts completed hash/probe checks and
+reports the real current file/phase; M6.5 live throughput supplies ETA only after
+stable evidence, with no synthetic progress or persistent performance samples.
+Durable source exclusion is the separate M12b2a follow-up contract.
 
 ## Accessibility and desktop layout
 

@@ -29,6 +29,10 @@ ColumnLayout {
             onClicked: page.newProject()
         }
     }
+    RecentProjects {
+        vm: page.vm
+        Layout.fillWidth: true
+    }
     SplatBanner {
         visible: page.vm.state.unresolved
         Layout.fillWidth: true
@@ -129,102 +133,6 @@ ColumnLayout {
                 onClicked: {
                     page.vm.navigate(5);
                     page.vm.inspection.inspectArtifact(page.vm.state.project.latestId);
-                }
-            }
-        }
-    }
-    RowLayout {
-        Layout.fillWidth: true
-        SplatLabel {
-            text: page.vm.state.hasProject ? "Project location" : "Recent Projects"
-            font.pixelSize: Theme.section
-            font.weight: Font.DemiBold
-            Layout.fillWidth: true
-        }
-        SplatLabel {
-            text: page.vm.state.hasProject ? "LOCAL PROJECT" : "ON THIS MACHINE"
-            font.pixelSize: Theme.caption
-            color: Theme.muted
-            font.letterSpacing: 1
-        }
-    }
-    SplatCard {
-        visible: page.vm.state.hasProject
-        Layout.fillWidth: true
-        implicitHeight: 72
-        RowLayout {
-            anchors.fill: parent
-            SplatLabel {
-                text: page.vm.state.project.path || ""
-                font.family: Theme.mono
-                color: Theme.secondary
-                Layout.fillWidth: true
-                elide: Text.ElideMiddle
-                wrapMode: Text.NoWrap
-            }
-            SplatButton {
-                text: "Copy path"
-                kind: "ghost"
-                onClicked: page.vm.copyText(page.vm.state.project.path)
-            }
-        }
-    }
-    SplatEmptyState {
-        visible: !page.vm.state.hasProject && page.vm.state.recents.length === 0
-        Layout.fillWidth: true
-        implicitHeight: 190
-        title: "A fresh perspective starts here"
-        detail: "Create your first project, or open an existing SplatForge workspace."
-        iconName: "folder"
-    }
-    ListView {
-        visible: !page.vm.state.hasProject && count > 0
-        Layout.fillWidth: true
-        Layout.preferredHeight: Math.min(contentHeight, 360)
-        model: page.vm.state.recents
-        spacing: 8
-        clip: true
-        delegate: SplatCard {
-            id: recent
-            required property var modelData
-            width: ListView.view.width
-            height: 86
-            padding: 16
-            RowLayout {
-                anchors.fill: parent
-                SplatButton {
-                    iconName: "folder"
-                    kind: "ghost"
-                    enabled: false
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    SplatLabel {
-                        text: recent.modelData.name
-                        font.weight: Font.DemiBold
-                    }
-                    SplatLabel {
-                        text: recent.modelData.available ? recent.modelData.summary + " · "
-                                                           + recent.modelData.path :
-                                                           "Unavailable · " + recent.modelData.path
-                        color: Theme.muted
-                        font.pixelSize: Theme.small
-                        Layout.fillWidth: true
-                        elide: Text.ElideMiddle
-                        wrapMode: Text.NoWrap
-                    }
-                }
-                SplatButton {
-                    text: "Remove"
-                    kind: "ghost"
-                    onClicked: page.vm.removeRecent(recent.modelData.path)
-                }
-                SplatButton {
-                    text: "Open"
-                    objectName: "openRecentProject"
-                    iconName: "arrow"
-                    enabled: recent.modelData.available && !page.vm.state.busy
-                    onClicked: page.vm.openProject(recent.modelData.path)
                 }
             }
         }

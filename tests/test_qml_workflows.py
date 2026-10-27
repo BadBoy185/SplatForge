@@ -235,6 +235,9 @@ def test_create_dialog_preview_validation_cancel_and_sources(desktop, tmp_path):
         assert not root.exists() and not desktop.state["hasProject"]
         assert not desktop.preferences.recent()
         click(window, "newProject")
+        # Cancel has not persisted a parent; prefill uses successful Create only.
+        assert location.property("text") == ""
+        location.setProperty("text", str(tmp_path))
         click(window, "confirmCreateProject")
         until(lambda: not desktop.controller.executor.busy)
         assert desktop.state["page"] == 1 and desktop.controller.root == root
@@ -277,6 +280,9 @@ def test_unsaved_switch_save_discard_cancel(desktop, tmp_path):
     desktop.openProject(str(other))
     desktop.resolveUnsaved("save")
     until(lambda: desktop.controller.overview is not None and desktop.controller.root == other)
+    # Project adoption/result and worker-finished ownership release are separate
+    # queued events. The next mutation starts only after Open has finished.
+    until(lambda: not desktop.controller.executor.busy)
     assert build_project_service().open(root).label == "Draft"
     desktop.controller.edit(
         desktop.controller.overview.document.model_copy(update={"label": "Discard"})

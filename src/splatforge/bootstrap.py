@@ -101,6 +101,7 @@ def build_project_service() -> ProjectService:
 def build_gui_facade() -> "GuiFacade":
     """Optional desktop composition without importing Qt into the backend."""
     from splatforge.adapters.desktop_reader import LocalDesktopReader
+    from splatforge.adapters.media_scanner import LocalMediaScanner
     from splatforge.application.desktop import GuiFacade
 
     return GuiFacade(LocalDesktopReader(), {
@@ -113,6 +114,7 @@ def build_gui_facade() -> "GuiFacade":
         "selection": build_reconstruction_selection_service, "dataset": build_dataset_service,
         "training": build_training_service, "cleanup": build_cleanup_service,
         "doctor": build_doctor_service,
+        "media_scanner": LocalMediaScanner,
     })
 
 

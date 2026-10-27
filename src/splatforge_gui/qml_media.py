@@ -9,6 +9,7 @@ from PySide6.QtQuick import QQuickImageProvider
 
 from splatforge.application.desktop import ThumbnailReference
 from splatforge_gui.presentation import guarded
+from splatforge_gui.qml_models import PresentationModel
 from splatforge_gui.thumbnails import ThumbnailModel, decode_thumbnail
 
 
@@ -35,7 +36,7 @@ class GalleryModel(ThumbnailModel):
                 self.cache.move_to_end(reference.identity)
             elif reference.identity not in self.pending:
                 self.pending.add(reference.identity)
-                self.request.emit(reference.identity, reference.path)
+                self.request.emit(reference.identity, reference.path, self.generation)
             if role == self.StatusRole:
                 if reference.identity not in self.cache:
                     return "Loading preview…"
@@ -43,17 +44,19 @@ class GalleryModel(ThumbnailModel):
                     "Ready" if self.cache[reference.identity] is not None else "Preview unavailable"
                 )
             return (
-                "image://media/" + reference.identity if self.cache.get(reference.identity) else ""
+                self.image_url(reference.identity) if self.cache.get(reference.identity) else ""
             )
         return super().data(index, role)
 
-    def _store(self, identity: str, image) -> None:
-        super()._store(identity, image)
+    def _store(self, identity: str, image, generation: int | None = None) -> bool:
+        if not super()._store(identity, image, generation):
+            return False
         for i, reference in enumerate(self.references):
             if reference.identity == identity:
                 self.dataChanged.emit(
                     self.index(i), self.index(i), [self.ImageRole, self.StatusRole]
                 )
+        return True
 
 
 class MediaProvider(QQuickImageProvider):
@@ -62,15 +65,96 @@ class MediaProvider(QQuickImageProvider):
         self.model = model
         self.large = QImage()
         self.large_identity = ""
+        self.source_model = None
 
     def requestImage(self, identity, size, requestedSize) -> QImage:
-        value = (
-            self.large if identity == self.large_identity else self.model.cache.get(identity)
-        )
+        if identity and identity == self.large_identity:
+            value = self.large
+        else:
+            value = self.source_model.lookup(identity) if self.source_model is not None else None
+            if value is None:
+                value = self.model.lookup(identity)
         result = QImage(value) if value is not None else QImage()
         size.setWidth(result.width())
         size.setHeight(result.height())
         return result
+
+
+class SourceBrowserModel(PresentationModel):
+    """Same UUID rows/selection as List; only Grid roles request bounded thumbnails."""
+
+    ImageRole = PresentationModel.CellRole + 1
+    StatusRole = ImageRole + 1
+
+    def __init__(self, columns=(), parent=None) -> None:
+        super().__init__(columns, parent)
+        self.thumbnails = GalleryModel(self)
+        self._photo_indices = {}
+        self._source_indices = {}
+        self._signature = ()
+        self._context = None
+        self.thumbnails.dataChanged.connect(self._thumbnail_changed)
+
+    def roleNames(self) -> dict:
+        return {**super().roleNames(), self.ImageRole: b"imageUrl", self.StatusRole: b"thumbStatus"}
+
+    def set_context(self, context) -> None:
+        if context != self._context:
+            self._context = context
+            self._signature = ()
+            self._photo_indices.clear()
+            self.thumbnails.replace(())
+            self.select("")
+
+    def replace(self, rows, view=None) -> None:
+        from pathlib import Path
+
+        from PySide6.QtCore import QUrl
+
+        rows = tuple(rows)
+        signature = tuple(
+            (str(r.identity), r.values.get("locator", ""))
+            for r in rows if r.values["type"] == "photo"
+        )
+        if signature != self._signature:
+            self._signature = signature
+            token = uuid4().hex
+            references = []
+            self._photo_indices = {}
+            for identity, locator in signature:
+                url = QUrl(locator)
+                path = Path(url.toLocalFile() if url.isLocalFile() else locator)
+                self._photo_indices[identity] = len(references)
+                references.append(ThumbnailReference(
+                    identity=f"source/{token}/{identity}", path=path, caption=identity,
+                ))
+            self.thumbnails.replace(references)
+        self._source_indices = {str(r.identity): i for i, r in enumerate(rows)}
+        super().replace(rows, view)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if role in {self.ImageRole, self.StatusRole}:
+            if not index.isValid() or not 0 <= index.row() < len(self.rows):
+                return ""
+            row = self.rows[index.row()]
+            photo_index = self._photo_indices.get(str(row.identity))
+            if row.values["type"] != "photo":
+                photo_index = None
+            if photo_index is None:
+                return "" if role == self.ImageRole else "Video"
+            return self.thumbnails.data(
+                self.thumbnails.index(photo_index),
+                GalleryModel.ImageRole if role == self.ImageRole else GalleryModel.StatusRole,
+            )
+        return super().data(index, role)
+
+    def _thumbnail_changed(self, first, last, roles) -> None:
+        for i in range(first.row(), last.row() + 1):
+            identity = self.thumbnails.references[i].caption
+            source_index = self._source_indices.get(identity)
+            if source_index is not None:
+                index = self.index(source_index, 0)
+                self.dataChanged.emit(index, index, [self.ImageRole, self.StatusRole])
 
 
 class MediaViewModel(QObject):
@@ -81,6 +165,7 @@ class MediaViewModel(QObject):
         self.desktop, self.controller = desktop, desktop.controller
         self._gallery = GalleryModel(self)
         self.provider = MediaProvider(self._gallery)
+        self.provider.source_model = desktop._source.thumbnails
         self._token, self._offset, self._large, self._message = "", 0, "", ""
         self._gallery_run = ""
         self._project = None
@@ -116,8 +201,9 @@ class MediaViewModel(QObject):
         }
 
     def overview(self, overview) -> None:
-        if self._project != overview.document.project_id:
-            self._project = overview.document.project_id
+        context = (overview.document.project_id, self.controller.generation, self.controller.root)
+        if self._project != context:
+            self._project = context
             self._token = uuid4().hex
             self._gallery.replace(())
             self._offset, self._large, self._message = 0, "", ""

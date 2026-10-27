@@ -34,11 +34,6 @@ Button {
                                                              ? "transparent" : Theme.raised
         border.width: control.visualFocus ? 2 : control.kind === "secondary" ? 1 : 0
         border.color: control.visualFocus ? Theme.accent : Theme.border
-        Behavior on color {
-            ColorAnimation {
-                duration: Theme.motion
-            }
-        }
     }
     ToolTip.visible: hovered && text === ""
     ToolTip.text: Accessible.name

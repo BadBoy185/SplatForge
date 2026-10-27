@@ -9,6 +9,15 @@ from typing import BinaryIO, Protocol
 from splatforge.core.media import FullHashEvidence, MediaType, NormalizedProbe, SourceEvidence
 
 
+def classify_media_path(path: Path) -> MediaType | None:
+    """Extension candidacy only; ingest still probes and validates actual content."""
+    if path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+        return MediaType.PHOTO
+    if path.suffix.lower() in {".mp4", ".mov"}:
+        return MediaType.VIDEO
+    return None
+
+
 class MediaAdapterError(ValueError):
     code = "media_adapter_failure"
 

@@ -98,6 +98,9 @@ def test_thumbnails_are_scaled_lazy_and_bounded(app, tmp_path):
     until(app, lambda: bool(model.cache))
     assert model.data(model.index(0), Qt.ItemDataRole.DecorationRole) is not None
     until(app, lambda: not model.executor.busy)
+    model.replace(tuple(
+        ThumbnailReference(identity=str(i), path=path, caption=str(i)) for i in range(200)
+    ))
     for i in range(200):
         model._store(str(i), image)
     assert len(model.cache) == 128

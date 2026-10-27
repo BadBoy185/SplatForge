@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
@@ -20,6 +21,8 @@ class ProjectController(QObject):
     error = Signal(object)
     busy_changed = Signal(bool)
     dirty_changed = Signal(bool)
+    scan_progress = Signal(int, object)
+    import_observed = Signal(int, str, object)
 
     def __init__(self, parent=None, factory: Callable = build_gui_facade) -> None:
         super().__init__(parent)
@@ -37,6 +40,11 @@ class ProjectController(QObject):
         self.request = None
         self.reconstruction_plan = None
         self._pending_save = None
+        self._pending_ingest = None
+        self.ingest_progress = None
+        self.ingest_status = "idle"
+        self._ingest_token = ""
+        self.import_observed.connect(self._import_observed)
         self.executor.result.connect(self._result)
         self.executor.error.connect(self._error)
         self.executor.finished.connect(self._finished)
@@ -54,7 +62,7 @@ class ProjectController(QObject):
         return bool(self.active) or (
             self.mutating
             and self.operation
-            in {"ingest", "verify", "reconstruction", "selection", "dataset", "training"}
+            in {"folder", "ingest", "verify", "reconstruction", "selection", "dataset", "training"}
         )
 
     @property
@@ -75,9 +83,11 @@ class ProjectController(QObject):
         mutation: bool = False,
         allow_unresolved: bool = False,
     ) -> str:
-        if self.operation == "save" and name != "save":
+        if self.operation in {"save", "ingest"} and name != self.operation and not (
+            self.operation == "ingest" and name in {"image", "qml_image"}
+        ):
             self.error.emit(
-                TaskError("Wait for project metadata to finish saving", "ProjectBusy", "", name)
+                TaskError("Wait for the project metadata write to finish", "ProjectBusy", "", name)
             )
             return ""
         if mutation and (
@@ -138,7 +148,9 @@ class ProjectController(QObject):
         self.submit(name, load, mutation=True)
 
     def refresh(self) -> None:
-        if self.root is None or self.refreshing or self.operation in {"save", "create", "open"}:
+        if self.root is None or self.refreshing or self.operation in {
+            "save", "ingest", "create", "open"
+        }:
             return
         root = self.root
         self.refreshing = True
@@ -146,7 +158,13 @@ class ProjectController(QObject):
 
     @Slot()
     def poll(self) -> None:
-        if self.root is None or self.polling or self.operation in {"save", "create", "open"}:
+        if self.operation == "ingest":
+            # Re-evaluate observation age/ETA only; never advance completed work.
+            self.progress_changed.emit(())
+            return
+        if self.root is None or self.polling or self.operation in {
+            "save", "ingest", "create", "open"
+        }:
             return
         root = self.root
         self.polling = True
@@ -199,24 +217,80 @@ class ProjectController(QObject):
                 self.submit("cancel", lambda f, run=active.run_id: f.cancel(root, run))
 
     def scan_folder(self, directory: Path) -> None:
-        from splatforge.application.desktop import enumerate_media
+        self.scan_media((directory,))
 
-        self.submit("folder", lambda f: enumerate_media(directory))
-
-    def ingest(self, paths: tuple[Path, ...]) -> None:
+    def scan_media(self, paths: tuple[Path, ...]) -> None:
         from splatforge.application.media import CallbackCancellation
 
+        generation = self.generation
+        cancellation = CallbackCancellation(self.ingest_cancel.is_set)
+        self.submit(
+            "folder",
+            lambda f: f.scan_media(
+                paths, cancellation=cancellation,
+                progress=lambda value: self.scan_progress.emit(generation, value),
+            ),
+            mutation=True,
+        )
+
+    def ingest(self, paths: tuple[Path, ...]) -> None:
         root = self.root
         if root is None:
             self.error.emit(TaskError("Open a project first", "NoProject", "", "ingest"))
             return
+        if self.mutating or self.active or self.has_unresolved:
+            self.submit("ingest", lambda _: None, mutation=True)
+            return
+        # Ingest replaces project.json too. Use Save's owned-reader reservation,
+        # without retrying a persistence failure or changing backend publication.
+        self._pending_ingest = (root, paths)
+        self._ingest_token = uuid4().hex
+        self.ingest_progress, self.ingest_status = None, "running"
+        self.mutating, self.operation = True, "ingest"
         self.ingest_cancel.clear()
+        self.busy_changed.emit(True)
+        self._start_pending_ingest()
+
+    def _start_pending_ingest(self) -> None:
+        from splatforge.application.media import CallbackCancellation
+
+        if self._pending_ingest is None or self.jobs:
+            return
+        root, paths = self._pending_ingest
+        self._pending_ingest = None
+        self.mutating, self.operation = False, None
+        self.busy_changed.emit(False)
+        if self.ingest_cancel.is_set():
+            self.ingest_status = "cancelled"
+            self.completed.emit("cancelled", "Source import cancelled before starting")
+            self.refresh()
+            return
         cancellation = CallbackCancellation(self.ingest_cancel.is_set)
+        generation, token = self.generation, self._ingest_token
         self.submit(
             "ingest",
-            lambda f: f.service("media").add(root, paths, cancellation=cancellation),
+            lambda f: f.service("media").add(
+                root, paths, cancellation=cancellation,
+                progress=lambda value: self.import_observed.emit(generation, token, value),
+            ),
             mutation=True,
         )
+
+    @Slot(int, str, object)
+    def _import_observed(self, generation: int, token: str, value) -> None:
+        if (generation != self.generation or token != self._ingest_token
+                or self.operation != "ingest" or self.ingest_status != "running"):
+            return
+        previous = self.ingest_progress
+        if previous and (
+            value.observation.completed < previous.observation.completed
+            or value.observation.elapsed_seconds < previous.observation.elapsed_seconds
+        ):
+            return
+        self.ingest_progress = value
+        if value.phase == "succeeded":
+            self.ingest_status = "succeeded"
+        self.progress_changed.emit(())
 
     def verify_sources(self) -> None:
         from splatforge.application.media import CallbackCancellation
@@ -464,8 +538,11 @@ class ProjectController(QObject):
         name, _, generation = self.jobs[identity]
         if generation != self.generation:
             return
+        if name == "folder" and self.ingest_cancel.is_set():
+            self.completed.emit("cancelled", "Folder scan cancelled")
+            return
         if name == "refresh":
-            if self.operation == "save":
+            if self.operation in {"save", "ingest"}:
                 return  # A fresh overview follows the reserved metadata write.
             self.overview, self.active = result, result.active
             self.changed.emit(result)
@@ -482,6 +559,8 @@ class ProjectController(QObject):
             # Reads can still be requested against the retained workspace while
             # loading. None of their replies belong to the adopted workspace.
             self.generation += 1
+            self._ingest_token = ""
+            self.ingest_progress, self.ingest_status = None, "idle"
             self.root, self.overview = result
             self.active = self.overview.active
             self.request = self.reconstruction_plan = None
@@ -490,6 +569,8 @@ class ProjectController(QObject):
             self.dirty_changed.emit(False)
         elif name == "save":
             self.discard()
+        elif name == "ingest":
+            self.ingest_status = "succeeded"
         elif name == "request":
             document = self.draft or self.overview.document
             if result[0] != document.settings.model_dump_json():
@@ -505,6 +586,12 @@ class ProjectController(QObject):
     @Slot(str, object)
     def _error(self, identity: str, error) -> None:
         if self.jobs[identity][2] == self.generation:
+            if self.jobs[identity][0] == "ingest":
+                self.ingest_status = (
+                    "cancelled"
+                    if error.category in {"MediaOperationCancelled", "ProbeCancelledError"}
+                    else "failed"
+                )
             if self.jobs[identity][0] == "cancel":
                 self.cancelled_runs.clear()
                 self.ingest_cancel.clear()
@@ -532,3 +619,4 @@ class ProjectController(QObject):
             self.busy_changed.emit(False)
             self.refresh()
         self._start_pending_save()
+        self._start_pending_ingest()

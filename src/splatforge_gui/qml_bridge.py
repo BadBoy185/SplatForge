@@ -1,8 +1,10 @@
 """Narrow desktop presentation boundary; all service work uses ProjectController."""
 
+import os
 from pathlib import Path
+from uuid import uuid4
 
-from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, QStringListModel, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 
 from splatforge_gui.controller import ProjectController
@@ -14,15 +16,17 @@ from splatforge_gui.presentation import (
     guarded,
     progress_state,
     project_name_error,
-    source_availability,
+    recent_opened_label,
     source_description,
+    source_duration,
     source_summary,
     timestamp,
     verification_label,
 )
 from splatforge_gui.qml_dialogs import ComponentSelectionModel, ExactSettingsModel
-from splatforge_gui.qml_media import MediaViewModel
+from splatforge_gui.qml_media import MediaViewModel, SourceBrowserModel
 from splatforge_gui.qml_models import PresentationModel
+from splatforge_gui.source_status import SourceSession
 from splatforge_gui.workflow_vm import WorkflowViewModel
 
 
@@ -35,7 +39,8 @@ class DesktopViewModel(QObject):
         super().__init__(parent)
         self.controller = controller or ProjectController(self)
         self.preferences = preferences or Preferences()
-        self._source = PresentationModel(SOURCE_COLUMNS, self)
+        self._source_session = SourceSession()
+        self._source = SourceBrowserModel(SOURCE_COLUMNS, self)
         self._artifacts = PresentationModel(ARTIFACT_COLUMNS, self)
         self._outputs = PresentationModel(ARTIFACT_COLUMNS, self)
         self._runs = PresentationModel(RUN_COLUMNS, self)
@@ -44,9 +49,17 @@ class DesktopViewModel(QObject):
         self._page = 0
         self._metrics, self._project, self._error = {}, {}, {}
         self._recents = []
+        self._locate_path, self._locate_token = "", ""
+        self._recent_candidate = None
         self._pending, self._after_save = None, None
         self._pending_close = False
         self._folder = None
+        self._scan_files = QStringListModel(self)
+        self._scan_progress = {"entries": 0, "directories": 0}
+        self._scan_summary = self._empty_scan_summary()
+        self._source_view = self.preferences.get("source_view_mode", "List")
+        if self._source_view not in {"List", "Grid"}:
+            self._source_view = "List"
         self._notice = ""
         self._source_summary = source_summary(())
         self._mode = self.preferences.get("mode", "Guided")
@@ -61,10 +74,11 @@ class DesktopViewModel(QObject):
         self.controller.changed.connect(self._overview)
         self.controller.progress_changed.connect(lambda _: self.changed.emit())
         self.controller.metrics_changed.connect(self._live_metrics)
-        self.controller.busy_changed.connect(lambda _: self.changed.emit())
+        self.controller.busy_changed.connect(self._busy_changed)
         self.controller.dirty_changed.connect(lambda _: self.changed.emit())
         self.controller.error.connect(self._failed)
         self.controller.completed.connect(self._completed)
+        self.controller.scan_progress.connect(self._scanning)
         self.refresh_recents()
 
     @Property(QObject, constant=True)
@@ -82,6 +96,10 @@ class DesktopViewModel(QObject):
     @Property(QObject, constant=True)
     def sources(self) -> QObject:
         return self._source
+
+    @Property(QObject, constant=True)
+    def scanFiles(self) -> QObject:
+        return self._scan_files
 
     @Property(QObject, constant=True)
     def artifacts(self) -> QObject:
@@ -121,13 +139,42 @@ class DesktopViewModel(QObject):
             ),
             "progress": progress_state(self.controller, self._metrics),
             "recents": self._recents,
+            "locateRecentPath": self._locate_path,
+            "recentCandidate": {
+                "name": self._recent_candidate[2].label,
+                "path": str(self._recent_candidate[1]),
+            } if self._recent_candidate else {},
             "machine": self._machine,
             "error": self._error,
             "notice": self._notice,
             "sourcesSummary": self._source_summary,
-            "folderCount": len(self._folder.supported) if self._folder else 0,
-            "folderIgnored": self._folder.ignored if self._folder else 0,
+            "folderCount": self._scan_summary["photos"] + self._scan_summary["videos"],
+            "folderIgnored": self._scan_summary["ignored"],
+            "scan": {
+                **self._scan_summary,
+                "scanning": self.controller.operation == "folder",
+                "progress": self._scan_progress,
+            },
+            "sourceView": self._source_view,
         }
+
+    @Slot(str)
+    def setSourceView(self, value: str) -> None:
+        if value in {"List", "Grid"}:
+            self._source_view = value
+            self.preferences.set("source_view_mode", value)
+            self.changed.emit()
+
+    @Slot(result=str)
+    def lastProjectParent(self) -> str:
+        value = str(self.preferences.get("last_project_parent", ""))
+        return value if value and Path(value).is_dir() else ""
+
+    @Slot(int, object)
+    def _scanning(self, generation: int, value) -> None:
+        if generation == self.controller.generation and self.controller.operation == "folder":
+            self._scan_progress = value.model_dump()
+            self.changed.emit()
 
     @Slot(int)
     def navigate(self, page: int) -> None:
@@ -243,32 +290,73 @@ class DesktopViewModel(QObject):
         self.preferences.remove(path)
         self.refresh_recents()
 
-    def refresh_recents(self) -> None:
-        if self.controller.operation == "save":
+    @Slot(str)
+    def beginLocateRecent(self, path: str) -> None:
+        self._locate_path = path
+        self.changed.emit()
+        self.dialogRequested.emit("locateRecent")
+
+    @Slot(str, str)
+    @guarded
+    def locateRecent(self, old_path: str, new_path: str) -> None:
+        entry = next((e for e in self.preferences.entries() if e["path"] == old_path), None)
+        if entry is None:
             return
-        paths = self.preferences.recent()
+        token = self._locate_token = uuid4().hex
+        target = self.local_path(new_path).absolute()
+
+        def inspect(facade):
+            document = facade.service("project").open(target)
+            if entry["projectId"] and entry["projectId"] != str(document.project_id):
+                raise ValueError(
+                    "This is a different SplatForge project. Choose the relocated project."
+                )
+            return token, entry, target, document
+
+        self.controller.submit("locate_recent", inspect)
+
+    @Slot()
+    def confirmRecentLocation(self) -> None:
+        if self._recent_candidate:
+            entry, target, document = self._recent_candidate
+            if entry in self.preferences.entries():
+                self.preferences.relocate(
+                    entry["path"], str(target), str(document.project_id), document.label,
+                )
+            self._recent_candidate = None
+            self.refresh_recents()
+
+    def refresh_recents(self) -> None:
+        if self.controller.operation in {"save", "ingest"}:
+            return
+        entries = self.preferences.entries()
 
         def read(facade):
             result = []
-            for path in paths:
+            for entry in entries:
+                path = entry["path"]
                 item = {
-                    "path": path,
-                    "name": Path(path).name,
+                    **entry,
                     "available": False,
-                    "summary": "Unavailable",
+                    "summary": "Project not found",
+                    "lastOpenedLabel": recent_opened_label(entry["lastOpened"]),
                 }
                 try:
-                    document = facade.overview(Path(path)).document
+                    document = facade.service("project").open(Path(path))
+                    if entry["projectId"] and entry["projectId"] != str(document.project_id):
+                        raise ValueError("A different project is at this location")
                     item.update(
                         name=document.label,
                         projectId=str(document.project_id),
                         available=True,
                         summary="Available",
                     )
-                except (OSError, ValueError):
-                    pass
+                except (OSError, ValueError) as exc:
+                    if Path(path).is_dir():
+                        item["summary"] = "Project could not be opened"
+                    item["details"] = str(exc)
                 result.append(item)
-            return paths, result
+            return entries, result
 
         self.controller.submit("recent_projects", read)
 
@@ -280,13 +368,29 @@ class DesktopViewModel(QObject):
     @Slot(str)
     @guarded
     def addFolder(self, path: str) -> None:
+        self.cancelFolder()
+        self._scan_progress = {"entries": 0, "directories": 0}
         self.controller.scan_folder(self.local_path(path))
 
     @Slot()
     def confirmFolder(self) -> None:
-        if self._folder:
+        if self._folder and self._folder.supported and self.state["canMutate"]:
             self.controller.ingest(self._folder.supported)
-            self._folder = None
+            self.cancelFolder()
+
+    @Slot()
+    def cancelFolder(self) -> None:
+        self._folder = None
+        self._scan_summary = self._empty_scan_summary()
+        self._scan_files.setStringList([])
+        self.changed.emit()
+
+    @staticmethod
+    def _empty_scan_summary() -> dict:
+        return dict(
+            photos=0, videos=0, ignored=0, directories=0,
+            limited=False, unreadable=False, existing=0,
+        )
 
     @Slot()
     def verifySources(self) -> None:
@@ -296,7 +400,11 @@ class DesktopViewModel(QObject):
     @guarded
     def dropUrls(self, urls: list) -> None:
         paths = tuple(self.local_path(str(u)) for u in urls)
-        if len(paths) == 1 and paths[0].is_dir():
+        if self.controller.overview and self._page == 1 and paths:
+            self.cancelFolder()
+            self._scan_progress = {"entries": 0, "directories": 0}
+            self.controller.scan_media(paths)
+        elif len(paths) == 1 and paths[0].is_dir():
             self.openProject(str(paths[0]))
         elif paths and self.controller.overview:
             supported = tuple(
@@ -326,7 +434,8 @@ class DesktopViewModel(QObject):
             self.dialogRequested.emit("unsaved")
             return False
         self.controller.timer.stop()
-        if self.controller.executor.busy or self._media._gallery.executor.busy:
+        if (self.controller.executor.busy or self._media._gallery.executor.busy
+                or self._source.thumbnails.executor.busy):
             QTimer.singleShot(100, self.closeReady.emit)
             return False
         return True
@@ -338,6 +447,10 @@ class DesktopViewModel(QObject):
             self.cancel()
 
     def _overview(self, value) -> None:
+        context = (value.document.project_id, self.controller.generation, self.controller.root)
+        if self._source_session.enter(context):
+            self._source.set_context(context)
+            self.dialogRequested.emit("closeSourceDetails")
         first = not self._project
         self._project = {
             "id": str(value.document.project_id),
@@ -353,6 +466,19 @@ class DesktopViewModel(QObject):
                 {"name": w.name, "status": w.status, "detail": w.detail} for w in value.workflow
             ],
         }
+        self._project_sources(value)
+        self._runs.replace(value.index.runs)
+        self._artifacts.replace(
+            tuple(
+                r.model_copy(update={"values": {
+                    **r.values, "title": artifact_name(r.values["artifact_type"]),
+                    "publishedLabel": timestamp(r.values.get("published_at")),
+                }}) for r in value.index.artifacts
+            )
+        )
+        self._finish_overview(value, first)
+
+    def _project_sources(self, value) -> None:
         self._source.replace(
             tuple(
                 r.model_copy(
@@ -360,30 +486,22 @@ class DesktopViewModel(QObject):
                         "values": {
                             **r.values,
                             "verificationLabel": verification_label(r.values["verification"]),
-                            "availability": source_availability(r.values["verification"]),
+                            **self._source_session.project(r),
                             "description": source_description(r.values),
+                            "durationLabel": source_duration(r.values),
+                            "lastVerifiedLabel": timestamp(
+                                r.values["verification"].split(" · ")[-1]
+                            )
+                            if len(r.values["verification"].split(" · ")) == 3 else "Not recorded",
                         }
                     }
                 )
                 for r in value.sources
             )
         )
-        self._source_summary = source_summary(value.sources)
-        self._runs.replace(value.index.runs)
-        self._artifacts.replace(
-            tuple(
-                r.model_copy(
-                    update={
-                        "values": {
-                            **r.values,
-                            "title": artifact_name(r.values["artifact_type"]),
-                            "publishedLabel": timestamp(r.values.get("published_at")),
-                        }
-                    }
-                )
-                for r in value.index.artifacts
-            )
-        )
+        self._source_summary = source_summary(self._source.rows)
+
+    def _finish_overview(self, value, first: bool) -> None:
         important = {
             "mapping.reconstruction_set",
             "dataset.prepared_set",
@@ -422,7 +540,6 @@ class DesktopViewModel(QObject):
             latestTitle=latest.values["title"] if latest else "No published result yet",
             latestId=str(latest.identity) if latest else "",
         )
-        self.preferences.remember(self.controller.root)
         self.refresh_recents()
         if first:
             self._page = max(0, min(6, int(self.preferences.get("page", 0))))
@@ -438,8 +555,19 @@ class DesktopViewModel(QObject):
         self._metrics = metrics
         self.changed.emit()
 
+    def _busy_changed(self, busy: bool) -> None:
+        if not busy and self._after_save and not self.controller.dirty:
+            callback, self._after_save = self._after_save, None
+            # Result delivery and worker-finished delivery are distinct queued
+            # events. A zero timer from completed alone can run before teardown.
+            QTimer.singleShot(0, callback)
+        self.changed.emit()
+
     def _failed(self, error) -> None:
         self._pending_close, self._after_save = False, None
+        if error.stage == "verify" and self.controller.overview:
+            self._source_session.uncertain(self._source.rows, "Source check could not finish.")
+            self._project_sources(self.controller.overview)
         message = error.message
         if error.stage == "create" and message == "Project destination must be missing or empty":
             message = "This destination already contains files. Choose another name or location."
@@ -455,20 +583,61 @@ class DesktopViewModel(QObject):
     def _completed(self, name: str, value) -> None:
         if name in {"create", "open"}:
             self._error, self._metrics, self._folder = {}, {}, None
+            self.cancelFolder()
+            self.dialogRequested.emit("closeFolder")
+            document = self.controller.overview.document
+            self.preferences.remember(
+                self.controller.root, project_id=str(document.project_id), name=document.label,
+            )
+            self.refresh_recents()
             if name == "create":
+                self.preferences.set("last_project_parent", str(self.controller.root.parent))
                 self.navigate(1)
         elif name == "recent_projects":
-            if value[0] == self.preferences.recent():
+            if value[0] == self.preferences.entries():
                 self._recents = value[1]
+                for entry in value[1]:
+                    if entry["available"]:
+                        self.preferences.describe(entry["path"], entry["projectId"], entry["name"])
+        elif name == "locate_recent":
+            token, entry, target, document = value
+            if token == self._locate_token and entry in self.preferences.entries():
+                self._recent_candidate = entry, target, document
+                if entry["projectId"]:
+                    self.confirmRecentLocation()
+                else:
+                    self.dialogRequested.emit("confirmRecentLocation")
+        elif name == "ingest":
+            self._source_session.imported(value)
+        elif name == "verify":
+            self._source_session.verified(value)
+            self._project_sources(self.controller.overview)
         elif name == "folder":
             self._folder = value
+            existing = {
+                os.path.normcase(os.path.abspath(self.local_path(r.values["locator"])))
+                for r in self._source.rows
+            }
+            self._scan_summary = {
+                "photos": sum(e.media_type == "photo" for e in value.entries),
+                "videos": sum(e.media_type == "video" for e in value.entries),
+                "ignored": value.ignored,
+                "directories": value.directories,
+                "limited": bool(value.stopped),
+                "unreadable": any(e.reason.startswith("Could not read") for e in value.entries),
+                "existing": sum(os.path.normcase(str(p)) in existing for p in value.supported),
+            }
+            self._scan_files.setStringList([
+                f"{e.media_type.value.capitalize() if e.media_type else 'Ignored'} · {e.path}"
+                + (f"\n{e.reason}" if e.reason else "") for e in value.entries
+            ])
             self.dialogRequested.emit("folder")
-        elif name == "save" and self._after_save:
-            callback, self._after_save = self._after_save, None
-            # Run after the executor clears exclusive mutation ownership.
-            QTimer.singleShot(0, callback)
         elif name == "progress" and not value and self._pending_close:
             self.controller.refresh()
         elif name == "cancelled":
+            if self.controller.operation == "verify" and self.controller.overview:
+                self._source_session.uncertain(self._source.rows, "Source check was cancelled.")
+                self._project_sources(self.controller.overview)
+            self.cancelFolder()
             self._notice = "Cancelled — application teardown confirmed"
         self.changed.emit()

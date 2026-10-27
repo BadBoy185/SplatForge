@@ -81,11 +81,12 @@ def test_explicit_pickers_import_and_reopen_persisted_types(desktop, tmp_path, k
         identities = [r.identity for r in desktop._source.rows]
         expected = "photo" if kind == "photos" else "video"
         assert all(r.values["type"] == expected for r in desktop._source.rows)
-        assert all(r.values["availability"] == "Not checked recently" for r in desktop._source.rows)
+        assert all(r.values["availability"] == "Available" for r in desktop._source.rows)
         assert desktop.state["sourcesSummary"][kind] == count
         desktop.openProject(str(root))
         until(lambda: not desktop.controller.executor.busy)
         assert [r.identity for r in desktop._source.rows] == identities
+        assert all(r.values["availabilityState"] == "neutral" for r in desktop._source.rows)
         assert all(r.values["type"] == expected for r in desktop._source.rows)
         assert [p.read_bytes() for p in paths] == originals
         assert not desktop.controller.overview.index.artifacts
@@ -101,7 +102,8 @@ def test_import_failure_keeps_committed_rows_responsive_and_retryable(desktop, t
     _, probe = inject_media(desktop, root)
     old = photo(tmp_path / "old.png")
     desktop.addFiles([str(old)])
-    until(lambda: desktop.sources.count == 1 and not desktop.controller.executor.busy)
+    until(lambda: not desktop.controller.executor.busy)
+    assert desktop.sources.count == 1, desktop.state["error"]
     before = desktop.controller.overview.document
     identity = desktop._source.rows[0].identity
     entered, release = Event(), Event()
@@ -150,7 +152,7 @@ def test_source_check_uses_recorded_evidence_and_never_hashes_on_refresh(desktop
     desktop.addFiles([str(p) for p in paths])
     until(lambda: desktop.sources.count == 2 and not desktop.controller.executor.busy)
     hashes = files.hash_reads
-    assert "not been checked recently" in desktop.state["sourcesSummary"]["checkMessage"]
+    assert "All source files were available" in desktop.state["sourcesSummary"]["checkMessage"]
     engine = create_engine(desktop)
     window = engine.rootObjects()[0]
     try:
@@ -161,17 +163,17 @@ def test_source_check_uses_recorded_evidence_and_never_hashes_on_refresh(desktop
         until(lambda: not desktop.controller.executor.busy)
         assert "All source files were available" in desktop.state["sourcesSummary"]["checkMessage"]
         assert all(
-            r.values["availability"] == "Available at last check" for r in desktop._source.rows
+            r.values["availability"] == "Available" for r in desktop._source.rows
         )
         assert "no fresh content hash" in desktop._source.rows[0].values["verificationLabel"]
         paths[1].unlink()
         desktop.refresh()
         until(lambda: not desktop.controller.executor.busy)
         # Refresh/reopen does not pretend to have checked the current source files.
-        assert desktop._source.rows[1].values["availability"] == "Available at last check"
+        assert desktop._source.rows[1].values["availability"] == "Available"
         click(window, "checkSourceFiles")
         until(lambda: not desktop.controller.executor.busy)
-        assert desktop._source.rows[1].values["availability"] == "Missing at last check"
+        assert desktop._source.rows[1].values["availability"] == "Missing"
         assert "1 source file was missing" in desktop.state["sourcesSummary"]["checkMessage"]
         assert files.hash_reads == hashes
         assert not engine.load_errors
@@ -400,7 +402,10 @@ def test_sources_actions_footer_and_no_empty_pagination(desktop, tmp_path, size)
                     until(lambda: desktop.sources.count == 1)
                     until(lambda: not desktop.controller.executor.busy)
                 QTest.qWait(30)
-                for name in ("addPhotos", "addVideo", "checkSourceFiles", "sourcesContinue"):
+                names = ["addPhotos", "addVideo", "addFolder", "sourcesContinue"]
+                if populated or desktop.sources.count:
+                    names.append("checkSourceFiles")
+                for name in names:
                     item = visual_item(window.contentItem(), name)
                     assert item and item.isVisible()
                     point = item.mapToScene(QPointF(0, 0))

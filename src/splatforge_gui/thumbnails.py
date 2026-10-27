@@ -2,6 +2,7 @@
 
 from collections import OrderedDict, deque
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import QAbstractListModel, Qt, Signal, Slot
 from PySide6.QtGui import QImage, QImageReader, QPixmap
@@ -27,7 +28,7 @@ def decode_thumbnail(path: Path, side: int = 192) -> QImage:
 
 
 class ThumbnailModel(QAbstractListModel):
-    request = Signal(str, object)
+    request = Signal(str, object, int)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -37,6 +38,9 @@ class ThumbnailModel(QAbstractListModel):
         self.executor = TaskExecutor(self)
         self.jobs = {}
         self.queue = deque()
+        self.generation = 0
+        self.namespace = uuid4().hex
+        self._paths = {}
         self.request.connect(self._request, Qt.ConnectionType.QueuedConnection)
         self.executor.result.connect(self._result)
         self.executor.error.connect(self._error)
@@ -60,44 +64,54 @@ class ThumbnailModel(QAbstractListModel):
                 return QPixmap.fromImage(image) if image is not None else None
             if reference.identity not in self.pending:
                 self.pending.add(reference.identity)
-                self.request.emit(reference.identity, reference.path)
+                self.request.emit(reference.identity, reference.path, self.generation)
         return None
 
     def replace(self, references) -> None:
         self.beginResetModel()
+        self.generation += 1
+        self.namespace = uuid4().hex
         self.references = tuple(references)
-        for identity, _ in self.queue:
-            self.pending.discard(identity)
+        self._paths = {r.identity: r.path for r in self.references}
+        self.cache.clear()
+        self.pending.clear()
         self.queue.clear()
         self.endResetModel()
 
-    @Slot(str, object)
-    def _request(self, identity: str, path: Path) -> None:
+    @Slot(str, object, int)
+    def _request(self, identity: str, path: Path, generation: int) -> None:
+        if generation != self.generation or self._paths.get(identity) != path:
+            return
         if len(self.jobs) >= 8:
             if len(self.queue) < 100:
-                self.queue.append((identity, path))
+                self.queue.append((identity, path, generation))
             else:
                 self.pending.discard(identity)
             return
         key = self.executor.submit("thumbnail", lambda: decode_thumbnail(path))
-        self.jobs[key] = identity
+        self.jobs[key] = (identity, generation)
 
     @Slot(str)
     def _finished(self, key: str) -> None:
         self.jobs.pop(key, None)
         if self.queue:
-            identity, path = self.queue.popleft()
-            self._request(identity, path)
+            identity, path, generation = self.queue.popleft()
+            self._request(identity, path, generation)
 
     @Slot(str, object)
     def _result(self, key: str, image) -> None:
-        self._store(self.jobs[key], image)
+        identity, generation = self.jobs[key]
+        self._store(identity, image, generation)
 
     @Slot(str, object)
     def _error(self, key: str, error) -> None:
-        self._store(self.jobs[key], None)
+        identity, generation = self.jobs[key]
+        self._store(identity, None, generation)
 
-    def _store(self, identity: str, image) -> None:
+    def _store(self, identity: str, image, generation: int | None = None) -> bool:
+        if ((generation is not None and generation != self.generation)
+                or identity not in self._paths):
+            return False
         self.pending.discard(identity)
         self.cache[identity] = image
         while len(self.cache) > 128:
@@ -107,3 +121,14 @@ class ThumbnailModel(QAbstractListModel):
                 self.dataChanged.emit(
                     self.index(i), self.index(i), [Qt.ItemDataRole.DecorationRole]
                 )
+        return True
+
+    def image_url(self, identity: str) -> str:
+        return f"image://media/{self.namespace}/{identity}"
+
+    def lookup(self, key: str) -> QImage | None:
+        prefix = self.namespace + "/"
+        if not key.startswith(prefix):
+            return None
+        identity = key.removeprefix(prefix)
+        return self.cache.get(identity) if identity in self._paths else None
