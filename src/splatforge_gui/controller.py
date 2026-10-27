@@ -83,7 +83,8 @@ class ProjectController(QObject):
         if mutation and (
             self.mutating
             or (
-                not allow_unresolved and (self.active or (self.has_unresolved and name != "create"))
+                not allow_unresolved
+                and (self.active or (self.has_unresolved and name not in {"create", "open"}))
             )
         ):
             self.error.emit(
@@ -92,7 +93,7 @@ class ProjectController(QObject):
                 )
             )
             return ""
-        if mutation and name != "create" and self.overview is None:
+        if mutation and name not in {"create", "open"} and self.overview is None:
             self.error.emit(
                 TaskError("Open a project before starting this operation", "NoProject", "", name)
             )
@@ -112,33 +113,32 @@ class ProjectController(QObject):
         return identity
 
     def create(self, root: Path, label: str) -> None:
-        if self.mutating or self.active:
-            self.error.emit(
-                TaskError("Finish or cancel active work first", "ProjectBusy", "", "create")
-            )
-            return
-        self.generation += 1
-        self.creation_root = root.absolute()
-        self.refreshing = self.polling = False
-        target = self.creation_root
-        self.submit("create", lambda f: f.create(target, label), mutation=True)
+        self._load_project(root, label)
 
     def open(self, root: Path) -> None:
+        self._load_project(root)
+
+    def _load_project(self, root: Path, label: str | None = None) -> None:
+        name = "create" if label is not None else "open"
         if self.mutating or self.active:
             self.error.emit(
-                TaskError("Finish or cancel active work first", "ProjectBusy", "", "open")
+                TaskError("Finish or cancel active work first", "ProjectBusy", "", name)
             )
             return
         self.generation += 1
-        self.root, self.draft, self.overview, self.active = root.absolute(), None, None, ()
-        self.request = None
-        self.reconstruction_plan = None
         self.refreshing = self.polling = False
-        self.dirty_changed.emit(False)
-        self.refresh()
+        target = root.absolute()
+
+        def load(facade):
+            if label is not None:
+                facade.create(target, label)
+            return target, facade.overview(target)
+
+        # Keep the current workspace until the complete persisted overview validates.
+        self.submit(name, load, mutation=True)
 
     def refresh(self) -> None:
-        if self.root is None or self.refreshing or self.operation == "save":
+        if self.root is None or self.refreshing or self.operation in {"save", "create", "open"}:
             return
         root = self.root
         self.refreshing = True
@@ -146,7 +146,7 @@ class ProjectController(QObject):
 
     @Slot()
     def poll(self) -> None:
-        if self.root is None or self.polling or self.operation == "save":
+        if self.root is None or self.polling or self.operation in {"save", "create", "open"}:
             return
         root = self.root
         self.polling = True
@@ -478,10 +478,17 @@ class ProjectController(QObject):
             result = self.active
             if previous and {r.run_id for r in previous} != {r.run_id for r in self.active}:
                 self.refresh()
-        elif name in {"save", "create"}:
-            if name == "create":
-                self.root = self.creation_root
-                self.overview, self.active, self.request = None, (), None
+        elif name in {"create", "open"}:
+            # Reads can still be requested against the retained workspace while
+            # loading. None of their replies belong to the adopted workspace.
+            self.generation += 1
+            self.root, self.overview = result
+            self.active = self.overview.active
+            self.request = self.reconstruction_plan = None
+            self.draft = None
+            self.changed.emit(self.overview)
+            self.dirty_changed.emit(False)
+        elif name == "save":
             self.discard()
         elif name == "request":
             document = self.draft or self.overview.document

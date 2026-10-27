@@ -15,12 +15,14 @@ ColumnLayout {
         subtitle: page.vm.sources.count + " original sources · read-only references"
         Layout.fillWidth: true
         SplatButton {
+            visible: page.vm.sources.count > 0
             text: "Add folder"
             iconName: "folder"
             enabled: page.vm.state.canMutate
             onClicked: folders.open()
         }
         SplatButton {
+            visible: page.vm.sources.count > 0
             text: "Add files"
             iconName: "plus"
             kind: "primary"
@@ -28,12 +30,69 @@ ColumnLayout {
             onClicked: files.open()
         }
     }
-    SplatEmptyState {
+    SplatCard {
+        objectName: "sourcesEmptyState"
         visible: page.vm.sources.count === 0
         Layout.fillWidth: true
-        title: "Your captures belong here"
-        detail: "Add JPEG or PNG photos, MP4 or MOV videos from ordinary perspective cameras. Sources are fully hashed at ingest."
-        iconName: "sources"
+        implicitHeight: 350
+        ColumnLayout {
+            anchors.centerIn: parent
+            width: Math.min(parent.width, 560)
+            spacing: 16
+            SplatLabel {
+                text: "Add source data"
+                font.pixelSize: Theme.title
+                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+            SplatLabel {
+                text: "Add the photos and videos you want to use."
+                color: Theme.secondary
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 12
+                SplatButton {
+                    text: "Add Photos"
+                    objectName: "addPhotos"
+                    iconName: "plus"
+                    kind: "primary"
+                    enabled: page.vm.state.canMutate
+                    onClicked: photos.open()
+                }
+                SplatButton {
+                    text: "Add Video"
+                    objectName: "addVideo"
+                    iconName: "plus"
+                    enabled: page.vm.state.canMutate
+                    onClicked: videos.open()
+                }
+            }
+            SplatLabel {
+                text: "or drop photo and video files here"
+                color: Theme.secondary
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+            SplatButton {
+                text: "Add folder…"
+                kind: "ghost"
+                Layout.alignment: Qt.AlignHCenter
+                enabled: page.vm.state.canMutate
+                onClicked: folders.open()
+                Accessible.description: "Add supported files from the top level of a folder"
+            }
+            SplatLabel {
+                text: "SplatForge will detect cameras and organize files automatically."
+                color: Theme.muted
+                font.pixelSize: Theme.small
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+        }
     }
     SplatCard {
         visible: page.vm.sources.count > 0
@@ -130,6 +189,7 @@ ColumnLayout {
         }
     }
     RowLayout {
+        visible: page.vm.sources.count > 0
         Layout.fillWidth: true
         spacing: 16
         SplatLabel {
@@ -150,12 +210,14 @@ ColumnLayout {
         }
     }
     SplatLabel {
+        visible: page.vm.sources.count > 0
         text: page.vm.media.state.message
               || "Select a photo for a bounded preview, or load published views from a video."
         color: Theme.secondary
         Layout.fillWidth: true
     }
     GridLayout {
+        visible: page.vm.sources.count > 0
         columns: page.width > 1050 ? 2 : 1
         Layout.fillWidth: true
         columnSpacing: 16
@@ -271,6 +333,7 @@ ColumnLayout {
         }
     }
     RowLayout {
+        visible: page.vm.sources.count > 0
         Layout.alignment: Qt.AlignRight
         SplatLabel {
             text: "Views " + page.vm.media.state.offset + "–" + (page.vm.media.state.offset
@@ -290,6 +353,20 @@ ColumnLayout {
             onClicked: page.vm.media.loadGallery(page.vm.workflow.state.inputs.views,
                                                  page.vm.media.state.offset + 100)
         }
+    }
+    FileDialog {
+        id: photos
+        title: "Add photos"
+        fileMode: FileDialog.OpenFiles
+        nameFilters: ["Photos (*.jpg *.jpeg *.png)"]
+        onAccepted: page.vm.addFiles(selectedFiles.map(u => String(u)))
+    }
+    FileDialog {
+        id: videos
+        title: "Add video"
+        fileMode: FileDialog.OpenFiles
+        nameFilters: ["Videos (*.mp4 *.mov)"]
+        onAccepted: page.vm.addFiles(selectedFiles.map(u => String(u)))
     }
     FileDialog {
         id: files

@@ -125,7 +125,7 @@ def test_gui_typed_intent_save_and_external_refresh(app, tmp_path):
     controller = ProjectController()
     controller.timer.stop()
     controller.open(root)
-    until(app, lambda: controller.overview is not None)
+    until(app, lambda: controller.overview is not None and not controller.executor.busy)
     controller.request = reconstruction_request(controller.overview.document).model_copy(
         update={"mapper": IncrementalMapperSettings(num_threads=2)}
     )
@@ -225,7 +225,7 @@ def test_failed_create_keeps_previous_project_authority(app, tmp_path):
     controller = ProjectController()
     controller.timer.stop()
     controller.open(root)
-    until(app, lambda: controller.overview is not None)
+    until(app, lambda: controller.overview is not None and not controller.executor.busy)
     other = tmp_path / "Nonempty"
     other.mkdir()
     (other / "keep.txt").write_text("User file", encoding="utf-8")
@@ -236,6 +236,54 @@ def test_failed_create_keeps_previous_project_authority(app, tmp_path):
     assert errors and controller.root == root
     assert controller.overview.document.label == "Existing project"
     assert (other / "keep.txt").read_text(encoding="utf-8") == "User file"
+
+
+def test_project_adoption_discards_reads_started_while_opening(app, tmp_path):
+    from threading import Event
+
+    from splatforge.bootstrap import build_gui_facade
+
+    root, other = tmp_path / "Current", tmp_path / "Other"
+    service = build_project_service()
+    service.create(root, "Current")
+    service.create(other, "Other")
+    controller = ProjectController()
+    controller.timer.stop()
+    controller.open(root)
+    until(app, lambda: not controller.executor.busy)
+    loading, adopt, reading, release_read = Event(), Event(), Event(), Event()
+    completed = []
+    controller.completed.connect(lambda name, value: completed.append((name, value)))
+
+    class Facade:
+        def overview(self, directory):
+            if directory == other:
+                loading.set()
+                assert adopt.wait(10)
+            return build_gui_facade().overview(directory)
+
+    def retained_workspace_read(_):
+        reading.set()
+        assert release_read.wait(10)
+        return "Reply from previous workspace"
+
+    controller.factory = Facade
+    try:
+        controller.open(other)
+        until(app, loading.is_set)
+        assert controller.root == root and controller.mutating
+        controller.submit("retained_workspace_read", retained_workspace_read)
+        until(app, reading.is_set)
+        adopt.set()
+        until(app, lambda: controller.root == other)
+        release_read.set()
+        until(app, lambda: not controller.executor.busy)
+        assert controller.overview.document.label == "Other"
+        assert not any(name == "retained_workspace_read" for name, _ in completed)
+    finally:
+        adopt.set()
+        release_read.set()
+        until(app, lambda: not controller.executor.busy)
 
 
 def test_control_tasks_are_not_starved_by_long_work(app):
@@ -294,7 +342,7 @@ def test_cancellation_waits_for_late_application_run_handle(app, tmp_path):
     controller = ProjectController(factory=Facade)
     controller.timer.stop()
     controller.open(root)
-    until(app, lambda: controller.overview is not None)
+    until(app, lambda: controller.overview is not None and not controller.executor.busy)
 
     def operation(facade):
         announced.wait(2)

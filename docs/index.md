@@ -15,6 +15,7 @@ that a planned capability is implemented.
 | [DEVELOPMENT](DEVELOPMENT.md) | Verification workflow, process/progress/diagnostic engineering and documentation hygiene | Artifact schemas or product scope |
 | [ROADMAP](../ROADMAP.md) | Planned capability scope, ordering and milestone acceptance | Proof of implemented or locally runnable support |
 | [GUI_DESIGN](GUI_DESIGN.md) | Presentation architecture, design system and visual review | Pipeline, cache or persistence decisions |
+| [UX/UI specification](UX_UI_SPEC.md) | Intended product UX, navigation and interaction rules | Proof that future capabilities are implemented |
 
 [README](../README.md) is the user entrypoint for setup, available commands and
 limitations. [GPU_RUNTIME](GPU_RUNTIME.md) is the operator guide for an explicitly
@@ -62,6 +63,7 @@ do not reinterpret old acceptance results as current runtime evidence.
 | [M10](M10.md) | Delivered dataset-preparation slice; production multi-video acceptance is a separate gate |
 | [M11](M11.md) | Delivered handoff/managed-training slice and bounded empirical results |
 | [M12](M12.md) | Delivered desktop slice, parity evidence and limitations |
+| [M12a project shell](plans/completed/2026-10-27-m12a-project-shell.md) | Accepted Home/Create/Open/Sources shell |
 | [Housekeeping](plans/completed/2026-10-26-repository-housekeeping.md) | Repository/documentation harness work, not a product milestone |
 
 ## Archive / legacy

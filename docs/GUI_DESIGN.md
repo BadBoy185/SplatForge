@@ -81,8 +81,8 @@ viewport colors live together in `point_preview.py`, with corresponding dark/lig
 values. No processing value depends on these tokens.
 
 Use Segoe UI Variable when installed, otherwise Segoe UI. Project/page titles are
-24–28 px, sections 18 px, body 14 px, secondary 12 px and captions 11 px. The landing
-hero has one 38 px display treatment. Use Consolas only for paths, IDs and exact
+24–28 px, sections 18 px, body 14 px, secondary 12 px and captions 11 px.
+Use Consolas only for paths, IDs and exact
 evidence. The spacing rhythm is 4/8/12/16/20/24/32/40; controls are 36 px high,
 shell bar 64 px, card padding 24 px, restrained radii 6–12 px.
 
@@ -118,8 +118,8 @@ method cards, component comparison, dataset evidence, trainer readiness and outp
 Advanced exposes exact settings, project intent, IDs, history, lineage, storage and
 diagnostic evidence. Both use the same controller and publications.
 
-Home derives its recommendation from indexed workflow evidence and shows the latest
-published output. Historical completion is not a promise of compatibility with newly
+Workspace Overview derives its recommendation from indexed workflow evidence and
+shows the latest published output. Historical completion is not a promise of compatibility with newly
 edited settings; Plan determines that. Unknown capabilities remain Not checked.
 No hardware name, installed package or selected method is promoted to runnable.
 
@@ -132,6 +132,28 @@ The global operation surface disappears when idle. Active work shows actual phas
 fraction when known, elapsed time, backend ETA when available and bounded live metrics.
 Cancel remains pending until application confirmation. Closing waits for ownership and
 teardown. Cleanup follows preview, exact candidates/bytes, confirmation, then apply.
+
+### M12a project shell
+
+The [UX/UI specification](UX_UI_SPEC.md), sections 3–7, owns the intended Home and
+Create/Sources flow. Without an open project, Home shows New Project, Open Existing
+Project and recent paths with persisted labels and availability; project navigation
+and Guided/Advanced controls appear only in a workspace. The existing dashboard
+remains the workspace Overview; subsequent pages retain their current layout.
+
+Create takes one Windows-safe directory name and an absolute parent Location.
+The Python presentation helper computes the live destination preview without I/O.
+The view model passes the final `Path` to the existing controller/facade/service.
+Only successful backend creation plus persisted overview readback opens the Sources
+empty state. Create/Open errors retain the current workspace; recents are updated
+only after validated success. Existing backend acceptance of an empty destination
+and refusal of a nonempty one remain authoritative.
+
+The empty state reuses current photo/video file actions and top-level folder review.
+It advertises file drops; directory drops retain their existing project-open meaning.
+There is no recursive mixed-folder scanner or additional source type in this slice.
+Recent entries use backend identity/name/path and Available/Unavailable, without
+inferring processing status. Last-opened timestamps are deferred; QSettings is unchanged.
 
 ## Accessibility and desktop layout
 

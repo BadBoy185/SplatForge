@@ -12,87 +12,21 @@ ColumnLayout {
     spacing: 24
     SplatPageHeader {
         Layout.fillWidth: true
-        title: page.vm.state.hasProject ? page.vm.state.project.name : "Your workspace"
+        title: page.vm.state.hasProject ? page.vm.state.project.name : "SplatForge"
         subtitle: page.vm.state.hasProject ? "Project overview" :
-                                             "A local workspace for extraordinary scenes."
+                                             "Create a project or open an existing one."
         SplatButton {
-            text: "Open project"
+            text: "Open Existing Project"
+            objectName: "openExistingProject"
             iconName: "folder"
             onClicked: page.openProject()
         }
         SplatButton {
-            text: "New project"
+            text: "New Project"
+            objectName: "newProject"
             iconName: "plus"
             kind: page.vm.state.hasProject ? "secondary" : "primary"
             onClicked: page.newProject()
-        }
-    }
-    SplatCard {
-        visible: !page.vm.state.hasProject
-        Layout.fillWidth: true
-        implicitHeight: 270
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: 12
-            spacing: 32
-            ColumnLayout {
-                spacing: 16
-                Layout.fillWidth: true
-                SplatLabel {
-                    text: "FROM CAPTURE TO SCENE"
-                    font.pixelSize: Theme.caption
-                    font.letterSpacing: 2
-                    color: Theme.accent
-                }
-                SplatLabel {
-                    text: "Bring your world\ninto focus."
-                    font.pixelSize: 38
-                    font.weight: Font.DemiBold
-                    lineHeight: 1.1
-                    Layout.fillWidth: true
-                }
-                SplatLabel {
-                    text: "Turn photos and video into 3D reconstructions and Gaussian scenes. Built for precision. Processed on your machine."
-                    color: Theme.secondary
-                    Layout.maximumWidth: 520
-                    Layout.fillWidth: true
-                }
-                SplatLabel {
-                    text: "PHOTOS & VIDEO     /     RECONSTRUCTION     /     GAUSSIAN SCENES"
-                    font.pixelSize: Theme.caption
-                    color: Theme.muted
-                    Layout.fillWidth: true
-                }
-            }
-            Item {
-                Layout.preferredWidth: 220
-                Layout.fillHeight: true
-                visible: page.width > 850
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 184
-                    height: 184
-                    radius: 92
-                    color: "transparent"
-                    border.color: Theme.border
-                }
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 228
-                    height: 228
-                    radius: 114
-                    color: "transparent"
-                    border.color: Theme.border
-                    opacity: 0.4
-                }
-                Image {
-                    anchors.centerIn: parent
-                    source: "../icons/brand.svg"
-                    width: 100
-                    height: 100
-                    sourceSize: Qt.size(100, 100)
-                }
-            }
         }
     }
     SplatBanner {
@@ -202,7 +136,7 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         SplatLabel {
-            text: page.vm.state.hasProject ? "Project location" : "Recent projects"
+            text: page.vm.state.hasProject ? "Project location" : "Recent Projects"
             font.pixelSize: Theme.section
             font.weight: Font.DemiBold
             Layout.fillWidth: true
@@ -287,8 +221,9 @@ ColumnLayout {
                 }
                 SplatButton {
                     text: "Open"
+                    objectName: "openRecentProject"
                     iconName: "arrow"
-                    enabled: recent.modelData.available
+                    enabled: recent.modelData.available && !page.vm.state.busy
                     onClicked: page.vm.openProject(recent.modelData.path)
                 }
             }

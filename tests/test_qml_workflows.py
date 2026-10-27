@@ -1,5 +1,6 @@
 """Behavioral parity for the QML bridge; backend fixtures remain unchanged."""
 
+import json
 import os
 from threading import Event
 from uuid import uuid4
@@ -30,8 +31,8 @@ from splatforge_gui.qml_app import create_engine  # noqa: E402
 
 
 def open_project(desktop, tmp_path):
-    root = tmp_path / "Scene with spaces Žluťoučký"
-    desktop.createProject(str(root), "Tiny scene")
+    root = tmp_path / "Scene with spaces Žluťoučký" / "Tiny scene"
+    desktop.createProject(str(root.parent), root.name)
     until(lambda: desktop.controller.overview is not None)
     until(lambda: not desktop.controller.executor.busy)
     return root
@@ -54,6 +55,196 @@ def test_create_save_external_refresh_and_reopen(desktop, tmp_path):
     desktop.openProject(str(root))
     until(lambda: desktop.controller.overview is not None)
     assert desktop.controller.overview.document == service.open(root)
+
+
+def test_destination_preview_is_pure_and_create_round_trips_with_cli(desktop, tmp_path):
+    from typer.testing import CliRunner
+
+    from splatforge.cli.app import app as cli
+
+    parent, name = tmp_path / "Projects with spaces", "Lom Plešivec — Київ (1)"
+    preview = desktop.projectDestination(str(parent), name)
+    root = parent / name
+    assert preview == {"path": str(root), "error": "", "valid": True}
+    assert not parent.exists()
+    assert desktop.projectDestination(str(parent), "Other")["path"] == str(parent / "Other")
+    assert desktop.projectDestination(str(tmp_path), name)["path"] == str(tmp_path / name)
+    assert not desktop.projectDestination("relative", name)["valid"]
+    assert not desktop.projectDestination("https://example.test", name)["valid"]
+    assert not desktop.projectDestination(str(parent), "CON.txt")["valid"]
+    assert not parent.exists()
+    desktop.preferences.set("page", 5)
+    desktop.createProject(str(parent), name)
+    until(lambda: not desktop.controller.executor.busy)
+    assert desktop.state["hasProject"] and desktop.state["page"] == 1
+    assert desktop.controller.root == root
+    document = desktop.controller.overview.document
+    result = CliRunner().invoke(cli, ["project", "show", str(root)])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == document.model_dump(mode="json")
+    assert desktop.state["project"]["id"] == str(document.project_id)
+    assert desktop.sources.count == 0 and not desktop.controller.overview.index.runs
+    assert not desktop.controller.overview.index.artifacts
+    assert desktop.preferences.recent() == [str(root)]
+    assert desktop.state["recents"][0]["projectId"] == str(document.project_id)
+    assert desktop.state["recents"][0]["summary"] == "Available"
+
+
+def test_gui_opens_cli_project_and_reopens_gui_identity(app, desktop, tmp_path):
+    from PySide6.QtCore import QSettings
+    from typer.testing import CliRunner
+
+    from splatforge.cli.app import app as cli
+    from splatforge_gui.preferences import Preferences
+    from splatforge_gui.qml_bridge import DesktopViewModel
+
+    root = open_project(desktop, tmp_path)
+    identity = desktop.controller.overview.document.project_id
+    # A fresh desktop session reads only persisted project state.
+    desktop.controller.timer.stop()
+    reopened = DesktopViewModel(
+        preferences=Preferences(QSettings(str(tmp_path / "reopen.ini"), QSettings.Format.IniFormat))
+    )
+    reopened.controller.timer.stop()
+    try:
+        reopened.openProject(str(root))
+        until(lambda: not reopened.controller.executor.busy)
+        assert reopened.controller.overview.document.project_id == identity
+        assert reopened.state["project"]["name"] == root.name
+        cli_root = tmp_path / "CLI project"
+        result = CliRunner().invoke(
+            cli, ["project", "create", str(cli_root), "--label", "CLI name"]
+        )
+        assert result.exit_code == 0, result.output
+        reopened.openProject(str(cli_root))
+        until(lambda: not reopened.controller.executor.busy)
+        assert reopened.controller.overview.document.model_dump(mode="json") == json.loads(
+            result.output
+        )
+        assert reopened.state["project"]["name"] == "CLI name"
+        assert not reopened.controller.overview.index.runs and not reopened.controller.active
+    finally:
+        until(lambda: not reopened.controller.executor.busy)
+        reopened.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.parametrize("kind", ["nonempty", "existing_project", "file", "permission", "readback"])
+def test_failed_create_preserves_workspace_and_recents(desktop, tmp_path, kind):
+    from splatforge.bootstrap import build_gui_facade
+
+    root = open_project(desktop, tmp_path)
+    desktop.navigate(2)
+    previous = desktop.controller.overview
+    recents = desktop.preferences.recent()
+    target = tmp_path / "Refused"
+    if kind == "nonempty":
+        target.mkdir()
+        (target / "keep.txt").write_bytes(b"keep")
+    elif kind == "file":
+        target.write_bytes(b"keep")
+    elif kind == "existing_project":
+        build_project_service().create(target, "Existing")
+    before = (target / "project.json").read_bytes() if kind == "existing_project" else None
+
+    class Facade:
+        def __init__(self):
+            self.delegate = build_gui_facade()
+
+        def __getattr__(self, name):
+            return getattr(self.delegate, name)
+
+        def create(self, directory, label):
+            if kind == "permission":
+                raise PermissionError("Access denied for selected location")
+            return self.delegate.create(directory, label)
+
+        def overview(self, directory):
+            if kind == "readback" and directory == target:
+                raise OSError("Cannot read created project state")
+            return self.delegate.overview(directory)
+
+    desktop.controller.factory = Facade
+    desktop.createProject(str(tmp_path), target.name)
+    until(lambda: not desktop.controller.executor.busy)
+    assert desktop.controller.root == root
+    assert desktop.controller.overview.document == previous.document
+    assert desktop.state["page"] == 2 and desktop.preferences.recent() == recents
+    assert desktop.state["error"]["message"] and "Traceback" in desktop.state["error"]["details"]
+    if kind == "existing_project":
+        assert (target / "project.json").read_bytes() == before
+    elif kind == "nonempty":
+        assert (target / "keep.txt").read_bytes() == b"keep"
+    elif kind == "file":
+        assert target.read_bytes() == b"keep"
+
+
+@pytest.mark.parametrize("kind", ["missing", "corrupt", "unsupported", "corrupt_state"])
+def test_failed_open_does_not_publish_partial_workspace(desktop, tmp_path, kind):
+    root = open_project(desktop, tmp_path)
+    previous = desktop.controller.overview
+    recents = desktop.preferences.recent()
+    target = tmp_path / "Bad project"
+    if kind != "missing":
+        build_project_service().create(target, "Bad")
+        if kind == "corrupt":
+            (target / "project.json").write_text("{broken", encoding="utf-8")
+        elif kind == "unsupported":
+            raw = json.loads((target / "project.json").read_text(encoding="utf-8"))
+            raw["project_format_version"] = 999
+            (target / "project.json").write_text(json.dumps(raw), encoding="utf-8")
+        else:
+            (target / "state.sqlite").write_bytes(b"broken database")
+    desktop.openProject(str(target))
+    until(lambda: not desktop.controller.executor.busy)
+    assert desktop.controller.root == root
+    assert desktop.controller.overview.document == previous.document
+    assert desktop.preferences.recent() == recents
+    assert desktop.state["error"]["message"] and desktop.state["error"]["details"]
+
+
+def test_create_dialog_preview_validation_cancel_and_sources(desktop, tmp_path):
+    from PySide6.QtCore import QObject
+    from test_qml import visual_item
+    from test_qml_interaction import click, dispose
+
+    engine = create_engine(desktop)
+    window = engine.rootObjects()[0]
+    try:
+        assert not visual_item(window.contentItem(), "nav-Sources").isVisible()
+        click(window, "newProject")
+        name = window.findChild(QObject, "projectName")
+        location = window.findChild(QObject, "projectLocation")
+        preview = window.findChild(QObject, "projectDestination")
+        create = window.findChild(QObject, "confirmCreateProject")
+        location.setProperty("text", str(tmp_path / "Uncreated parent"))
+        name.setProperty("text", "Lom Plešivec")
+        QTest.qWait(10)
+        assert preview.property("text") == str(tmp_path / "Uncreated parent" / "Lom Plešivec")
+        location.setProperty("text", str(tmp_path))
+        name.setProperty("text", "CON.txt")
+        QTest.qWait(10)
+        assert not create.property("enabled")
+        assert "reserved" in window.findChild(QObject, "projectNameError").property("text")
+        name.setProperty("text", "Lom Plešivec (1)")
+        QTest.qWait(10)
+        root = tmp_path / "Lom Plešivec (1)"
+        assert preview.property("text") == str(root) and create.property("enabled")
+        assert not root.exists() and not (tmp_path / "Uncreated parent").exists()
+        click(window, "cancelCreateProject")
+        assert not root.exists() and not desktop.state["hasProject"]
+        assert not desktop.preferences.recent()
+        click(window, "newProject")
+        click(window, "confirmCreateProject")
+        until(lambda: not desktop.controller.executor.busy)
+        assert desktop.state["page"] == 1 and desktop.controller.root == root
+        assert visual_item(window.contentItem(), "sourcesEmptyState").isVisible()
+        assert visual_item(window.contentItem(), "addPhotos").isEnabled()
+        assert visual_item(window.contentItem(), "addVideo").isEnabled()
+        assert not engine.load_errors
+    finally:
+        until(lambda: not desktop.controller.executor.busy)
+        dispose(engine)
 
 
 def test_recent_projects_use_actual_names_and_remove_missing(desktop, tmp_path):
@@ -94,6 +285,43 @@ def test_unsaved_switch_save_discard_cancel(desktop, tmp_path):
     desktop.resolveUnsaved("discard")
     until(lambda: desktop.controller.root == root and desktop.controller.overview is not None)
     assert build_project_service().open(other).label == "Second"
+
+
+@pytest.mark.parametrize("choice", ["save", "discard", "cancel"])
+def test_create_uses_existing_unsaved_lifecycle(desktop, tmp_path, choice):
+    root = open_project(desktop, tmp_path)
+    document = desktop.controller.overview.document
+    desktop.controller.edit(document.model_copy(update={"label": "Draft"}))
+    dialogs = []
+    desktop.dialogRequested.connect(dialogs.append)
+    target = tmp_path / "New project"
+    desktop.createProject(str(tmp_path), target.name)
+    assert dialogs == ["unsaved"] and not target.exists()
+    desktop.resolveUnsaved(choice)
+    if choice != "cancel":
+        until(lambda: desktop.controller.root == target)
+    until(lambda: not desktop.controller.executor.busy)
+    if choice == "cancel":
+        assert desktop.controller.root == root and desktop.controller.dirty
+        assert not target.exists()
+    else:
+        assert desktop.controller.root == target and desktop.state["page"] == 1
+        assert build_project_service().open(root).label == (
+            "Draft" if choice == "save" else document.label
+        )
+
+
+def test_create_and_open_respect_busy_ownership(desktop, tmp_path):
+    root = open_project(desktop, tmp_path)
+    active = PipelineProgressSnapshot(run_id=uuid4(), status="running", elapsed_seconds=0)
+    for field, value in (("mutating", True), ("active", (active,))):
+        setattr(desktop.controller, field, value)
+        target = tmp_path / "Blocked"
+        desktop.createProject(str(tmp_path), target.name)
+        desktop.openProject(str(target))
+        assert desktop.controller.root == root and not target.exists()
+        assert "active work" in desktop.state["error"]["message"]
+        setattr(desktop.controller, field, False if field == "mutating" else ())
 
 
 def test_reconstruction_choices_preserve_unrelated_exact_settings(desktop, tmp_path):
@@ -333,6 +561,7 @@ def test_point_preview_bound_and_interaction(desktop, tmp_path):
 
     from splatforge.application.desktop import IndexRow
 
+    open_project(desktop, tmp_path)
     desktop._outputs.replace(
         (
             IndexRow(

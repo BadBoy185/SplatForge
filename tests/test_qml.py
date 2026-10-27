@@ -15,7 +15,7 @@ from PySide6.QtTest import QTest  # noqa: E402
 from splatforge.application.desktop import IndexRow, ThumbnailReference  # noqa: E402
 from splatforge.core.training import TrainingSettings  # noqa: E402
 from splatforge_gui.preferences import Preferences  # noqa: E402
-from splatforge_gui.presentation import verification_label  # noqa: E402
+from splatforge_gui.presentation import project_name_error, verification_label  # noqa: E402
 from splatforge_gui.qml_app import create_engine  # noqa: E402
 from splatforge_gui.qml_bridge import DesktopViewModel  # noqa: E402
 from splatforge_gui.qml_dialogs import ExactSettingsModel  # noqa: E402
@@ -152,3 +152,29 @@ def test_source_label_does_not_promote_metadata_reuse_to_content_verification():
     assert "UTC" in reused and "649439" not in reused
     unknown = "Full hash at ingest; current verification not recorded"
     assert verification_label(unknown) == unknown
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "", " ", ".", "..", "../escape", "..\\escape", "a/b", "a\\b", "C:scene",
+        'a"b', "a<b", "a>b", "a|b", "a?b", "a*b", "a\x00b", "a\nb", "a\x1fb",
+        "scene.", "scene ", "CON", "con.txt", "PRN", "AUX", "NUL.png", "COM1",
+        "com9.txt", "LPT1", "lpt9.txt", "COM¹", "LPT².txt", "COM³.txt", "CONIN$",
+        "CONOUT$", "CON .txt", "a" * 256, "😀" * 128,
+    ],
+)
+def test_windows_project_name_rejects_invalid_components(name):
+    assert project_name_error(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Lom Plešivec", "Карпати — Київ", "Русский проект", "Colorado Cabin (2026-10)",
+        "COM0", "COM10", "LPT0", "CONifer", ".hidden", "scene..v2", "a" * 255,
+        "😀" * 127,
+    ],
+)
+def test_windows_project_name_preserves_valid_components(name):
+    assert project_name_error(name) == ""

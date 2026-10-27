@@ -13,6 +13,7 @@ from splatforge_gui.presentation import (
     artifact_name,
     guarded,
     progress_state,
+    project_name_error,
     timestamp,
     verification_label,
 )
@@ -183,13 +184,29 @@ class DesktopViewModel(QObject):
         root = self.local_path(path)
         self._switch(lambda: self.controller.open(root))
 
+    @Slot(str, str, result="QVariantMap")
+    def projectDestination(self, location: str, name: str) -> dict:
+        error = project_name_error(name)
+        if error:
+            return {"path": "", "error": error, "valid": False}
+        try:
+            if not location.strip():
+                raise ValueError("Choose a parent location for your project.")
+            parent = self.local_path(location)
+            if not parent.is_absolute():
+                raise ValueError("Choose an absolute parent location for your project.")
+            return {"path": str(parent / name), "error": "", "valid": True}
+        except ValueError as exc:
+            return {"path": "", "error": str(exc), "valid": False}
+
     @Slot(str, str)
     @guarded
-    def createProject(self, path: str, label: str) -> None:
-        if not path or not label.strip():
-            raise ValueError("Choose an empty directory and a project name")
-        root = self.local_path(path)
-        self._switch(lambda: self.controller.create(root, label.strip()))
+    def createProject(self, location: str, name: str) -> None:
+        destination = self.projectDestination(location, name)
+        if not destination["valid"]:
+            raise ValueError(destination["error"])
+        root = Path(destination["path"])
+        self._switch(lambda: self.controller.create(root, name))
 
     @Slot(str)
     def resolveUnsaved(self, choice: str) -> None:
@@ -236,20 +253,12 @@ class DesktopViewModel(QObject):
                     "summary": "Unavailable",
                 }
                 try:
-                    document = facade.service("project").open(Path(path))
-                    index = facade.reader.index(Path(path))
-                    latest = next(
-                        (r for r in index.artifacts if r.values["storage_status"] != "evicted"),
-                        None,
-                    )
+                    document = facade.overview(Path(path)).document
                     item.update(
                         name=document.label,
+                        projectId=str(document.project_id),
                         available=True,
-                        summary=(
-                            artifact_name(latest.values["artifact_type"]) + " published"
-                            if latest
-                            else "Ready to add sources"
-                        ),
+                        summary="Available",
                     )
                 except (OSError, ValueError):
                     pass
@@ -326,6 +335,7 @@ class DesktopViewModel(QObject):
     def _overview(self, value) -> None:
         first = not self._project
         self._project = {
+            "id": str(value.document.project_id),
             "name": value.document.label,
             "path": str(self.controller.root),
             "sourceCount": len(value.sources),
@@ -422,8 +432,11 @@ class DesktopViewModel(QObject):
 
     def _failed(self, error) -> None:
         self._pending_close, self._after_save = False, None
+        message = error.message
+        if error.stage == "create" and message == "Project destination must be missing or empty":
+            message = "This destination already contains files. Choose another name or location."
         self._error = {
-            "message": error.message,
+            "message": message,
             "category": error.category,
             "details": error.traceback,
             "stage": error.stage,
@@ -432,7 +445,11 @@ class DesktopViewModel(QObject):
         self.dialogRequested.emit("error")
 
     def _completed(self, name: str, value) -> None:
-        if name == "recent_projects":
+        if name in {"create", "open"}:
+            self._error, self._metrics, self._folder = {}, {}, None
+            if name == "create":
+                self.navigate(1)
+        elif name == "recent_projects":
             if value[0] == self.preferences.recent():
                 self._recents = value[1]
         elif name == "folder":

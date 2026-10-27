@@ -31,6 +31,26 @@ def guarded(action):
     return call
 
 
+def project_name_error(name: str) -> str:
+    """Validate one Windows directory component without touching the filesystem."""
+    if not name:
+        return "Enter a project name."
+    if name in {".", ".."}:
+        return "The project name cannot be . or .."
+    if any(c in '<>:"/\\|?*' or ord(c) < 32 for c in name):
+        return 'Use a single folder name without < > : " / \\ | ? * or control characters.'
+    if name.endswith((".", " ")):
+        return "Project names cannot end with a dot or a space."
+    base = name.split(".", 1)[0].rstrip(" ").upper()
+    if base in {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} or (
+        len(base) == 4 and base[:3] in {"COM", "LPT"} and base[3] in "123456789¹²³"
+    ):
+        return "This name is reserved by Windows. Choose another project name."
+    if len(name.encode("utf-16-le", errors="surrogatepass")) > 510:
+        return "Project names must be at most 255 UTF-16 characters long."
+    return ""
+
+
 def duration(seconds) -> str:
     if seconds is None:
         return "Not available"

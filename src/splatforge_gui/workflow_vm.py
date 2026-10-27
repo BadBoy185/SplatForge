@@ -339,7 +339,7 @@ class WorkflowViewModel(QObject):
                 if key in {"dataset", "checkpoint"}:
                     self.invalidate_resume()
         signature = (self.controller.draft or value.document).settings.model_dump_json()
-        if self._signature != signature:
+        if self._signature != signature or self.controller.request is None:
             self._signature = signature
             self.controller.request = self.controller.reconstruction_plan = None
             self.controller.configure_reconstruction()

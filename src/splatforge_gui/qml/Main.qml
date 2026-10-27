@@ -90,6 +90,7 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 0
         Rectangle {
+            visible: window.vm.state.hasProject
             Layout.fillHeight: true
             Layout.preferredWidth: window.compact ? 76 : 214
             color: Theme.sidebar
@@ -136,7 +137,7 @@ ApplicationWindow {
                         }
                         SplatNavItem {
                             Layout.fillWidth: true
-                            text: nav.modelData[0]
+                            text: nav.index === 0 ? "Overview" : nav.modelData[0]
                             objectName: "nav-" + nav.modelData[0]
                             iconName: nav.modelData[1]
                             compact: window.compact
@@ -182,7 +183,7 @@ ApplicationWindow {
                     spacing: 12
                     SplatLabel {
                         text: window.vm.state.hasProject ? window.vm.state.project.name :
-                                                           "Workspace"
+                                                           "SplatForge"
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         wrapMode: Text.NoWrap
@@ -197,6 +198,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                     }
                     RowLayout {
+                        visible: window.vm.state.hasProject
                         spacing: 2
                         SplatButton {
                             text: "Guided"
@@ -210,6 +212,7 @@ ApplicationWindow {
                         }
                     }
                     Rectangle {
+                        visible: window.vm.state.hasProject
                         width: 1
                         height: 24
                         color: Theme.border
@@ -438,19 +441,21 @@ ApplicationWindow {
     }
     FolderDialog {
         id: directoryDialog
-        title: "Choose an empty project directory"
-        onAccepted: projectPath.text = window.vm.localPath ? window.vm.localPath(String(
-                                                                                     selectedFolder)) :
-                                                             String(selectedFolder)
+        title: "Choose a parent location"
+        onAccepted: projectPath.text = window.vm.localPath(String(selectedFolder))
     }
     SplatDialog {
         id: projectDialog
-        title: "New project"
+        objectName: "createProjectDialog"
+        title: "Create New Project"
+        readonly property var destination: window.vm.projectDestination(projectPath.text,
+                                                                        projectName.text)
+        onOpened: projectName.forceActiveFocus()
         ColumnLayout {
             width: parent.width
             spacing: 16
             SplatLabel {
-                text: "Give your scene a workspace. Choose an empty folder; your original media will remain in place."
+                text: "Choose a name and parent location for your project. Your original media will remain in place."
                 color: Theme.secondary
                 Layout.fillWidth: true
             }
@@ -460,37 +465,60 @@ ApplicationWindow {
             }
             SplatTextField {
                 id: projectName
+                objectName: "projectName"
                 Layout.fillWidth: true
                 placeholderText: "e.g. Courtyard study"
                 Accessible.name: "Project name"
             }
             SplatLabel {
-                text: "Project directory"
+                text: "Location"
                 font.pixelSize: Theme.small
             }
             RowLayout {
                 SplatTextField {
                     id: projectPath
+                    objectName: "projectLocation"
                     Layout.fillWidth: true
-                    placeholderText: "Choose an empty directory"
-                    Accessible.name: "Project directory"
+                    placeholderText: "Choose a parent folder"
+                    Accessible.name: "Location"
                 }
                 SplatButton {
-                    text: "Browse"
+                    text: "Browse..."
                     onClicked: directoryDialog.open()
                 }
+            }
+            SplatLabel {
+                text: "Project will be created at:"
+                font.pixelSize: Theme.small
+            }
+            SplatLabel {
+                objectName: "projectDestination"
+                text: projectDialog.destination.path || "Choose a project name and location"
+                font.family: Theme.mono
+                color: Theme.secondary
+                Layout.fillWidth: true
+                wrapMode: Text.WrapAnywhere
+            }
+            SplatLabel {
+                objectName: "projectNameError"
+                visible: (projectName.text !== "" || projectPath.text !== "") && text !== ""
+                text: projectDialog.destination.error
+                color: Theme.danger
+                Layout.fillWidth: true
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 SplatButton {
                     text: "Cancel"
+                    objectName: "cancelCreateProject"
                     kind: "ghost"
                     onClicked: projectDialog.close()
                 }
                 SplatButton {
-                    text: "Create project"
+                    text: "Create Project"
+                    objectName: "confirmCreateProject"
                     kind: "primary"
-                    enabled: projectName.text.trim() !== "" && projectPath.text !== ""
+                    enabled: projectDialog.destination.valid && !window.vm.state.busy
                     onClicked: {
                         window.vm.createProject(projectPath.text, projectName.text);
                         projectDialog.close();
@@ -559,6 +587,7 @@ ApplicationWindow {
     }
     SplatDialog {
         id: errorDialog
+        objectName: "errorDialog"
         title: "Operation could not complete"
         ColumnLayout {
             width: parent.width
