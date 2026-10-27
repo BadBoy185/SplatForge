@@ -169,6 +169,9 @@ class GuiFacade:
                         "verification": verification(s),
                         "group": str(s.source_group_id),
                         "dimensions": f"{s.probe.width} × {s.probe.height}",
+                        "duration": s.probe.duration,
+                        "codec": s.probe.codec_name,
+                        "sha256": s.content_sha256,
                         "locator": s.external_locator,
                     },
                 )

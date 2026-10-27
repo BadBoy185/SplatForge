@@ -8,87 +8,96 @@ import "../components"
 
 ColumnLayout {
     id: page
+    objectName: "sourcesPage"
     required property var vm
-    spacing: 24
+    property real viewportHeight: 512
+    readonly property real listHeight: Math.max(112, viewportHeight - header.implicitHeight
+                                                - check.implicitHeight - footer.implicitHeight - 48)
+    spacing: 16
     SplatPageHeader {
+        id: header
         title: "Sources"
-        subtitle: page.vm.sources.count + " original sources · read-only references"
+        subtitle: page.vm.sources.count > 0
+                  ? page.vm.state.sourcesSummary.photos
+                    + (page.vm.state.sourcesSummary.photos === 1 ? " photo · " : " photos · ")
+                    + page.vm.state.sourcesSummary.videos
+                    + (page.vm.state.sourcesSummary.videos === 1 ? " video" : " videos")
+                  : "Add the photos and videos you want to use."
         Layout.fillWidth: true
         SplatButton {
-            visible: page.vm.sources.count > 0
-            text: "Add folder"
-            iconName: "folder"
-            enabled: page.vm.state.canMutate
-            onClicked: folders.open()
-        }
-        SplatButton {
-            visible: page.vm.sources.count > 0
-            text: "Add files"
+            objectName: "addPhotos"
+            text: "Add Photos"
             iconName: "plus"
             kind: "primary"
             enabled: page.vm.state.canMutate
-            onClicked: files.open()
+            onClicked: photos.open()
+        }
+        SplatButton {
+            objectName: "addVideo"
+            text: "Add Video"
+            iconName: "plus"
+            enabled: page.vm.state.canMutate
+            onClicked: videos.open()
+        }
+        SplatButton {
+            text: "Add Folder"
+            iconName: "folder"
+            enabled: page.vm.state.canMutate
+            onClicked: folders.open()
+            Accessible.description: "Add supported files from the top level of a folder"
+        }
+    }
+    SplatCard {
+        id: check
+        Layout.fillWidth: true
+        padding: 16
+        implicitHeight: checkContent.implicitHeight + padding * 2
+        RowLayout {
+            id: checkContent
+            width: parent.width
+            spacing: 16
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                SplatLabel {
+                    objectName: "sourceCheckSummary"
+                    text: page.vm.state.sourcesSummary.checkMessage
+                    font.weight: Font.DemiBold
+                    Layout.fillWidth: true
+                }
+                SplatLabel {
+                    text: "Source files stay in their original locations. Check that SplatForge can still access them."
+                    color: Theme.secondary
+                    font.pixelSize: Theme.small
+                    Layout.fillWidth: true
+                }
+            }
+            SplatButton {
+                objectName: "checkSourceFiles"
+                text: "Check Source Files"
+                enabled: page.vm.sources.count > 0 && page.vm.state.canMutate
+                onClicked: page.vm.verifySources()
+            }
         }
     }
     SplatCard {
         objectName: "sourcesEmptyState"
         visible: page.vm.sources.count === 0
         Layout.fillWidth: true
-        implicitHeight: 350
+        Layout.preferredHeight: page.listHeight
         ColumnLayout {
             anchors.centerIn: parent
             width: Math.min(parent.width, 560)
-            spacing: 16
+            spacing: 12
             SplatLabel {
-                text: "Add source data"
-                font.pixelSize: Theme.title
-                font.weight: Font.DemiBold
+                text: "or drop photo/video files here"
+                font.pixelSize: Theme.section
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
             }
             SplatLabel {
-                text: "Add the photos and videos you want to use."
+                text: "SplatForge keeps your original files in place and references them from the project."
                 color: Theme.secondary
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-            }
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 12
-                SplatButton {
-                    text: "Add Photos"
-                    objectName: "addPhotos"
-                    iconName: "plus"
-                    kind: "primary"
-                    enabled: page.vm.state.canMutate
-                    onClicked: photos.open()
-                }
-                SplatButton {
-                    text: "Add Video"
-                    objectName: "addVideo"
-                    iconName: "plus"
-                    enabled: page.vm.state.canMutate
-                    onClicked: videos.open()
-                }
-            }
-            SplatLabel {
-                text: "or drop photo and video files here"
-                color: Theme.secondary
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-            }
-            SplatButton {
-                text: "Add folder…"
-                kind: "ghost"
-                Layout.alignment: Qt.AlignHCenter
-                enabled: page.vm.state.canMutate
-                onClicked: folders.open()
-                Accessible.description: "Add supported files from the top level of a folder"
-            }
-            SplatLabel {
-                text: "SplatForge will detect cameras and organize files automatically."
-                color: Theme.muted
-                font.pixelSize: Theme.small
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
             }
@@ -97,63 +106,58 @@ ColumnLayout {
     SplatCard {
         visible: page.vm.sources.count > 0
         Layout.fillWidth: true
+        Layout.preferredHeight: page.listHeight
         padding: 0
-        implicitHeight: Math.min(320, 64 + page.vm.sources.count * 58)
         ColumnLayout {
             anchors.fill: parent
             spacing: 0
             RowLayout {
                 Layout.fillWidth: true
-                Layout.margins: 16
+                Layout.margins: 12
                 SplatLabel {
-                    text: "SOURCE MEDIA"
-                    font.pixelSize: Theme.caption
-                    font.letterSpacing: 1
-                    color: Theme.muted
+                    text: "Source files"
+                    font.weight: Font.DemiBold
                     Layout.fillWidth: true
                 }
                 SplatButton {
-                    text: "Verify sources"
-                    kind: "ghost"
-                    enabled: page.vm.state.canMutate
-                    onClicked: page.vm.verifySources()
-                    Accessible.description:
-                        "Balanced/local verification; metadata reuse is reported explicitly"
+                    objectName: "sourceDetails"
+                    text: "Details"
+                    enabled: page.vm.sources.selectedId !== ""
+                    onClicked: details.open()
                 }
             }
             ListView {
                 id: sources
+                objectName: "sourceList"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 model: page.vm.sources
                 clip: true
                 reuseItems: true
+                currentIndex: page.vm.sources.selectedIndex
+                onCurrentIndexChanged: {
+                    if (currentIndex >= 0)
+                        positionViewAtIndex(currentIndex, ListView.Contain);
+                }
                 delegate: ItemDelegate {
                     id: source
                     required property var record
                     required property string recordId
                     width: sources.width
-                    height: 58
+                    height: 76
                     hoverEnabled: true
                     focusPolicy: Qt.StrongFocus
-                    Accessible.name: record.filename + " " + record.type
+                    objectName: "source-" + recordId
+                    Accessible.name: record.filename + ", " + record.description + ", " + record.availability
                     onClicked: page.vm.media.selectSource(recordId)
                     background: Rectangle {
                         color: page.vm.sources.selectedId === source.recordId ? Theme.selection :
-                                                                                source.hovered
-                                                                                ? Theme.hover :
-                                                                                  "transparent"
+                               source.hovered ? Theme.hover : "transparent"
                         border.width: source.visualFocus ? 2 : 0
                         border.color: Theme.accent
                     }
                     contentItem: RowLayout {
                         spacing: 16
-                        SplatButton {
-                            iconName: "sources"
-                            kind: "ghost"
-                            enabled: false
-                            opacity: 1
-                        }
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 4
@@ -165,197 +169,56 @@ ColumnLayout {
                                 wrapMode: Text.NoWrap
                             }
                             SplatLabel {
-                                text: page.vm.state.mode === "Advanced"
-                                      ? source.record.verification : source.record.verificationLabel
-                                color: Theme.muted
-                                font.pixelSize: Theme.caption
+                                text: source.record.description
+                                color: Theme.secondary
+                                font.pixelSize: Theme.small
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 wrapMode: Text.NoWrap
                             }
                         }
                         SplatLabel {
-                            text: source.record.dimensions
+                            text: source.record.availability
                             color: Theme.secondary
-                            Layout.preferredWidth: 120
-                        }
-                        SplatBadge {
-                            text: source.record.type
-                        }
-                    }
-                }
-                ScrollBar.vertical: ScrollBar {}
-            }
-        }
-    }
-    RowLayout {
-        visible: page.vm.sources.count > 0
-        Layout.fillWidth: true
-        spacing: 16
-        SplatLabel {
-            text: "Media browser"
-            font.pixelSize: Theme.section
-            font.weight: Font.DemiBold
-            Layout.fillWidth: true
-        }
-        RunPicker {
-            workflow: page.vm.workflow
-            inputKind: "views"
-            Layout.preferredWidth: Math.min(300, page.width * 0.4)
-        }
-        SplatButton {
-            text: "Load views"
-            enabled: page.vm.workflow.state.inputs.views !== ""
-            onClicked: page.vm.media.loadGallery(page.vm.workflow.state.inputs.views, 0)
-        }
-    }
-    SplatLabel {
-        visible: page.vm.sources.count > 0
-        text: page.vm.media.state.message
-              || "Select a photo for a bounded preview, or load published views from a video."
-        color: Theme.secondary
-        Layout.fillWidth: true
-    }
-    GridLayout {
-        visible: page.vm.sources.count > 0
-        columns: page.width > 1050 ? 2 : 1
-        Layout.fillWidth: true
-        columnSpacing: 16
-        rowSpacing: 16
-        SplatCard {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 3
-            Layout.preferredHeight: 300
-            padding: 12
-            GridView {
-                id: gallery
-                anchors.fill: parent
-                model: page.vm.media.gallery
-                cellWidth: 200
-                cellHeight: 226
-                clip: true
-                delegate: ItemDelegate {
-                    id: imageItem
-                    required property string caption
-                    required property string imageUrl
-                    required property string previewStatus
-                    required property int index
-                    width: 192
-                    height: 218
-                    onClicked: page.vm.media.preview(index)
-                    Accessible.name: caption + ", " + previewStatus
-                    background: Rectangle {
-                        color: imageItem.hovered ? Theme.hover : Theme.background
-                        radius: Theme.radius
-                        border.color: imageItem.visualFocus ? Theme.accent : "transparent"
-                    }
-                    contentItem: ColumnLayout {
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Image {
-                                anchors.fill: parent
-                                source: imageItem.imageUrl
-                                sourceSize: Qt.size(192, 192)
-                                cache: false
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            SplatLabel {
-                                anchors.centerIn: parent
-                                width: parent.width - 16
-                                horizontalAlignment: Text.AlignHCenter
-                                text: imageItem.previewStatus
-                                color: Theme.secondary
-                                font.pixelSize: Theme.small
-                                visible: imageItem.previewStatus !== "Ready"
-                            }
-                        }
-                        SplatLabel {
-                            text: imageItem.caption
                             font.pixelSize: Theme.small
-                            Layout.fillWidth: true
-                            elide: Text.ElideMiddle
-                            wrapMode: Text.NoWrap
+                        }
+                        SplatButton {
+                            text: "Preview"
+                            visible: source.record.type === "photo"
+                            onClicked: page.vm.media.previewSource(source.recordId)
                         }
                     }
                 }
-                SplatLabel {
-                    anchors.centerIn: parent
-                    visible: gallery.count === 0
-                    text: "No preview selected"
-                    color: Theme.muted
-                }
-                ScrollBar.vertical: ScrollBar {}
-            }
-        }
-        SplatCard {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: 300
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 12
-                SplatLabel {
-                    text: "Source details"
-                    font.weight: Font.DemiBold
-                }
-                SplatLabel {
-                    text: page.vm.sources.selected.filename || "Select a source"
-                    font.pixelSize: Theme.section
-                    Layout.fillWidth: true
-                }
-                SplatLabel {
-                    text: page.vm.sources.selected.dimensions || ""
-                    color: Theme.secondary
-                }
-                SplatLabel {
-                    text: (page.vm.state.mode === "Advanced"
-                           ? page.vm.sources.selected.verification :
-                             page.vm.sources.selected.verificationLabel)
-                          || "Verification evidence is shown exactly as recorded."
-                    color: Theme.secondary
-                    Layout.fillWidth: true
-                    font.pixelSize: Theme.small
-                }
-                Item {
-                    Layout.fillHeight: true
-                }
-                SplatLabel {
-                    text: page.vm.sources.selected.locator || ""
-                    color: Theme.muted
-                    Layout.fillWidth: true
-                    font.family: Theme.mono
-                    font.pixelSize: Theme.caption
-                    maximumLineCount: 3
-                    elide: Text.ElideMiddle
+                ScrollBar.vertical: ScrollBar {
+                    policy: sources.contentHeight > sources.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
                 }
             }
         }
     }
     RowLayout {
-        visible: page.vm.sources.count > 0
-        Layout.alignment: Qt.AlignRight
+        id: footer
+        Layout.fillWidth: true
         SplatLabel {
-            text: "Views " + page.vm.media.state.offset + "–" + (page.vm.media.state.offset
-                                                                 + page.vm.media.state.count)
-            color: Theme.muted
-            font.pixelSize: Theme.small
+            text: page.vm.sources.count > 0
+                  ? "Sources are saved. Prepare Data is not available yet."
+                  : "Add photos or videos to get started."
+            color: Theme.secondary
+            Layout.fillWidth: true
         }
         SplatButton {
-            text: "Previous"
-            enabled: page.vm.media.state.offset > 0
-            onClicked: page.vm.media.loadGallery(page.vm.workflow.state.inputs.views,
-                                                 page.vm.media.state.offset - 100)
+            objectName: "sourcesContinue"
+            text: "Continue →"
+            enabled: false
+            Accessible.description: "Prepare Data is not available yet"
         }
-        SplatButton {
-            text: "Next 100"
-            enabled: page.vm.media.state.count === 100
-            onClicked: page.vm.media.loadGallery(page.vm.workflow.state.inputs.views,
-                                                 page.vm.media.state.offset + 100)
-        }
+    }
+    SourceDetailsDialog {
+        id: details
+        vm: page.vm
     }
     FileDialog {
         id: photos
+        objectName: "photosPicker"
         title: "Add photos"
         fileMode: FileDialog.OpenFiles
         nameFilters: ["Photos (*.jpg *.jpeg *.png)"]
@@ -363,16 +226,10 @@ ColumnLayout {
     }
     FileDialog {
         id: videos
+        objectName: "videosPicker"
         title: "Add video"
         fileMode: FileDialog.OpenFiles
         nameFilters: ["Videos (*.mp4 *.mov)"]
-        onAccepted: page.vm.addFiles(selectedFiles.map(u => String(u)))
-    }
-    FileDialog {
-        id: files
-        title: "Add read-only sources"
-        fileMode: FileDialog.OpenFiles
-        nameFilters: ["Media (*.jpg *.jpeg *.png *.mp4 *.mov)"]
         onAccepted: page.vm.addFiles(selectedFiles.map(u => String(u)))
     }
     FolderDialog {

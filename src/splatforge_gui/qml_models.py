@@ -47,6 +47,10 @@ class PresentationModel(RecordModel):
     def selectedId(self) -> str:
         return self._selected
 
+    @Property(int, notify=selectionChanged)
+    def selectedIndex(self) -> int:
+        return next((i for i, r in enumerate(self.rows) if str(r.identity) == self._selected), -1)
+
     @Property("QVariantMap", notify=selectionChanged)
     def selected(self) -> dict:
         row = next((r for r in self.rows if str(r.identity) == self._selected), None)

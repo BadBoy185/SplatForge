@@ -9,6 +9,7 @@ SplatCard {
     property string title: "Exact evidence"
     property string text: ""
     property bool expanded: false
+    property real detailsHeight: 280
     implicitHeight: content.implicitHeight + padding * 2
     ColumnLayout {
         id: content
@@ -25,7 +26,7 @@ SplatCard {
         ScrollView {
             visible: panel.expanded
             Layout.fillWidth: true
-            Layout.preferredHeight: 280
+            Layout.preferredHeight: panel.detailsHeight
             clip: true
             TextArea {
                 text: panel.text || "No evidence yet. Run the relevant inspection or Plan."

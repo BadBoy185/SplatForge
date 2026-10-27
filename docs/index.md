@@ -64,6 +64,7 @@ do not reinterpret old acceptance results as current runtime evidence.
 | [M11](M11.md) | Delivered handoff/managed-training slice and bounded empirical results |
 | [M12](M12.md) | Delivered desktop slice, parity evidence and limitations |
 | [M12a project shell](plans/completed/2026-10-27-m12a-project-shell.md) | Accepted Home/Create/Open/Sources shell |
+| [M12b1 Sources and preview](plans/completed/2026-10-27-m12b1-sources-preview.md) | Accepted explicit import, source inspection and preview |
 | [Housekeeping](plans/completed/2026-10-26-repository-housekeeping.md) | Repository/documentation harness work, not a product milestone |
 
 ## Archive / legacy

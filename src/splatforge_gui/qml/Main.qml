@@ -55,6 +55,8 @@ ApplicationWindow {
                 componentDialog.open();
             else if (name === "image")
                 imageDialog.open();
+            else if (name === "closeImage")
+                imageDialog.close();
             else if (name === "cleanup")
                 cleanupDialog.open();
         }
@@ -376,6 +378,7 @@ ApplicationWindow {
         id: sourcesPage
         SourcesPage {
             vm: window.vm
+            viewportHeight: scroll.availableHeight - 64
         }
     }
     Component {
@@ -422,17 +425,9 @@ ApplicationWindow {
         objectName: "componentDialog"
         selection: window.vm.components
     }
-    SplatDialog {
+    SourcePreviewDialog {
         id: imageDialog
-        title: "Read-only bounded image preview"
-        width: Math.min(1100, Overlay.overlay.width - 64)
-        height: Math.min(800, Overlay.overlay.height - 64)
-        Image {
-            anchors.fill: parent
-            source: window.vm.media.state.largeImage
-            cache: false
-            fillMode: Image.PreserveAspectFit
-        }
+        media: window.vm.media
     }
     FolderDialog {
         id: openDialog

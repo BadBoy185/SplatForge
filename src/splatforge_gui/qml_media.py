@@ -1,5 +1,6 @@
 """Lazy bounded image delivery. QML receives provider keys, never decoding instructions."""
 
+import traceback
 from uuid import UUID, uuid4
 
 from PySide6.QtCore import Property, QObject, Qt, Signal, Slot
@@ -60,9 +61,12 @@ class MediaProvider(QQuickImageProvider):
         super().__init__(QQuickImageProvider.ImageType.Image)
         self.model = model
         self.large = QImage()
+        self.large_identity = ""
 
     def requestImage(self, identity, size, requestedSize) -> QImage:
-        value = self.large if identity.startswith("large/") else self.model.cache.get(identity)
+        value = (
+            self.large if identity == self.large_identity else self.model.cache.get(identity)
+        )
         result = QImage(value) if value is not None else QImage()
         size.setWidth(result.width())
         size.setHeight(result.height())
@@ -80,8 +84,14 @@ class MediaViewModel(QObject):
         self._token, self._offset, self._large, self._message = "", 0, "", ""
         self._gallery_run = ""
         self._project = None
+        self._preview_token = ""
+        self._preview_index = -1
+        self._preview_title, self._preview_status, self._preview_details = "", "", ""
+        self._preview_description = ""
+        self._source_gallery = False
         self.controller.completed.connect(self.completed)
         self.controller.changed.connect(self.overview)
+        self.desktop._source.modelReset.connect(self.sources_changed)
 
     @Property(QObject, constant=True)
     def gallery(self) -> QObject:
@@ -94,6 +104,15 @@ class MediaViewModel(QObject):
             "count": len(self._gallery.references),
             "largeImage": self._large,
             "message": self._message,
+            "galleryRun": self._gallery_run,
+            "previewTitle": self._preview_title,
+            "previewDescription": self._preview_description,
+            "previewStatus": self._preview_status,
+            "previewDetails": self._preview_details,
+            "previewIndex": self._preview_index + 1,
+            "previewCount": len(self._gallery.references),
+            "canPrevious": self._preview_index > 0,
+            "canNext": 0 <= self._preview_index < len(self._gallery.references) - 1,
         }
 
     def overview(self, overview) -> None:
@@ -102,6 +121,10 @@ class MediaViewModel(QObject):
             self._token = uuid4().hex
             self._gallery.replace(())
             self._offset, self._large, self._message = 0, "", ""
+            self._gallery_run = ""
+            self._source_gallery = False
+            self.closePreview()
+            self.desktop.dialogRequested.emit("closeImage")
             self.changed.emit()
 
     @Slot(str)
@@ -111,29 +134,70 @@ class MediaViewModel(QObject):
         row = self.desktop._source.selected
         self._token = uuid4().hex
         self._offset = 0
+        self._gallery_run = ""
+        self._source_gallery = True
+        self.closePreview()
         if row.get("type") == "photo":
-            self._gallery.replace(
-                (
-                    ThumbnailReference(
-                        identity=identity,
-                        path=self.desktop.local_path(row["locator"]),
-                        caption=row["filename"],
-                    ),
-                )
-            )
-            self._message = "Read-only bounded image preview"
+            self._gallery.replace(self._photo_references())
+            self._message = "Select Preview to view this photo."
         else:
             self._gallery.replace(())
             self._message = (
-                "Video previews use materialized views. Prepare views, then choose a published set."
+                "Video added. Frames will be extracted during Prepare Data."
             )
         self.changed.emit()
+
+    def _photo_references(self) -> tuple[ThumbnailReference, ...]:
+        return tuple(
+            ThumbnailReference(
+                identity=str(source.identity),
+                path=self.desktop.local_path(source.values["locator"]),
+                caption=source.values["filename"],
+            )
+            for source in self.desktop._source.rows
+            if source.values["type"] == "photo"
+        )
+
+    def sources_changed(self) -> None:
+        if not self._source_gallery:
+            return
+        current = (
+            self._gallery.references[self._preview_index]
+            if 0 <= self._preview_index < len(self._gallery.references) else None
+        )
+        references = self._photo_references()
+        if references == self._gallery.references:
+            return
+        self._gallery.replace(references)
+        if current:
+            index = next(
+                (i for i, r in enumerate(references) if r.identity == current.identity), -1
+            )
+            if index < 0:
+                self.closePreview()
+                self.desktop.dialogRequested.emit("closeImage")
+            elif references[index] != current:
+                self.preview(index)
+            else:
+                self._preview_index = index
+        self.changed.emit()
+
+    @Slot(str)
+    def previewSource(self, identity: str) -> None:
+        self.selectSource(identity)
+        index = next(
+            (i for i, r in enumerate(self._gallery.references) if r.identity == identity), -1
+        )
+        self.preview(index)
 
     @Slot(str, int)
     @guarded
     def loadGallery(self, run: str, offset: int) -> None:
         if not run:
             return
+        self.closePreview()
+        self._source_gallery = False
+        self._gallery.replace(())
         self._token, self._offset, self._gallery_run = uuid4().hex, max(0, offset), run
         token, root, start = self._token, self.controller.root, self._offset
         self.controller.submit("qml_gallery", lambda f: (token, f.gallery(root, UUID(run), start)))
@@ -145,18 +209,52 @@ class MediaViewModel(QObject):
     def preview(self, index: int) -> None:
         if not 0 <= index < len(self._gallery.references):
             return
-        reference, token = self._gallery.references[index], self._token
-        self.controller.submit(
-            "qml_image", lambda _: (token, decode_thumbnail(reference.path, 1024))
+        reference = self._gallery.references[index]
+        self._preview_token = token = uuid4().hex
+        self._preview_index, self._preview_title = index, reference.caption
+        self._large, self._preview_details = "", ""
+        self.provider.large = QImage()
+        self._preview_status = "Loading preview…"
+        if self._source_gallery:
+            self.desktop._source.select(reference.identity)
+        self._preview_description = (
+            self.desktop._source.selected.get("description", "Photo preview")
+            if self._source_gallery else "Photo preview"
         )
+
+        def decode(_):
+            try:
+                return token, decode_thumbnail(reference.path, 1024), ""
+            except Exception:
+                return token, QImage(), traceback.format_exc()
+
+        self.controller.submit("qml_image", decode)
+        self.changed.emit()
+        self.desktop.dialogRequested.emit("image")
+
+    @Slot(int)
+    def stepPreview(self, step: int) -> None:
+        if step in {-1, 1} and self._preview_index >= 0:
+            self.preview(self._preview_index + step)
+
+    @Slot()
+    def closePreview(self) -> None:
+        self._preview_token = uuid4().hex
+        self._preview_index = -1
+        self._large, self._preview_details, self._preview_status = "", "", ""
+        self.provider.large = QImage()
+        self.provider.large_identity = ""
+        self.changed.emit()
 
     def completed(self, name: str, value) -> None:
         if name == "qml_gallery" and value[0] == self._token:
             self._gallery.replace(value[1])
             self._message = f"{len(value[1])} views · offset {self._offset} · bounded previews"
             self.changed.emit()
-        elif name == "qml_image" and value[0] == self._token:
+        elif name == "qml_image" and value[0] == self._preview_token:
             self.provider.large = value[1]
-            self._large = "image://media/large/" + uuid4().hex
+            self._preview_details = value[2]
+            self._preview_status = "Preview unavailable" if value[2] else "Ready"
+            self._large = "" if value[2] else "image://media/large/" + uuid4().hex
+            self.provider.large_identity = self._large.removeprefix("image://media/")
             self.changed.emit()
-            self.desktop.dialogRequested.emit("image")

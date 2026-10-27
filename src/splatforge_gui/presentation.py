@@ -5,6 +5,7 @@ import traceback
 from datetime import UTC, datetime
 from functools import wraps
 
+from splatforge.application.desktop import IndexRow
 from splatforge_gui.tasks import TaskError
 
 
@@ -84,11 +85,59 @@ def verification_label(value: str) -> str:
     return f"{outcome.replace('_', ' ').capitalize()} · {description} · {timestamp(checked)}"
 
 
+def source_availability(value: str) -> str:
+    """Describe recorded availability, without claiming a current filesystem check."""
+    parts = value.split(" · ")
+    if len(parts) != 3:
+        return "Not checked recently"
+    return {
+        "unchanged": "Available at last check",
+        "missing": "Missing at last check",
+        "changed": "File changed",
+    }.get(parts[0], "Could not check")
+
+
+def source_description(values: dict) -> str:
+    """Project stored metadata only; unknown duration stays absent."""
+    parts = [str(values["type"]).capitalize(), values.get("dimensions", "")]
+    if values["type"] == "video" and values.get("duration") is not None:
+        try:
+            seconds = float(values["duration"])
+            if 0 <= seconds < float("inf"):
+                parts.append(duration(seconds).removeprefix("00:"))
+        except (ValueError, TypeError, OverflowError):
+            pass
+    return " · ".join(p for p in parts if p)
+
+
+def source_summary(rows: tuple[IndexRow, ...]) -> dict:
+    """Cheap inventory projection, with no source reads or verification side effects."""
+    photos = sum(r.values["type"] == "photo" for r in rows)
+    videos = sum(r.values["type"] == "video" for r in rows)
+    statuses = [source_availability(r.values["verification"]) for r in rows]
+    missing = statuses.count("Missing at last check")
+    unknown = statuses.count("Not checked recently")
+    issues = sum(s in {"File changed", "Could not check"} for s in statuses)
+    if missing:
+        noun = "source file was" if missing == 1 else "source files were"
+        message = f"{missing} {noun} missing at last check."
+    elif issues:
+        noun = "source file needs" if issues == 1 else "source files need"
+        message = f"{issues} {noun} attention. See their recorded check in Details."
+    elif not statuses or unknown:
+        message = "File availability has not been checked recently."
+    else:
+        message = "All source files were available at their last check."
+    return {"photos": photos, "videos": videos, "checkMessage": message}
+
+
 def progress_state(controller, metrics: dict) -> dict:
     active = controller.active
     result = {
         "visible": bool(active) or controller.mutating,
-        "title": (controller.operation or "Processing").replace("_", " ").title(),
+        "title": {"ingest": "Adding source files…", "verify": "Checking source files…"}.get(
+            controller.operation, (controller.operation or "Processing").replace("_", " ").title()
+        ),
         "phase": "Waiting for application progress",
         "fraction": -1.0,
         "work": "",

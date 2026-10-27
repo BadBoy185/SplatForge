@@ -14,6 +14,9 @@ from splatforge_gui.presentation import (
     guarded,
     progress_state,
     project_name_error,
+    source_availability,
+    source_description,
+    source_summary,
     timestamp,
     verification_label,
 )
@@ -45,6 +48,7 @@ class DesktopViewModel(QObject):
         self._pending_close = False
         self._folder = None
         self._notice = ""
+        self._source_summary = source_summary(())
         self._mode = self.preferences.get("mode", "Guided")
         self._theme = self.preferences.get("theme", "System")
         self._machine = {
@@ -120,6 +124,7 @@ class DesktopViewModel(QObject):
             "machine": self._machine,
             "error": self._error,
             "notice": self._notice,
+            "sourcesSummary": self._source_summary,
             "folderCount": len(self._folder.supported) if self._folder else 0,
             "folderIgnored": self._folder.ignored if self._folder else 0,
         }
@@ -355,12 +360,15 @@ class DesktopViewModel(QObject):
                         "values": {
                             **r.values,
                             "verificationLabel": verification_label(r.values["verification"]),
+                            "availability": source_availability(r.values["verification"]),
+                            "description": source_description(r.values),
                         }
                     }
                 )
                 for r in value.sources
             )
         )
+        self._source_summary = source_summary(value.sources)
         self._runs.replace(value.index.runs)
         self._artifacts.replace(
             tuple(

@@ -155,6 +155,22 @@ There is no recursive mixed-folder scanner or additional source type in this sli
 Recent entries use backend identity/name/path and Available/Unavailable, without
 inferring processing status. Last-opened timestamps are deferred; QSettings is unchanged.
 
+### M12b1 Sources presentation
+
+Sources keeps explicit Add Photos/Add Video actions, inventory summary, explained
+Check Source Files action, a virtualized scrollable list and Continue above the
+fold at the supported minimum window size. Standard rows show stored media metadata
+and recorded availability; Technical Details retains identity/hash/check evidence.
+Labels say "at last check" rather than implying a current filesystem check.
+
+The photo popup shows filename/index, X/Esc, Previous/Next and arrow-key navigation
+in the current source-list order, skipping videos without wrap-around. Each bounded
+decode request has its own token; navigation/close/project switch invalidates stale
+responses. Errors remain inspectable inside the popup. Published-view browsing is
+secondary in Source Details, with no empty result picker or irrelevant pagination.
+Continue is visibly disabled with an explanation until the Prepare Data screen exists;
+it never starts processing. See the [bounded plan](plans/completed/2026-10-27-m12b1-sources-preview.md).
+
 ## Accessibility and desktop layout
 
 Keep standard focus/keyboard semantics and meaningful Accessible names/descriptions.
