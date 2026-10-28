@@ -22,6 +22,7 @@ from splatforge.adapters.project_lock import (
 )
 from splatforge.adapters.project_storage import CommittedProject, LocalProjectStore
 from splatforge.application.projects import ProjectError, StaleProjectRevisionError
+from splatforge.core.logical_source_groups import LogicalSourceGroups
 from splatforge.core.media import (
     InventoryHeader,
     SourceEvidence,
@@ -101,6 +102,7 @@ class LocalMediaRepository:
         expected_document: ProjectDocument,
         inventory: SourceInventory,
         validate_sources: Callable[[], None],
+        logical_groups: LogicalSourceGroups | None = None,
     ) -> ProjectDocument:
         root = root.resolve()
         self._validate_candidate(expected_document, inventory)
@@ -142,6 +144,8 @@ class LocalMediaRepository:
                     "revision": current.revision + 1,
                     "updated_at": datetime.now(UTC),
                     "inventory_reference": self.reference_for(inventory.header.inventory_id),
+                    **({"logical_source_groups": logical_groups.model_dump(mode="json")}
+                       if logical_groups is not None else {}),
                 }
             )
             self._project_store.save_under_lease(root, saved, expected_revision=current.revision)

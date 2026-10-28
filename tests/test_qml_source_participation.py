@@ -80,7 +80,9 @@ def test_exclude_restore_filters_details_preview_and_availability(desktop, tmp_p
             assert window.findChild(QObject, "imageDialog").property("visible")
             QTest.keyClick(window, Qt.Key.Key_Escape)
         click(window, "filterAll")
-        assert desktop.sources.count == 2 and desktop.sources.selectedId == identity
+        assert desktop.sources.count == 2 and desktop.sources.selectedId == ""
+        # A scope change now clears selection to prevent hidden batch operations.
+        desktop.media.selectSource(identity)
         click(window, "sourceListMode" if view == "Grid" else "sourceGridMode")
         assert desktop.sources.selectedId == identity
         click(window, "sourceDetails")

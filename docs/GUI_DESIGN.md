@@ -106,8 +106,9 @@ unsupported current choices and disables unsupported menu entries after a probe.
 Microsoft Fluent System Icons are vendored locally as the small used SVG subset.
 Their [MIT license](../src/splatforge_gui/qml/icons/LICENSE) accompanies the assets.
 Source: [Microsoft Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons),
-regular 20 px assets, retrieved 2026-10-24. The geometric SplatForge brand mark is
-app-owned. Control icons use Qt's theme-aware tint, without an icon runtime dependency.
+regular 20 px assets, retrieved 2026-10-24. The geometric SplatForge brand mark and
+compact information/exclusion geometry are app-owned. Control icons use Qt's
+theme-aware tint, without an icon runtime dependency.
 
 Motion is brief (160 ms) and limited to control state/progress. No blur, animated
 gradient or decorative continuous animation is used. Indeterminate progress animates
@@ -236,6 +237,77 @@ Single selection remains shared by List/Grid/preview; Ctrl/Shift batch selection
 deferred. The application intent edit supports one atomic batch Save.
 See [persistence](PROJECT_FORMAT.md#source-participation-intent-m12b2a) and the
 [completed plan](plans/completed/2026-10-27-m12b2a-source-participation.md).
+
+### M12b3 capture metadata and groups
+
+Sources organizes saved rows by explicit user group, then reliable captured Make+Model,
+then Unknown device (photos) or Videos. These device sections are derived presentation,
+not persisted groups or inferred sessions/physical-camera identities. A compact group
+navigator scopes either virtualized List or Grid; All groups orders rows by section,
+with List section headers and Grid group/device captions. Counts/summaries reflect the
+current Included/Excluded/All filter. Empty user groups remain selectable and explained.
+
+Groups opens a small dialog for Create, Rename, Delete and Move to Group/Ungroup of
+selected sources. Create from selection creates and assigns in one Save; Move uses
+one batch draft. Rename/Delete remain secondary group management. Deleting a group
+leaves sources ungrouped. Ungrouped sources
+resume derived device presentation. Stable UUID assignment survives Exclude/Restore,
+reopen, relocation and relink. Actions use existing draft/Save/reader-drain/readback;
+failures never display uncommitted group membership. Existing dirty edits first use
+Save/Discard/Cancel. List and Grid share a UUID selection set and anchor. Plain click
+replaces it, Ctrl toggles, Shift selects the inclusive visible ordered range (Ctrl+Shift
+adds that range), and Ctrl+A selects only visible sources. View switching preserves it;
+changing participation/group scope clears it. Refresh intersects it with visible IDs;
+project changes clear it. Availability, participation, groups and selection remain
+independent. Per-source Exclude/Restore affects the selected set if its source is
+selected, otherwise that source alone. Contextual batch controls appear for multiple
+selected sources. All mutations use committed readback; there is no optimistic QML state.
+
+List and Grid remain attached to the same source model. Same-ID evidence changes emit
+record-role notifications; membership/order changes reset the projection. Hidden Grid
+thumbnail requests are disabled independently of model attachment. List puts availability
+beside the right-edge compact Preview/Details/Exclude-or-Restore icons; Grid uses the
+same icon component. Every icon has a tooltip, accessible name and keyboard focus.
+At minimum window height, the check explanation card yields to multi-selection
+controls so Grid retains usable thumbnails and fully visible actions. Clearing the
+selection restores Check Source Files; active progress remains in the shell panel.
+
+Add Folder previews relative parent folders as import-time logical groups. Root files
+stay ungrouped; nested labels use `Drone / Flight 1`. Equal display names never merge
+memberships: new UUIDs and `(2)` suffixes distinguish collisions. Inventory reference
+and all new groups/assignments publish together in one metadata CAS. Reopen/relink
+never recomputes groups from locators, and folder names never become captured devices.
+
+Check Source Files publishes known total, completed persisted checks, current filename,
+phase and elapsed time from MediaService through the existing source-operation reporter.
+Its M6.5 live estimator starts at Estimating, requires stable completed-work evidence,
+suppresses variable/stalled estimates and expires displayed evidence after five seconds.
+The existing controller poll only ages observations. Generation/job tokens reject stale
+events; failure/cancellation never publish success. No timer advances work.
+
+Photo Preview's compact Exclude/Restore always edits the current photo alone, preserving
+the browser selection for visible members. It snapshots ordered photo UUID neighbors
+within the current participation/group scope before mutation. After committed readback
+it opens the next surviving neighbor, falls back through previous neighbors, or closes
+when none remain. This also advances in All scope. Failure leaves the current preview;
+an explicit scope/project switch closes it. New image requests clear the old image and
+use fresh tokens; late replies cannot replace the new photo. Navigation never decodes
+the entire review sequence. Left/Right/Esc retain their existing behavior.
+
+Details leads with type, resolution/duration, user group, captured device, recorded
+time and available photographic fields, location and independent availability/
+participation. Unknown/partial evidence is honest; container creation is labeled as
+creation, and EXIF without an offset does not invent a timezone. Identity/hash,
+processing source/camera UUIDs, inventory revision and capture provenance stay under
+collapsed Technical Details. Selected-only metadata is read asynchronously from saved
+inventory; overview contains compact device/group roles, no EXIF maps. No originals
+are opened for metadata on Open/render/Details. Ingest captures bounded metadata before
+reporting its checked/succeeded phase through existing progress. No QSettings data,
+video player/poster/extraction or Prepare UI is introduced. Lazy thumbnail and project
+generation boundaries are unchanged. Group labels/assignments affect no numerical
+recipe, calibration ID, published artifact or reconstruction semantics.
+See [persistence](PROJECT_FORMAT.md#capture-evidence-and-logical-source-groups-m12b3)
+and the [implementation plan](plans/active/2026-10-27-m12b3-capture-metadata-groups.md).
 
 ## Accessibility and desktop layout
 

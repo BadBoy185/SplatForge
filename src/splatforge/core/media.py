@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from splatforge.core.capture_metadata import CaptureMetadata
+
 
 class MediaType(StrEnum):
     PHOTO = "photo"
@@ -121,6 +123,7 @@ class NormalizedProbe(BaseModel):
     duration: str | None = None
     frame_count: int | None = Field(default=None, ge=0, strict=True)
     rotation_degrees: int | None = Field(default=None, strict=True)
+    capture: CaptureMetadata | None = None
 
 
 class SourceOccurrence(BaseModel):
@@ -131,6 +134,7 @@ class SourceOccurrence(BaseModel):
     source_revision: int = Field(ge=1, strict=True)
     external_locator: str = Field(min_length=1)
     display_filename: str = Field(min_length=1)
+    original_filename: str | None = Field(default=None, min_length=1)
     media_type: MediaType
     extension: Literal[".jpg", ".jpeg", ".png", ".mp4", ".mov"]
     byte_size: int = Field(ge=0, strict=True)

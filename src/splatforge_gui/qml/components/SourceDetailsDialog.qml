@@ -12,16 +12,19 @@ SplatDialog {
     objectName: "sourceDetailsDialog"
     title: sourceRecord.filename || "Source details"
     height: Math.min(720, Overlay.overlay.height - 48)
-    onOpened: technical.expanded = false
+    onOpened: { technical.expanded = false; vm.media.inspectSource(); }
+    onSourceRecordChanged: { if (visible) vm.media.inspectSource(); }
     ColumnLayout {
         anchors.fill: parent
         spacing: 12
         ScrollView {
             id: scroll
+            objectName: "sourceDetailsScroll"
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentWidth: availableWidth
             clip: true
+            ScrollBar.vertical.policy: contentHeight > availableHeight ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
             ColumnLayout {
                 width: scroll.availableWidth
                 spacing: 12
@@ -43,20 +46,40 @@ SplatDialog {
                         color: Theme.secondary
                     }
                 }
+                SplatLabel { text: "Group"; font.weight: Font.DemiBold }
                 SplatLabel {
-                    text: "File"
+                    objectName: "sourceHumanGroup"
+                    text: dialog.sourceRecord.logicalGroupLabel || "Ungrouped"
+                    Layout.fillWidth: true
+                    color: Theme.secondary
+                }
+                SplatLabel { text: "Captured with"; font.weight: Font.DemiBold }
+                SplatLabel {
+                    objectName: "sourceHumanDevice"
+                    text: dialog.sourceRecord.device || "Unknown device"
+                    Layout.fillWidth: true
+                    color: Theme.secondary
+                }
+                SplatLabel {
+                    visible: !!dialog.vm.media.state.sourceDetails.recordedTime
+                    text: dialog.vm.media.state.sourceDetails.recordedLabel || "Captured"
                     font.weight: Font.DemiBold
                 }
                 SplatLabel {
-                    objectName: "sourceHumanLocation"
-                    text: "Location  " + (dialog.sourceRecord.locator || "Not recorded")
+                    objectName: "sourceHumanCaptured"
+                    visible: !!dialog.vm.media.state.sourceDetails.recordedTime
+                    text: dialog.vm.media.state.sourceDetails.recordedTime || ""
                     color: Theme.secondary
-                    wrapMode: Text.WrapAnywhere
                     Layout.fillWidth: true
                 }
                 SplatLabel {
                     text: "Status"
                     font.weight: Font.DemiBold
+                }
+                SplatLabel {
+                    objectName: "sourceParticipationLabel"
+                    text: dialog.sourceRecord.participationLabel || "Included"
+                    color: Theme.secondary
                 }
                 SourceAvailability {
                     record: dialog.sourceRecord
@@ -64,6 +87,7 @@ SplatDialog {
                 }
                 SplatLabel {
                     objectName: "sourceHumanChecked"
+                    visible: dialog.sourceRecord.checkedLabel !== dialog.sourceRecord.availability
                     text: dialog.sourceRecord.checkedLabel || "Not checked this session"
                     color: Theme.secondary
                     Layout.fillWidth: true
@@ -76,19 +100,11 @@ SplatDialog {
                 }
                 SplatLabel {
                     visible: dialog.sourceRecord.availabilityState === "neutral"
+                             && dialog.sourceRecord.lastVerifiedLabel !== "Not recorded"
                     text: "Last verified: " + (dialog.sourceRecord.lastVerifiedLabel || "Not recorded")
                     color: Theme.secondary
                     font.pixelSize: Theme.small
                     Layout.fillWidth: true
-                }
-                SplatLabel {
-                    text: "Processing"
-                    font.weight: Font.DemiBold
-                }
-                SplatLabel {
-                    objectName: "sourceParticipationLabel"
-                    text: dialog.sourceRecord.participationLabel || "Included"
-                    color: Theme.secondary
                 }
                 SplatButton {
                     objectName: "detailsParticipation"
@@ -98,13 +114,35 @@ SplatDialog {
                     onClicked: dialog.vm.setSourceIncluded(dialog.vm.sources.selectedId,
                                                           dialog.sourceRecord.isIncluded === false)
                 }
+                Repeater {
+                    model: dialog.vm.media.state.sourceDetails.fields
+                    delegate: ColumnLayout {
+                        id: field
+                        required property var modelData
+                        Layout.fillWidth: true
+                        spacing: 4
+                        SplatLabel { text: field.modelData.label; font.weight: Font.DemiBold }
+                        SplatLabel {
+                            text: field.modelData.value
+                            color: Theme.secondary
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+                SplatLabel {
+                    objectName: "sourceHumanLocation"
+                    text: "Location  " + (dialog.sourceRecord.locator || "Not recorded")
+                    color: Theme.secondary
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
                 DetailsPanel {
                     id: technical
                     objectName: "sourceTechnicalDetails"
                     title: "Technical Details"
                     detailsHeight: 140
                     Layout.fillWidth: true
-                    text: "Source ID: " + (dialog.sourceRecord.identity || "") + "\nSHA-256: " + (dialog.sourceRecord.sha256 || "") + "\nCodec: " + (dialog.sourceRecord.codec || "Not recorded") + "\nSource revision: " + (dialog.sourceRecord.sourceRevision || "") + "\nLast full hash: " + (dialog.sourceRecord.lastHashedAt || "Not recorded") + "\n" + (dialog.sourceRecord.verificationLabel || "")
+                    text: "Source ID: " + (dialog.sourceRecord.identity || "") + "\nSHA-256: " + (dialog.sourceRecord.sha256 || "") + "\nCodec: " + (dialog.sourceRecord.codec || "Not recorded") + "\nSource revision: " + (dialog.sourceRecord.sourceRevision || "") + "\nLast full hash: " + (dialog.sourceRecord.lastHashedAt || "Not recorded") + "\n" + (dialog.sourceRecord.verificationLabel || "") + "\n" + dialog.vm.media.state.sourceDetails.technical
                 }
                 ColumnLayout {
                     visible: technical.expanded && dialog.vm.state.mode === "Advanced" && dialog.hasViews

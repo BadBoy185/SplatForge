@@ -35,6 +35,17 @@ SplatDialog {
             }
         }
         SplatButton {
+            objectName: "previewParticipation"
+            iconName: dialog.media.state.previewSource.isIncluded === false ? "refresh" : "exclude"
+            kind: "ghost"
+            visible: !!dialog.media.state.previewSource.filename
+            enabled: dialog.media.state.canChangeParticipation
+            Accessible.name: dialog.media.state.previewSource.isIncluded === false
+                             ? "Restore to processing" : "Exclude from processing"
+            Accessible.description: "Applies only to this photo. Original file stays in place."
+            onClicked: dialog.media.togglePreviewParticipation()
+        }
+        SplatButton {
             objectName: "closeImagePreview"
             iconName: "close"
             Layout.rightMargin: 16
@@ -84,6 +95,11 @@ SplatDialog {
         }
         RowLayout {
             Layout.fillWidth: true
+            SourceAvailability {
+                record: dialog.media.state.previewSource
+                visible: !!dialog.media.state.previewSource.filename
+                Layout.maximumWidth: 180
+            }
             SplatButton {
                 objectName: "previousImage"
                 text: "← Previous"

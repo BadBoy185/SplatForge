@@ -62,7 +62,7 @@ ColumnLayout {
     }
     SplatCard {
         id: check
-        visible: page.populated
+        visible: page.populated && !(page.vm.sources.selectedCount > 1 && page.viewportHeight < 600)
         Layout.fillWidth: true
         padding: 12
         implicitHeight: checkContent.implicitHeight + padding * 2
@@ -77,7 +77,7 @@ ColumnLayout {
                     objectName: "sourceCheckSummary"
                     text: page.vm.state.participationWarnings.length > 0
                           ? page.vm.state.participationWarnings.join("\n")
-                          : page.vm.state.sourcesSummary.checkMessage
+                          : page.vm.state.sourceCheckResult + page.vm.state.sourcesSummary.checkMessage
                     font.weight: Font.DemiBold
                     Layout.fillWidth: true
                 }
@@ -202,21 +202,100 @@ ColumnLayout {
                 }
                 SplatButton {
                     objectName: "sourceDetails"
-                    text: "Details"
+                    iconName: "info"
+                    Accessible.name: "Details"
                     kind: "ghost"
                     enabled: page.vm.sources.selectedId !== ""
                     onClicked: details.open()
                 }
                 SplatButton {
                     objectName: "sourceParticipation"
-                    text: page.vm.sources.selected.isIncluded === false ? "Restore" : "Exclude"
+                    iconName: page.vm.sources.selected.isIncluded === false ? "refresh" : "exclude"
                     enabled: page.vm.sources.selectedId !== "" && page.vm.state.canMutate
                              && page.vm.state.participationSupported
-                    Accessible.name: text === "Exclude" ? "Exclude from processing" : "Restore"
+                    Accessible.name: page.vm.sources.selected.isIncluded === false ? "Restore to processing" : "Exclude from processing"
                     ToolTip.visible: hovered
-                    ToolTip.text: text === "Exclude" ? "Exclude from processing. Original file stays in place." : "Restore to processing"
+                    ToolTip.text: Accessible.name + ". Original file stays in place."
                     onClicked: page.vm.setSourceIncluded(page.vm.sources.selectedId,
                                                         page.vm.sources.selected.isIncluded === false)
+                }
+            }
+            Flow {
+                objectName: "sourceBatchBar"
+                visible: page.vm.sources.selectedCount > 1
+                Layout.fillWidth: true
+                Layout.leftMargin: 12
+                Layout.rightMargin: 12
+                Layout.bottomMargin: 8
+                spacing: 4
+                SplatLabel {
+                    text: page.vm.sources.selectedCount + " selected"
+                    height: 36
+                    verticalAlignment: Text.AlignVCenter
+                }
+                SplatButton {
+                    objectName: "batchCreateGroup"
+                    text: "Create Group…"
+                    enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
+                    onClicked: { groups.mode = "create"; groups.open(); }
+                }
+                SplatButton {
+                    objectName: "batchMoveGroup"
+                    text: "Move to Group…"
+                    enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
+                    onClicked: { groups.mode = "move"; groups.open(); }
+                }
+                SplatButton {
+                    objectName: "batchExclude"
+                    text: "Exclude"
+                    visible: page.vm.state.sourceFilter !== "Excluded"
+                    enabled: page.vm.state.canMutate && page.vm.state.participationSupported
+                    onClicked: page.vm.setSelectedIncluded(false)
+                }
+                SplatButton {
+                    objectName: "batchRestore"
+                    text: "Restore"
+                    visible: page.vm.state.sourceFilter !== "Included"
+                    enabled: page.vm.state.canMutate && page.vm.state.participationSupported
+                    onClicked: page.vm.setSelectedIncluded(true)
+                }
+                SplatButton {
+                    objectName: "clearSourceSelection"
+                    text: "Clear"
+                    kind: "ghost"
+                    onClicked: page.vm.sources.clearSelection()
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 12
+                Layout.rightMargin: 12
+                Layout.bottomMargin: 8
+                SplatComboBox {
+                    objectName: "sourceSectionPicker"
+                    model: page.vm.state.sourceSections
+                    textRole: "label"
+                    valueRole: "value"
+                    selectedValue: page.vm.state.sourceSection
+                    Layout.preferredWidth: Math.min(340, page.width * 0.42)
+                    Accessible.name: "Browse source group or captured device"
+                    onActivated: page.vm.setSourceSection(currentValue)
+                }
+                SplatLabel {
+                    objectName: "sourceSectionSummary"
+                    text: page.vm.state.sourceSectionSummary
+                    color: Theme.secondary
+                    font.pixelSize: Theme.small
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    wrapMode: Text.NoWrap
+                }
+                SplatButton {
+                    objectName: "sourceGroups"
+                    text: "Groups…"
+                    enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
+                    onClicked: { groups.mode = "manage"; groups.open(); }
+                    Accessible.description: "Create, rename, delete groups or move the selected source"
                 }
             }
             Item {
@@ -228,14 +307,15 @@ ColumnLayout {
                     visible: page.vm.sources.count === 0
                     SplatLabel {
                         objectName: "participationEmptyState"
-                        text: page.vm.state.sourceFilter === "Excluded" ? "No excluded sources."
+                        text: page.vm.state.sourceSection !== "" ? "No sources in this group for this filter."
+                              : page.vm.state.sourceFilter === "Excluded" ? "No excluded sources."
                               : "All sources are excluded from processing."
                         font.pixelSize: Theme.section
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
                     }
                     SplatLabel {
-                        visible: page.vm.state.sourceFilter === "Included"
+                        visible: page.vm.state.sourceFilter === "Included" && page.vm.state.sourceSection === ""
                         text: "Restore sources to use them in Prepare Data."
                         color: Theme.secondary
                         Layout.fillWidth: true
@@ -243,7 +323,7 @@ ColumnLayout {
                     }
                     SplatButton {
                         objectName: "viewExcluded"
-                        visible: page.vm.state.sourceFilter === "Included"
+                        visible: page.vm.state.sourceFilter === "Included" && page.vm.state.sourceSection === ""
                         text: "View Excluded"
                         Layout.alignment: Qt.AlignHCenter
                         onClicked: page.vm.setSourceFilter("Excluded")
@@ -277,6 +357,19 @@ ColumnLayout {
                 model: page.vm.sources
                 clip: true
                 reuseItems: true
+                section.property: "sectionKey"
+                section.criteria: ViewSection.FullString
+                section.delegate: SplatLabel {
+                    required property string section
+                    objectName: "sourceSectionHeader"
+                    width: sources.width
+                    text: (page.vm.state.sourceSections.find(option => option.value === section) || {}).label || section
+                    padding: 12
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    wrapMode: Text.NoWrap
+                    color: Theme.secondary
+                }
                 currentIndex: page.vm.sources.selectedIndex
                 onCurrentIndexChanged: {
                     if (currentIndex >= 0)
@@ -286,21 +379,22 @@ ColumnLayout {
                     id: source
                     required property var record
                     required property string recordId
+                    required property bool sourceSelected
                     width: sources.width
                     height: 76
                     hoverEnabled: true
                     focusPolicy: Qt.StrongFocus
                     objectName: "source-" + recordId
                     Accessible.name: record.filename + ", " + record.description + ", " + record.availability + ", " + (record.participationLabel || "Included")
-                    onClicked: page.vm.media.selectSource(recordId)
+                    onClicked: page.vm.media.activateSource(recordId)
                     onDoubleClicked: {
                         if (record.type === "photo") page.vm.media.previewSource(recordId);
                         else { page.vm.media.selectSource(source.recordId); details.open(); }
                     }
                     background: Rectangle {
-                        color: page.vm.sources.selectedId === source.recordId ? Theme.selection :
+                        color: source.sourceSelected ? Theme.selection :
                                source.hovered ? Theme.hover : "transparent"
-                        border.width: source.visualFocus || page.vm.sources.selectedId === source.recordId ? 2 : 0
+                        border.width: source.visualFocus || source.sourceSelected ? 2 : 0
                         border.color: Theme.accent
                     }
                     contentItem: RowLayout {
@@ -316,7 +410,7 @@ ColumnLayout {
                                 wrapMode: Text.NoWrap
                             }
                             SplatLabel {
-                                text: source.record.description
+                                text: (source.record.device || "Unknown device") + " · " + source.record.description
                                 color: Theme.secondary
                                 font.pixelSize: Theme.small
                                 Layout.fillWidth: true
@@ -330,17 +424,16 @@ ColumnLayout {
                                 font.pixelSize: Theme.caption
                             }
                         }
-                        SourceAvailability { record: source.record; Layout.preferredWidth: 205 }
-                        SplatButton {
-                            text: "Details"
-                            objectName: "details-" + source.recordId
-                            visible: source.record.type === "video"
-                            onClicked: { page.vm.media.selectSource(source.recordId); details.open(); }
+                        SourceAvailability {
+                            record: source.record
+                            Layout.preferredWidth: implicitWidth
+                            Layout.maximumWidth: 172
                         }
-                        SplatButton {
-                            text: "Preview"
-                            visible: source.record.type === "photo"
-                            onClicked: page.vm.media.previewSource(source.recordId)
+                        SourceActions {
+                            vm: page.vm
+                            record: source.record
+                            sourceId: source.recordId
+                            onDetailsRequested: details.open()
                         }
                     }
                 }
@@ -354,13 +447,12 @@ ColumnLayout {
         GridView {
             id: grid
             objectName: "sourceGrid"
-            model: page.vm.state.sourceView === "Grid" && page.vm.state.page === 1
-                   ? page.vm.sources : null
+            model: page.vm.sources
             clip: true
             reuseItems: true
             cacheBuffer: 0
             cellWidth: Math.max(156, width / Math.max(1, Math.floor(width / 184)))
-            cellHeight: Math.min(240, Math.max(208, height))
+            cellHeight: Math.max(128, Math.min(240, height))
             currentIndex: count > 0 ? page.vm.sources.selectedIndex : -1
             onCurrentIndexChanged: {
                 if (currentIndex >= 0) positionViewAtIndex(currentIndex, GridView.Contain);
@@ -371,6 +463,7 @@ ColumnLayout {
                 required property string recordId
                 required property string imageUrl
                 required property string thumbStatus
+                required property bool sourceSelected
                 width: grid.cellWidth - 8
                 height: grid.cellHeight - 8
                 padding: 8
@@ -378,23 +471,24 @@ ColumnLayout {
                 hoverEnabled: true
                 focusPolicy: Qt.StrongFocus
                 Accessible.name: record.filename + ", " + record.description + ", " + record.availability + ", " + (record.participationLabel || "Included")
-                onClicked: page.vm.media.selectSource(recordId)
+                onClicked: page.vm.media.activateSource(recordId)
                 onDoubleClicked: {
                     if (record.type === "photo") page.vm.media.previewSource(recordId);
                     else { page.vm.media.selectSource(tile.recordId); details.open(); }
                 }
                 background: Rectangle {
-                    color: page.vm.sources.selectedId === tile.recordId ? Theme.selection :
+                    color: tile.sourceSelected ? Theme.selection :
                            tile.hovered ? Theme.hover : Theme.surface
                     radius: Theme.radius
-                    border.color: tile.visualFocus || page.vm.sources.selectedId === tile.recordId ? Theme.accent : Theme.border
-                    border.width: tile.visualFocus || page.vm.sources.selectedId === tile.recordId ? 2 : 1
+                    border.color: tile.visualFocus || tile.sourceSelected ? Theme.accent : Theme.border
+                    border.width: tile.visualFocus || tile.sourceSelected ? 2 : 1
                 }
                 contentItem: ColumnLayout {
                     spacing: 4
                     Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        Layout.minimumHeight: 36
                         Loader {
                             anchors.fill: parent
                             active: tile.record.type === "photo"
@@ -414,6 +508,22 @@ ColumnLayout {
                             horizontalAlignment: Text.AlignHCenter
                             color: Theme.secondary
                         }
+                        Rectangle {
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            width: tileActions.implicitWidth
+                            height: tileActions.implicitHeight
+                            color: Theme.surface
+                            radius: Theme.radius
+                            SourceActions {
+                                id: tileActions
+                                vm: page.vm
+                                record: tile.record
+                                sourceId: tile.recordId
+                                namePrefix: "tile-"
+                                onDetailsRequested: details.open()
+                            }
+                        }
                     }
                     SplatLabel {
                         text: tile.record.filename
@@ -424,7 +534,7 @@ ColumnLayout {
                         wrapMode: Text.NoWrap
                     }
                     SplatLabel {
-                        text: tile.record.description
+                        text: (tile.record.logicalGroupLabel || tile.record.device || "Unknown device") + " · " + tile.record.description
                         color: Theme.secondary
                         font.pixelSize: Theme.caption
                         Layout.fillWidth: true
@@ -441,13 +551,6 @@ ColumnLayout {
                         font.pixelSize: Theme.caption
                         color: Theme.secondary
                         Layout.fillWidth: true
-                    }
-                    SplatButton {
-                        Layout.alignment: Qt.AlignRight
-                        text: "Details"
-                        objectName: "tileDetails-" + tile.recordId
-                        kind: "ghost"
-                        onClicked: { page.vm.media.selectSource(tile.recordId); details.open(); }
                     }
                 }
             }
@@ -486,8 +589,15 @@ ColumnLayout {
     Connections {
         target: page.vm
         function onDialogRequested(name: string) {
-            if (name === "closeSourceDetails") details.close();
+            if (name === "closeSourceDetails") { details.close(); groups.close(); }
         }
+    }
+    SourceGroupsDialog { id: groups; vm: page.vm }
+    Shortcut {
+        sequence: StandardKey.SelectAll
+        enabled: page.vm.state.page === 1 && !details.visible && !groups.visible
+                 && page.vm.media.state.previewIndex === 0
+        onActivated: page.vm.sources.selectAllVisible()
     }
     Connections {
         target: page.vm.sources

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, field_validator
 
+from splatforge.core.logical_source_groups import LogicalSourceGroups
 from splatforge.core.models import PipelineConfig
 from splatforge.core.source_participation import SourceParticipationIntent
 
@@ -56,6 +57,7 @@ class ProjectDocument(BaseModel):
     source_participation: SourceParticipationIntent = Field(
         default_factory=SourceParticipationIntent,
     )
+    logical_source_groups: LogicalSourceGroups = Field(default_factory=LogicalSourceGroups)
 
     @field_validator("created_at", "updated_at")
     @classmethod

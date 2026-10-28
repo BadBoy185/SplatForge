@@ -355,7 +355,8 @@ ApplicationWindow {
                         indeterminate: window.vm.state.progress.fraction < 0
                     }
                     SplatLabel {
-                        text: window.vm.state.progress.work
+                        text: window.vm.state.progress.work + (window.vm.state.progress.percent
+                              ? " · " + window.vm.state.progress.percent : "")
                         font.pixelSize: Theme.small
                         color: Theme.secondary
                     }

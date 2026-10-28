@@ -41,6 +41,17 @@ SplatDialog {
             Layout.fillWidth: true
         }
         SplatLabel {
+            objectName: "folderGroupsPreview"
+            visible: dialog.vm.state.scan.groups.length > 0
+            text: "Folders will become source groups:\n" + dialog.vm.state.scan.groups
+                  .map(group => group.label + " · " + group.count).join("\n")
+            color: Theme.secondary
+            font.pixelSize: Theme.small
+            Layout.fillWidth: true
+            maximumLineCount: 5
+            elide: Text.ElideRight
+        }
+        SplatLabel {
             visible: dialog.vm.state.scan.unreadable
             text: "Some files or folders could not be read. Review Files shows the paths and details."
             color: Theme.warning

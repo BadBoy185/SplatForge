@@ -170,6 +170,11 @@ class GuiFacade:
             document.source_participation,
         )
         included_ids = set(participation.included_source_ids)
+        organization = document.logical_source_groups
+        group_labels = {g.group_id: g.label for g in organization.groups}
+        assigned = {
+            s: g for s, g in organization.source_assignments.items() if g in group_labels
+        } if organization.schema_version == 1 else {}
 
         def verification(source) -> str:
             evidence = index.source_verifications.get(str(source.source_id))
@@ -190,6 +195,13 @@ class GuiFacade:
                         "bytes": s.byte_size,
                         "verification": verification(s),
                         "group": str(s.source_group_id),
+                        "logicalGroupId": (
+                            str(assigned[s.source_id]) if s.source_id in assigned else ""
+                        ),
+                        "logicalGroupLabel": group_labels.get(assigned.get(s.source_id)),
+                        "device": (
+                            s.probe.capture.device_label if s.probe.capture else "Unknown device"
+                        ),
                         "dimensions": f"{s.probe.width} × {s.probe.height}",
                         "duration": s.probe.duration,
                         "codec": s.probe.codec_name,
@@ -222,6 +234,25 @@ class GuiFacade:
 
     def inspect(self, root: Path, artifact_id: UUID) -> PreviewData:
         return self.reader.inspect(root, artifact_id)
+
+    def source_details(self, root: Path, source_id: UUID) -> dict:
+        """Selected-only saved evidence; never opens an original or probes media."""
+        document = self.service("project").open(root)
+        inventory = self.service("media").list(root, document=document)
+        source = next((s for s in inventory.sources if s.source_id == source_id), None) \
+            if inventory else None
+        if source is None:
+            raise ValueError("Source is no longer registered")
+        return {
+            "capture": source.probe.capture.model_dump(mode="json") if source.probe.capture else {},
+            "originalFilename": source.original_filename or "Not recorded",
+            "sourceGroupId": str(source.source_group_id),
+            "cameraGroupId": str(source.camera_group_id),
+            "inventoryRevision": inventory.header.inventory_revision,
+            "orientation": source.probe.orientation,
+            "rotation": source.probe.rotation_degrees,
+            "frameRate": source.probe.average_frame_rate,
+        }
 
     def gallery(self, root: Path, run_id: UUID, offset: int = 0) -> tuple[ThumbnailReference, ...]:
         return self.reader.gallery(root, run_id, offset)

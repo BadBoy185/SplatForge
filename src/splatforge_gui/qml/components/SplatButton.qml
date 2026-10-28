@@ -35,6 +35,6 @@ Button {
         border.width: control.visualFocus ? 2 : control.kind === "secondary" ? 1 : 0
         border.color: control.visualFocus ? Theme.accent : Theme.border
     }
-    ToolTip.visible: hovered && text === ""
+    ToolTip.visible: (hovered || visualFocus) && text === ""
     ToolTip.text: Accessible.name
 }

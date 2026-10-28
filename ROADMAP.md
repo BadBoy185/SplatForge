@@ -444,8 +444,9 @@ The selected [M12b2 plan](docs/plans/completed/2026-10-27-m12b2-folder-browser.m
 mixed folder discovery/confirmation and List/Grid only; device/logical grouping,
 relink and Prepare remain subsequent work. M12b2 is complete with user UX acceptance
 passed 2026-10-27. [M12b2a Source Participation](docs/plans/completed/2026-10-27-m12b2a-source-participation.md)
-is complete with user UX acceptance on 2026-10-27 for reversible persisted Exclude/Restore. M12b3 remains
-capture metadata + device/user-visible logical groups, next; M12c Prepare Data is later.
+is complete with user UX acceptance on 2026-10-27 for reversible persisted Exclude/Restore.
+[M12b3 capture metadata and logical groups](docs/plans/active/2026-10-27-m12b3-capture-metadata-groups.md)
+is implemented for manual review; M12c Prepare Data is later.
 
 M12f is required: a bounded sparse/camera viewer within Reconstruction Result / Review,
 with component context and the existing ReconstructionSelection / validation flow for

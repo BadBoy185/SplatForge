@@ -17,6 +17,46 @@ def plain(value):
     return json.loads(json.dumps(value, default=str))
 
 
+def capture_details(value: dict) -> dict:
+    """Human fields for one selected saved source; naive capture times stay naive."""
+    capture = value.get("capture", {})
+    fields = []
+    for key, label in (("make", "Make"), ("model", "Model"), ("lens_model", "Lens")):
+        if key in {"make", "model"} and capture.get("make") and capture.get("model"):
+            continue
+        if capture.get(key):
+            fields.append({"label": label, "value": capture[key]})
+    recorded_time, recorded_label = "", ""
+    if capture.get("captured_at"):
+        date = datetime.fromisoformat(capture["captured_at"])
+        text = date.strftime("%d %b %Y, %H:%M:%S")
+        text += date.strftime(" %z") if date.tzinfo else " (timezone not recorded)"
+        recorded_label = (
+            "Created (container)" if capture.get("origin") == "container_tags" else "Captured"
+        )
+        recorded_time = text
+    for key, label, suffix in (
+        ("focal_length_mm", "Focal length", " mm"),
+        ("focal_length_35mm", "35 mm equivalent", " mm"), ("iso", "ISO", ""),
+    ):
+        if capture.get(key):
+            fields.append({"label": label, "value": f"{capture[key]:g}{suffix}"})
+    exposure = capture.get("exposure_seconds")
+    if exposure:
+        text = f"1/{round(1 / exposure)} s" if exposure < 1 else f"{exposure:g} s"
+        fields.append({"label": "Exposure", "value": text})
+    if capture.get("f_number"):
+        fields.append({"label": "Aperture", "value": f"f/{capture['f_number']:g}"})
+    technical = "\n".join(f"{k}: {v}" for k, v in value.items() if k != "capture")
+    technical += "\nCapture evidence: " + (capture.get("origin") or "Not recorded")
+    if capture.get("gps_present") is not None:
+        technical += "\nGPS tags present: " + str(capture["gps_present"])
+    return {
+        "fields": fields, "technical": technical,
+        "recordedLabel": recorded_label, "recordedTime": recorded_time,
+    }
+
+
 def render(value) -> str:
     return json.dumps(plain(value), indent=2, ensure_ascii=False)
 
@@ -172,6 +212,7 @@ def progress_state(controller, metrics: dict) -> dict:
         "phase": "Waiting for application progress",
         "fraction": -1.0,
         "work": "",
+        "percent": "",
         "elapsed": "",
         "eta": "",
         "cancelling": controller.ingest_cancel.is_set() and bool(active or controller.mutating),
@@ -180,17 +221,25 @@ def progress_state(controller, metrics: dict) -> dict:
         "runId": "",
         "status": getattr(controller, "ingest_status", "idle"),
     }
-    if controller.operation == "ingest":
-        observation = controller.ingest_progress
-        result.update(phase="Waiting for project readers", eta="Estimating…")
+    if controller.operation in {"ingest", "verify"}:
+        verifying = controller.operation == "verify"
+        observation = controller.verify_progress if verifying else controller.ingest_progress
+        result.update(
+            phase="Checking source files" if verifying else "Waiting for project readers",
+            eta="Estimating…",
+            status=controller.verify_status if verifying else controller.ingest_status,
+        )
         if observation:
             work = observation.observation
             completed, total = int(work.completed), int(work.work.total)
             phase = {
                 "hashing": "Hashing source file", "metadata": "Reading metadata",
+                "checking": "Checking source file",
                 "checked": "Source files checked", "finalizing": "Finalizing project",
                 "succeeded": "Import complete",
             }[observation.phase]
+            if verifying and observation.phase == "succeeded":
+                phase = "Source check complete"
             estimate = observation.eta
             age = max(0.0, (datetime.now(UTC) - work.observed_at).total_seconds())
             eta = "Estimating…"
@@ -209,7 +258,8 @@ def progress_state(controller, metrics: dict) -> dict:
                 )
             result.update(
                 phase=phase, fraction=completed / total if total else 0,
-                work=f"{completed} / {total} files checked"
+                percent=f"{completed / total:.0%}" if total else "",
+                work=f"{completed} / {total} " + ("checked" if verifying else "files checked")
                 + (f" · {observation.filename}" if observation.filename else ""),
                 elapsed=duration(work.elapsed_seconds + age), eta=eta,
             )

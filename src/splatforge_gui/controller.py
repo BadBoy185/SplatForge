@@ -23,6 +23,7 @@ class ProjectController(QObject):
     dirty_changed = Signal(bool)
     scan_progress = Signal(int, object)
     import_observed = Signal(int, str, object)
+    verification_observed = Signal(int, str, object)
 
     def __init__(self, parent=None, factory: Callable = build_gui_facade) -> None:
         super().__init__(parent)
@@ -44,7 +45,9 @@ class ProjectController(QObject):
         self.ingest_progress = None
         self.ingest_status = "idle"
         self._ingest_token = ""
+        self.verify_progress, self.verify_status, self._verify_token = None, "idle", ""
         self.import_observed.connect(self._import_observed)
+        self.verification_observed.connect(self._verification_observed)
         self.executor.result.connect(self._result)
         self.executor.error.connect(self._error)
         self.executor.finished.connect(self._finished)
@@ -158,7 +161,7 @@ class ProjectController(QObject):
 
     @Slot()
     def poll(self) -> None:
-        if self.operation == "ingest":
+        if self.operation in {"ingest", "verify"}:
             # Re-evaluate observation age/ETA only; never advance completed work.
             self.progress_changed.emit(())
             return
@@ -233,7 +236,7 @@ class ProjectController(QObject):
             mutation=True,
         )
 
-    def ingest(self, paths: tuple[Path, ...]) -> None:
+    def ingest(self, paths: tuple[Path, ...], *, folder_root: Path | None = None) -> None:
         root = self.root
         if root is None:
             self.error.emit(TaskError("Open a project first", "NoProject", "", "ingest"))
@@ -243,7 +246,7 @@ class ProjectController(QObject):
             return
         # Ingest replaces project.json too. Use Save's owned-reader reservation,
         # without retrying a persistence failure or changing backend publication.
-        self._pending_ingest = (root, paths)
+        self._pending_ingest = (root, paths, folder_root)
         self._ingest_token = uuid4().hex
         self.ingest_progress, self.ingest_status = None, "running"
         self.mutating, self.operation = True, "ingest"
@@ -256,7 +259,7 @@ class ProjectController(QObject):
 
         if self._pending_ingest is None or self.jobs:
             return
-        root, paths = self._pending_ingest
+        root, paths, folder_root = self._pending_ingest
         self._pending_ingest = None
         self.mutating, self.operation = False, None
         self.busy_changed.emit(False)
@@ -272,6 +275,7 @@ class ProjectController(QObject):
             lambda f: f.service("media").add(
                 root, paths, cancellation=cancellation,
                 progress=lambda value: self.import_observed.emit(generation, token, value),
+                **({"folder_root": folder_root} if folder_root is not None else {}),
             ),
             mutation=True,
         )
@@ -296,13 +300,37 @@ class ProjectController(QObject):
         from splatforge.application.media import CallbackCancellation
 
         root = self.root
-        if root:
+        if root and not (self.mutating or self.active or self.has_unresolved):
+            self._verify_token = token = uuid4().hex
+            self.verify_progress, self.verify_status = None, "running"
+            generation = self.generation
             cancellation = CallbackCancellation(self.ingest_cancel.is_set)
             self.submit(
                 "verify",
-                lambda f: f.service("media").verify(root, cancellation=cancellation),
+                lambda f: f.service("media").verify(
+                    root, cancellation=cancellation,
+                    progress=lambda value: self.verification_observed.emit(
+                        generation, token, value,
+                    ),
+                ),
                 mutation=True,
             )
+
+    @Slot(int, str, object)
+    def _verification_observed(self, generation: int, token: str, value) -> None:
+        if (generation != self.generation or token != self._verify_token
+                or self.operation != "verify" or self.verify_status != "running"):
+            return
+        previous = self.verify_progress
+        if previous and (
+            value.observation.completed < previous.observation.completed
+            or value.observation.elapsed_seconds < previous.observation.elapsed_seconds
+        ):
+            return
+        self.verify_progress = value
+        if value.phase == "succeeded":
+            self.verify_status = "succeeded"
+        self.progress_changed.emit(())
 
     def preview_image(self, reference) -> None:
         from splatforge_gui.thumbnails import decode_thumbnail
@@ -561,6 +589,7 @@ class ProjectController(QObject):
             self.generation += 1
             self._ingest_token = ""
             self.ingest_progress, self.ingest_status = None, "idle"
+            self.verify_progress, self.verify_status, self._verify_token = None, "idle", ""
             self.root, self.overview = result
             self.active = self.overview.active
             self.request = self.reconstruction_plan = None
@@ -573,6 +602,8 @@ class ProjectController(QObject):
             self.discard()
         elif name == "ingest":
             self.ingest_status = "succeeded"
+        elif name == "verify":
+            self.verify_status = "succeeded"
         elif name == "request":
             document = self.draft or self.overview.document
             if result[0] != document.settings.model_dump_json():
@@ -593,6 +624,10 @@ class ProjectController(QObject):
                     "cancelled"
                     if error.category in {"MediaOperationCancelled", "ProbeCancelledError"}
                     else "failed"
+                )
+            if self.jobs[identity][0] == "verify":
+                self.verify_status = (
+                    "cancelled" if error.category == "MediaOperationCancelled" else "failed"
                 )
             if self.jobs[identity][0] == "cancel":
                 self.cancelled_runs.clear()

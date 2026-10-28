@@ -11,6 +11,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
+from splatforge.adapters.capture_metadata import container_capture, read_photo_capture
 from splatforge.adapters.process_runner import (
     ExecutableNotFoundError,
     LocalProcessRunner,
@@ -96,12 +97,15 @@ class FFprobeAdapter:
             fallback_orientation = read_jpeg_exif_orientation(absolute)
         elif media_type == MediaType.PHOTO and absolute.suffix.lower() == ".png":
             fallback_orientation = read_png_exif_orientation(absolute) or 1
-        return normalize_ffprobe(
+        normalized = normalize_ffprobe(
             payload,
             media_type=media_type,
             backend=backend,
             jpeg_orientation=fallback_orientation,
         )
+        if media_type == MediaType.PHOTO:
+            normalized = normalized.model_copy(update={"capture": read_photo_capture(absolute)})
+        return normalized
 
     def _backend_identity(self, cancellation: ProcessCancellation | None) -> ExecutableIdentity:
         if self._backend is not None:
@@ -299,6 +303,7 @@ def normalize_ffprobe(
         duration=_optional_text(stream.get("duration") or format_data.get("duration")),
         frame_count=frame_count,
         rotation_degrees=_rotation(stream),
+        capture=container_capture(format_data, stream),
     )
 
 

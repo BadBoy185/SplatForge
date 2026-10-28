@@ -18,7 +18,7 @@ from splatforge.core.progress import (
 )
 from splatforge.core.views import FrozenModel
 
-ImportPhase = Literal["hashing", "metadata", "checked", "finalizing", "succeeded"]
+ImportPhase = Literal["hashing", "metadata", "checking", "checked", "finalizing", "succeeded"]
 
 
 class MediaImportProgress(FrozenModel):
@@ -35,12 +35,13 @@ class ImportReporter:
         callback: Callable[[MediaImportProgress], None] | None,
         *,
         clock: Callable[[], float] = monotonic,
+        operation: str = "ingest",
     ) -> None:
         self.callback, self.clock, self.started = callback, clock, clock()
         self.work = WorkDescription(
-            stage_id="media.ingest",
-            node_id="media.ingest",
-            method_id="media.ingest",
+            stage_id=f"media.{operation}",
+            node_id=f"media.{operation}",
+            method_id=f"media.{operation}",
             work_model_id="media.checked_sources_v1",
             unit=WorkUnit.WORK,
             total=float(total),
@@ -53,7 +54,7 @@ class ImportReporter:
             unit=self.work.unit,
             hardware=ExecutionHardwareProfile(device="cpu"),
             backend=PerformanceBackendIdentity(
-                adapter_id="media.ingest",
+                adapter_id=f"media.{operation}",
                 family="local_sources",
                 runtime_version="v1",
             ),

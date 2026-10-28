@@ -10,6 +10,7 @@ manifests and individual methods are separate; the prototype
 
 M12 adds no project/state/manifest schema version or GUI-owned numerical fields.
 M12b2a adds optional portable source participation intent as described below.
+M12b3 adds optional capture evidence and logical organization as described below.
 CLI and desktop use ProjectService for intent saves, including revision checks and
 unknown method/settings preservation. GUI edits remain drafts until Save; closing
 offers Save/Discard/Cancel. Run-only settings stay in existing immutable snapshots.
@@ -135,6 +136,57 @@ Repeated import creates a new UUID occurrence, Included by default even when ano
 occurrence at that path/content is Excluded. Paths are locators, never exclusion keys.
 See [processing resolution](PIPELINE.md#stage-inputs-and-outputs) and
 [GUI behavior](GUI_DESIGN.md#m12b2a-source-participation).
+
+### Capture evidence and logical source groups (M12b3)
+
+An inventory occurrence may contain `original_filename` (the name at ingest, retained
+on relink) and `probe.capture` schema 1. Capture is descriptive immutable evidence:
+origin (`exif` or `container_tags`), optional Make/Model/lens, recorded time, focal
+length/35mm equivalent, exposure seconds, F-number, ISO and GPS-tag presence only.
+Dimensions/orientation/rotation/video rates/duration remain in the existing probe
+contract. No GPS coordinates or arbitrary EXIF/container dump is stored. EXIF local
+time retains its unknown timezone; a container creation time is identified as such.
+Make+Model describes a reported device model, never a unique physical camera/session
+or shared calibration. Missing/partial evidence is valid; no filename-based inference.
+
+Existing inventory/probe/format/state versions remain unchanged. Missing optional
+fields read as unknown; opening neither rewrites old inventories nor backfills EXIF.
+Normal new ingest persists evidence before publishing the inventory. Relink preserves
+the captured record, content/source identity and original filename. A repeated import
+creates a new occurrence with its own capture evidence. Explicit file import has no
+user assignment; Add Folder may assign new occurrences as described below.
+
+`logical_source_groups` is optional project intent, independently versioned at 1:
+`groups` contains stable UUID `group_id` / `label` entries; `source_assignments` maps
+occurrence UUIDs to group UUIDs. IDs/assignments serialize canonically. Rename keeps
+the UUID; moving/ungrouping only edits assignments; deleting a group removes its
+assignments without deleting sources. Participation is independent. Relocation/relink
+retain assignments. Application batch drafts use the same ProjectService writer,
+revision/CAS and atomic JSON replacement as other intent changes, with no second store.
+Create may assign the full selected set in that same draft; participation batches
+likewise perform one Save rather than one Save per occurrence.
+
+Folder import derives labels from each supported source's parent relative to the
+explicit import root. Root files remain unassigned; nested folders use flat relative
+labels such as `Drone / Flight 1`. Each distinct relative parent gets a new group UUID;
+case-insensitive label collisions get `(2)`, `(3)` suffixes without merging existing
+membership. Labels are bounded to 120 characters, with collisions still disambiguated.
+New group intent is prepared in memory after successful media probing and published
+with the inventory reference in the existing writer-locked metadata CAS. Failed or
+cancelled imports leave the old reference/groups authoritative; an inventory published
+before a failed metadata replacement remains an unreferenced immutable payload under
+the existing recovery contract. No ghost assignments or extra Save are introduced.
+
+Missing data defaults to no user groups. Unknown envelope/group JSON extensions survive
+unrelated saves. Unsupported organization versions remain preserved/inspectable and
+refuse group edits; they do not prevent numerical processing. Unknown source/group
+references remain preserved on read, produce no fictitious sources, and have no UI
+assignment effect. New edits refuse unknown targets. Open never saves/migrates.
+Older binaries may refuse the additive fields. `source_group_id` remains processing
+provenance, `camera_group_id` remains calibration identity; neither is rewritten by
+metadata, organization or rename. Logical intent/capture descriptions are absent from
+numerical recipe inputs. Existing explicit dimension/orientation/time inputs are
+unchanged. See [Sources presentation](GUI_DESIGN.md#m12b3-capture-metadata-and-groups).
 
 `settings.config_schema_version` is **1**, independent of the project format.
 Its six required slots are `frame_selection`, `feature_extraction`,

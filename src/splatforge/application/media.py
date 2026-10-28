@@ -23,6 +23,7 @@ from splatforge.application.media_contracts import (
 )
 from splatforge.application.media_progress import ImportReporter, MediaImportProgress
 from splatforge.application.projects import ProjectError
+from splatforge.core.logical_source_groups import LogicalSourceGroups
 from splatforge.core.media import (
     InventoryHeader,
     MediaType,
@@ -69,6 +70,7 @@ class MediaRepository(Protocol):
         expected_document: ProjectDocument,
         inventory: SourceInventory,
         validate_sources: Callable[[], None],
+        logical_groups: LogicalSourceGroups | None = None,
     ) -> ProjectDocument: ...
 
     def record_verification(self, root: Path, result: VerificationResult) -> None: ...
@@ -150,6 +152,7 @@ class MediaService:
         camera_group_id: UUID | None = None,
         cancellation: MediaCancellation | None = None,
         progress: Callable[[MediaImportProgress], None] | None = None,
+        folder_root: Path | None = None,
     ) -> MediaAddResult:
         paths = tuple(path.absolute() for path in sources)
         if not paths:
@@ -189,6 +192,7 @@ class MediaService:
                         source_revision=1,
                         external_locator=str(path),
                         display_filename=path.name,
+                        original_filename=path.name,
                         media_type=media_type,
                         extension=path.suffix.lower(),
                         byte_size=hashed.evidence.byte_count,
@@ -214,6 +218,8 @@ class MediaService:
                 expected_document=document,
                 inventory=inventory,
                 validate_sources=lambda: self._validate_leases(validations),
+                **({"logical_groups": self._folder_groups(document, prepared, folder_root)}
+                   if folder_root is not None else {}),
             )
         reporter.emit("succeeded", len(prepared))
         return MediaAddResult(
@@ -238,12 +244,11 @@ class MediaService:
         policy: VerificationPolicyId = VerificationPolicyId.BALANCED_LOCAL,
         source_ids: set[UUID] | None = None,
         cancellation: MediaCancellation | None = None,
+        progress: Callable[[MediaImportProgress], None] | None = None,
     ) -> tuple[VerificationResult, ...]:
         committed = self._require_v4(root)
         inventory = self._repository.load_current_inventory(root, committed.document)
-        if inventory is None:
-            return ()
-        sources = inventory.sources
+        sources = inventory.sources if inventory else ()
         if source_ids is not None:
             known = {source.source_id for source in sources}
             unknown = source_ids - known
@@ -251,13 +256,28 @@ class MediaService:
                 raise ProjectError("Unknown source IDs: " + ", ".join(sorted(map(str, unknown))))
             sources = tuple(source for source in sources if source.source_id in source_ids)
         results: list[VerificationResult] = []
+        reporter = ImportReporter(len(sources), progress, operation="verify")
+        reporter.emit("checking", 0)
         for source in sources:
             if cancellation is not None:
                 cancellation.checkpoint()
+            reporter.emit("checking", len(results), source.display_filename)
             result = self._verify_source(root, source, policy, cancellation)
             self._repository.record_verification(root, result)
             results.append(result)
+            reporter.emit("checked", len(results), source.display_filename)
+        if cancellation is not None:
+            cancellation.checkpoint()
+        reporter.emit("succeeded", len(results))
         return tuple(results)
+
+    @staticmethod
+    def _folder_groups(
+        document: ProjectDocument, sources: Iterable[SourceOccurrence], root: Path,
+    ) -> LogicalSourceGroups:
+        from splatforge.application.logical_source_groups import folder_groups_draft
+
+        return folder_groups_draft(document, sources, root).logical_source_groups
 
     def relink(
         self,

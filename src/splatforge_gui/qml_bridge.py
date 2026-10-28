@@ -54,14 +54,17 @@ class DesktopViewModel(QObject):
         self._pending, self._after_save = None, None
         self._pending_close = False
         self._folder = None
+        self._folder_root = None
         self._scan_files = QStringListModel(self)
         self._scan_progress = {"entries": 0, "directories": 0}
         self._scan_summary = self._empty_scan_summary()
         self._source_view = self.preferences.get("source_view_mode", "List")
         if self._source_view not in {"List", "Grid"}:
             self._source_view = "List"
+        self._source.set_thumbnails_active(self._source_view == "Grid" and self._page == 1)
         self._notice = ""
         self._participation_pending = None
+        self._groups_pending = None
         self._source_summary = source_summary(())
         self._mode = self.preferences.get("mode", "Guided")
         self._theme = self.preferences.get("theme", "System")
@@ -150,6 +153,12 @@ class DesktopViewModel(QObject):
             "error": self._error,
             "notice": self._notice,
             "sourcesSummary": self._source_summary,
+            "sourceCheckResult": (
+                f"{int(self.controller.verify_progress.observation.completed)} / "
+                f"{int(self.controller.verify_progress.observation.work.total)} checked · "
+                if self.controller.verify_status == "succeeded" and self.controller.verify_progress
+                else ""
+            ),
             "folderCount": self._scan_summary["photos"] + self._scan_summary["videos"],
             "folderIgnored": self._scan_summary["ignored"],
             "scan": {
@@ -159,6 +168,16 @@ class DesktopViewModel(QObject):
             },
             "sourceView": self._source_view,
             "sourceFilter": self._source.participation_filter,
+            "sourceSection": self._source.section_filter,
+            "sourceSections": self._source.sections,
+            "sourceSectionSummary": next((s.get("summary", "") for s in self._source.sections
+                                          if s["value"] == self._source.section_filter), ""),
+            "logicalGroups": [{"value": "", "label": "Ungrouped"}] + [
+                {"value": str(g.group_id), "label": g.label}
+                for g in self.controller.overview.document.logical_source_groups.groups
+            ] if self.controller.overview else [],
+            "groupsSupported": not self.controller.overview
+            or self.controller.overview.document.logical_source_groups.schema_version == 1,
             "participationSupported": not self.controller.overview
             or not self.controller.overview.participation
             or self.controller.overview.participation.supported,
@@ -170,9 +189,60 @@ class DesktopViewModel(QObject):
 
     @Slot(str)
     def setSourceFilter(self, value: str) -> None:
+        if value != self._source.participation_filter:
+            self._media.closePreview()
+            self.dialogRequested.emit("closeImage")
         self._source.set_filter(value)
         self._media.sources_changed()
         self.changed.emit()
+
+    @Slot(str)
+    def setSourceSection(self, value: str) -> None:
+        if value != self._source.section_filter:
+            self._media.closePreview()
+            self.dialogRequested.emit("closeImage")
+        self._source.set_section(value)
+        self.changed.emit()
+
+    @Slot(str)
+    def createSourceGroup(self, label: str) -> None:
+        sources = frozenset(UUID(s) for s in self._source.selectedIds)
+        self._switch(lambda: self._save_group("create", label=label, sources=sources))
+
+    @Slot(str, str)
+    def renameSourceGroup(self, identity: str, label: str) -> None:
+        self._switch(lambda: self._save_group("rename", identity=identity, label=label))
+
+    @Slot(str)
+    def deleteSourceGroup(self, identity: str) -> None:
+        self._switch(lambda: self._save_group("delete", identity=identity))
+
+    @Slot(str, str)
+    def assignSourceGroup(self, source: str, identity: str) -> None:
+        sources = self._source.action_ids(source)
+        self._switch(lambda: self._save_group("assign", identity=identity, sources=sources))
+
+    @Slot(str)
+    def assignSelectedGroup(self, identity: str) -> None:
+        sources = frozenset(UUID(s) for s in self._source.selectedIds)
+        self._switch(lambda: self._save_group("assign", identity=identity, sources=sources))
+
+    @guarded
+    def _save_group(self, action: str, *, identity: str = "", label: str = "",
+                    sources: frozenset[UUID] = frozenset()) -> None:
+        from splatforge.application.logical_source_groups import logical_groups_draft
+
+        overview = self.controller.overview
+        if overview is None:
+            raise ValueError("Open a project first")
+        draft = logical_groups_draft(
+            overview.document, (r.identity for r in overview.sources), action=action,
+            group_id=UUID(identity) if identity else None, label=label,
+            source_ids=sources,
+        )
+        self._groups_pending = draft.logical_source_groups
+        self.controller.edit(draft)
+        self.controller.save()
 
     def _source_count_changed(self) -> None:
         self._source_summary = source_summary(self._source.all_rows)
@@ -181,11 +251,18 @@ class DesktopViewModel(QObject):
     @Slot(str, bool)
     @guarded
     def setSourceIncluded(self, identity: str, included: bool) -> None:
-        source_id = UUID(identity)
-        self._switch(lambda: self._save_source_participation(source_id, included))
+        self._set_participation(self._source.action_ids(identity), included)
+
+    @Slot(bool)
+    def setSelectedIncluded(self, included: bool) -> None:
+        self._set_participation(frozenset(UUID(s) for s in self._source.selectedIds), included)
 
     @guarded
-    def _save_source_participation(self, source_id: UUID, included: bool) -> None:
+    def _set_participation(self, sources: frozenset[UUID], included: bool) -> None:
+        self._switch(lambda: self._save_source_participation(sources, included))
+
+    @guarded
+    def _save_source_participation(self, source_ids: frozenset[UUID], included: bool) -> None:
         from splatforge.application.source_participation import participation_draft
 
         overview = self.controller.overview
@@ -193,7 +270,7 @@ class DesktopViewModel(QObject):
             raise ValueError("Open a project first")
         document = participation_draft(
             overview.document, (r.identity for r in overview.sources),
-            {source_id}, included=included,
+            source_ids, included=included,
         )
         self._participation_pending = document.source_participation
         self._participation_notice = (
@@ -208,6 +285,7 @@ class DesktopViewModel(QObject):
     def setSourceView(self, value: str) -> None:
         if value in {"List", "Grid"}:
             self._source_view = value
+            self._source.set_thumbnails_active(value == "Grid" and self._page == 1)
             self.preferences.set("source_view_mode", value)
             self.changed.emit()
 
@@ -226,6 +304,7 @@ class DesktopViewModel(QObject):
     def navigate(self, page: int) -> None:
         if 0 <= page <= 6:
             self._page = page
+            self._source.set_thumbnails_active(self._source_view == "Grid" and page == 1)
             if self.controller.overview:
                 self.preferences.set("page", page)
             self.changed.emit()
@@ -316,6 +395,8 @@ class DesktopViewModel(QObject):
             self.controller.discard()
             if callback:
                 callback()
+        else:
+            self._media._clear_review_mutation()
 
     @Slot()
     def save(self) -> None:
@@ -415,18 +496,20 @@ class DesktopViewModel(QObject):
     @guarded
     def addFolder(self, path: str) -> None:
         self.cancelFolder()
+        self._folder_root = self.local_path(path)
         self._scan_progress = {"entries": 0, "directories": 0}
         self.controller.scan_folder(self.local_path(path))
 
     @Slot()
     def confirmFolder(self) -> None:
         if self._folder and self._folder.supported and self.state["canMutate"]:
-            self.controller.ingest(self._folder.supported)
+            self.controller.ingest(self._folder.supported, folder_root=self._folder_root)
             self.cancelFolder()
 
     @Slot()
     def cancelFolder(self) -> None:
         self._folder = None
+        self._folder_root = None
         self._scan_summary = self._empty_scan_summary()
         self._scan_files.setStringList([])
         self.changed.emit()
@@ -436,6 +519,7 @@ class DesktopViewModel(QObject):
         return dict(
             photos=0, videos=0, ignored=0, directories=0,
             limited=False, unreadable=False, existing=0,
+            groups=[],
         )
 
     @Slot()
@@ -498,6 +582,7 @@ class DesktopViewModel(QObject):
             self._source.set_context(context)
             self.dialogRequested.emit("closeSourceDetails")
             self._participation_pending = None
+            self._groups_pending = None
         first = not self._project
         self._project = {
             "id": str(value.document.project_id),
@@ -526,6 +611,9 @@ class DesktopViewModel(QObject):
         self._finish_overview(value, first)
 
     def _project_sources(self, value) -> None:
+        self._source.group_labels = {
+            str(g.group_id): g.label for g in value.document.logical_source_groups.groups
+        } if value.document.logical_source_groups.schema_version == 1 else {}
         self._source.replace(
             tuple(
                 r.model_copy(
@@ -551,6 +639,9 @@ class DesktopViewModel(QObject):
         if self._participation_pending == value.document.source_participation:
             self._participation_pending = None
             self._notice = self._participation_notice
+        if self._groups_pending == value.document.logical_source_groups:
+            self._groups_pending = None
+            self._notice = "Source groups saved."
 
     def _finish_overview(self, value, first: bool) -> None:
         important = {
@@ -619,6 +710,9 @@ class DesktopViewModel(QObject):
         if error.stage == "save" and self._participation_pending is not None:
             self._participation_pending = None
             self.controller.discard()
+        if error.stage == "save" and self._groups_pending is not None:
+            self._groups_pending = None
+            self.controller.discard()
         if error.stage == "verify" and self.controller.overview:
             self._source_session.uncertain(self._source.all_rows, "Source check could not finish.")
             self._project_sources(self.controller.overview)
@@ -680,6 +774,7 @@ class DesktopViewModel(QObject):
                 "limited": bool(value.stopped),
                 "unreadable": any(e.reason.startswith("Could not read") for e in value.entries),
                 "existing": sum(os.path.normcase(str(p)) in existing for p in value.supported),
+                "groups": self._folder_group_preview(value.supported),
             }
             self._scan_files.setStringList([
                 f"{e.media_type.value.capitalize() if e.media_type else 'Ignored'} · {e.path}"
@@ -695,3 +790,14 @@ class DesktopViewModel(QObject):
             self.cancelFolder()
             self._notice = "Cancelled — application teardown confirmed"
         self.changed.emit()
+
+    def _folder_group_preview(self, paths) -> list[dict]:
+        from collections import Counter
+
+        from splatforge.application.logical_source_groups import folder_group_label
+
+        if self._folder_root is None:
+            return []
+        counts = Counter(folder_group_label(path, self._folder_root) for path in paths)
+        return [{"label": label, "count": counts[label]}
+                for label in sorted(counts, key=lambda s: (s.casefold(), s)) if label]

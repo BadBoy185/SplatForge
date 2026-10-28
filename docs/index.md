@@ -26,6 +26,8 @@ reuses DEVELOPMENT for verification selection and evidence reporting.
 
 ## Current work
 
+- [M12b3 Capture Metadata & Logical Source Groups](plans/active/2026-10-27-m12b3-capture-metadata-groups.md):
+  saved capture evidence and portable organization, independent of calibration/recipes.
 - [Active plans](plans/active/README.md): selected bounded work only; no M13 task is
   activated by this housekeeping change.
 - [Plan template](plans/TEMPLATE.md) and [plan lifecycle](DEVELOPMENT.md#durable-plans):
