@@ -49,7 +49,11 @@ def test_review_all_candidates_keep_exclude_reset_and_reopen(tmp_path, sharpest)
     use_case = service(value)
     page = use_case.page(value.root, run.run_id, filter="all")
     assert page.candidate_count == 4 and page.selected_count == 3 and page.rejected_count == 1
-    assert [i.view_id.int for i in page.items] == sorted(i.view_id.int for i in page.items)
+    # Review order is presentation-owned (natural photos / chronological video), not UUID order.
+    assert len({i.view_id for i in page.items}) == len(page.items)
+    assert [i.view_id for i in page.items] == [
+        i.view_id for i in use_case.page(value.root, run.run_id, filter="all").items
+    ]
     rejected = next(i for i in page.items if not i.included)
     assert rejected.reason
     if not sharpest:
