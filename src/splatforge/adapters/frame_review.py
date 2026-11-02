@@ -1,5 +1,6 @@
 """Exact-run frame review using the existing writer, CAS and artifact publication."""
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -42,6 +43,35 @@ from splatforge.core.views import (
     SelectedViewSet,
     validate_selected_against_candidate,
 )
+
+
+def _natural_text_key(value: str) -> tuple[tuple[int, int | str], ...]:
+    """Human ordering for photo captions without changing numerical artifact identity."""
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in re.split(r"(\d+)", value or "")
+        if part
+    )
+
+
+def _review_order(view, source_order: dict[UUID, int]) -> tuple:
+    """Presentation-only order: photos naturally, video frames chronologically per source."""
+    source_index = source_order.get(view.source_id, len(source_order))
+    if view.presentation_timestamp is not None:
+        return (
+            1,
+            source_index,
+            view.presentation_timestamp.seconds(),
+            view.occurrence_index,
+            view.view_id.int,
+        )
+    return (
+        0,
+        _natural_text_key(view.display_filename or view.frame_identity),
+        source_index,
+        view.occurrence_index,
+        view.view_id.int,
+    )
 
 
 class LocalFrameReviewRepository:
@@ -143,6 +173,7 @@ class LocalFrameReviewRepository:
             route = repo._load_run_snapshot(root, run_id).route
             assert isinstance(route, (ViewPreparationRoute, SharpestViewPreparationRoute))
             sources = {s.source_id: s for s in route.sources}
+            source_order = {source.source_id: index for index, source in enumerate(route.sources)}
             selected = {
                 v.view_id
                 for v in build_reviewed_selection(
@@ -170,7 +201,7 @@ class LocalFrameReviewRepository:
             )
             views = tuple(
                 v
-                for v in sorted(candidate.views, key=lambda v: v.view_id.int)
+                for v in sorted(candidate.views, key=lambda v: _review_order(v, source_order))
                 if v.source_id in projection.source_ids
                 and (filter == "all" or (v.view_id in selected) == (filter == "selected"))
             )
