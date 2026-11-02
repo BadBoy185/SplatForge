@@ -34,7 +34,9 @@ def desktop(app, tmp_path):
     vm = DesktopViewModel(preferences=prefs)
     yield vm
     vm.controller.timer.stop()
-    until(lambda: not vm.controller.executor.busy)
+    vm.media.closePreview()
+    until(lambda: not vm.controller.executor.busy and not vm.media.preview_executor.busy
+          and not vm.sources.thumbnails.executor.busy and not vm.media.gallery.executor.busy)
     vm.deleteLater()
     app.processEvents()
 

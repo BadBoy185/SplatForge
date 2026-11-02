@@ -142,6 +142,34 @@ def test_missing_video_timing_metadata_remains_null() -> None:
     assert result.rotation_degrees is None
 
 
+@pytest.mark.parametrize("container_duration", ["3", "15"])
+@pytest.mark.parametrize("stream_duration", [None, "N/A", "1.25"])
+def test_delayed_video_duration_uses_only_selected_stream_evidence(
+    container_duration: str, stream_duration: str | None,
+) -> None:
+    stream = {
+        "index": 1, "codec_type": "video", "width": 12, "height": 8,
+        "time_base": "1/3", "start_pts": 7, "start_time": "2.333333",
+    }
+    if stream_duration is not None:
+        stream["duration"] = stream_duration
+    result = normalize_ffprobe(
+        {
+            "streams": [
+                {"index": 0, "codec_type": "audio", "start_time": "0"}, stream,
+            ],
+            "format": {"start_time": "0", "duration": container_duration},
+        },
+        media_type=MediaType.VIDEO,
+        backend=BACKEND,
+    )
+
+    assert result.selected_visual_stream_index == 1
+    assert result.start_time == "7/3"
+    assert result.playback_start_time == "0"
+    assert result.duration == ("1.25" if stream_duration == "1.25" else None)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

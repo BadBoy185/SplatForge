@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID
 
 from splatforge.application.features_contracts import FeatureProgress, FeatureResourceError
+from splatforge.core.features import MAX_FEATURES_PER_VIEW
 
 
 class FeatureProgressReader:
@@ -78,8 +79,9 @@ class FeatureProgressReader:
         features = re.search(r"\bFeatures:\s+(\d{1,6}) \(([A-Z0-9_]+)\)\s*$", line)
         if features and self.current and self.name and self.name not in self.completed:
             count = int(features.group(1))
-            if features.group(2) == self.variant and count <= self.limit:
+            native_limit = MAX_FEATURES_PER_VIEW if self.variant == "SIFT" else self.limit
+            if features.group(2) == self.variant and count <= native_limit:
                 self.completed.add(self.name)
-                self.features += count
+                self.features += min(count, self.limit)
                 self.sink(FeatureProgress(len(self.completed), self.features))
             self.current, self.name = None, None

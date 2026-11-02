@@ -270,6 +270,9 @@ signatures, model digests and pixel/keypoint conventions. Isolate native databas
 by feature identity and publish immutable results. Test incompatible routes and real
 opt-in extraction. Missing learned support is a capability gap, not a completed
 integration milestone based solely on mocks/SIFT. No matching or mapping.
+Preserve SIFT adapter v2's hard published row budget despite COLMAP's soft native
+scale/orientation limit. Validate discarded tails, retain paired native prefixes,
+keep the SIFT-only numerical identity change and test cache/descriptor alignment.
 Pin explicitly provisioned local models before numerical execution, record source/name
 and SHA-256 for a later installer-license audit, and forbid implicit downloads.
 No PyTorch or other Python ML runtime. Integrate VIEWS/megapixels and eligible successful
@@ -422,6 +425,10 @@ automatic multi-video E2E acceptance still requires pending M7c production VPR s
 The original acceptance prompt below remains applicable to that external gate; technical
 preparation itself accepts any valid explicit selection. M11 is implemented downstream;
 preserve [its training contracts](M11.md).
+
+Preserve M10's bounded filesystem polling: cancellation/time checks at every
+checkpoint, resource walks at most once per 250 ms and forced boundary checks.
+Do not reintroduce a full workspace walk per sparse observation.
 
 Additional reading: [PIPELINE.md](PIPELINE.md),
 [ARCHITECTURE: application boundary](../ARCHITECTURE.md#dependency-direction) and

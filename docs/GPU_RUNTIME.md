@@ -113,3 +113,15 @@ directories. Replacing or adding a runtime DLL requires a fresh resolved route a
 can invalidate numerical caches, even when the COLMAP executable itself is unchanged.
 Existing published artifacts remain immutable. Runtime changes never justify
 rewriting an old run or silently reinterpreting its backend identity.
+
+## Separate CUDA/cuDSS/Caspar evaluation (2026-10-26)
+
+The user authorized an isolated third-party COLMAP 4.2.1 Windows build with Ceres
+CUDA/cuDSS and Caspar. Its bare archive does not include cuDNN. A separate complete
+bundle reuses the existing hash-verified cuDNN DLL set and license; the earlier
+runtime and system PATH remain unchanged. Archive identity, all-file verification,
+failed initial integrations and subsequent actual execution results are recorded
+in the [Ignatius GPU follow-up](TANKS_AND_TEMPLES_GPU_PILOT.md).
+Build options, disposable solver probes, real transport tests and representative
+scene results remain distinct evidence levels. Availability belongs to the selected
+concrete runtime; this evaluation does not change product defaults.

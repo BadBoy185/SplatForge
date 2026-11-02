@@ -13,7 +13,7 @@ ColumnLayout {
     readonly property var plan: work.state.plans.training || ({})
     spacing: 24
     SplatPageHeader {
-        title: "Train"
+        title: "Splat"
         subtitle: "Turn a prepared dataset into a Gaussian scene."
         Layout.fillWidth: true
         SplatButton {
@@ -34,7 +34,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Build on a prepared dataset"
         detail: "Prepare a selected reconstruction before training. Components remain separate jobs and scenes."
-        iconName: "train"
+        iconName: "cube"
         action: "Prepare a dataset"
         onActivated: page.vm.navigate(3)
     }

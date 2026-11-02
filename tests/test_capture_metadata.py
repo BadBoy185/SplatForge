@@ -133,6 +133,7 @@ def test_video_container_metadata_roundtrip_and_persistence(tmp_path):
                 "width": 1920,
                 "height": 1080,
                 "avg_frame_rate": "30000/1001",
+                "duration": "12.5",
                 "tags": {"rotate": "90"},
             }
         ],

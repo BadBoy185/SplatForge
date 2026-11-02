@@ -209,6 +209,29 @@ a new immutable selection artifact referencing the original selected views and r
 verification evidence rather than mutating M4 output. Hidden feedback loops inside one
 attempt remain out of scope.
 
+### Prepare Data technical backlog — 2026-10-29
+
+This is a local code/document inventory for the
+[direct-settings task](plans/completed/2026-10-29-m12c-direct-prepare-settings.md), not a
+new technology evaluation or adoption decision. Prepare exposes only the working
+FFmpeg Fixed FPS and Pillow Sharpest Interval routes. The
+[actual quality adapter](../src/splatforge/adapters/quality.py) measures edge variance
+and dHash; a registered name, prototype field or UX example is not another working
+analysis function. No dependency/model was installed or downloaded for this task.
+
+| Candidate / purpose and source | Actual status; why absent from Prepare | Runtime or separate work | Checks and acceptance before adding it |
+| --- | --- | --- | --- |
+| Additional quality signals: directional blur, clipping/exposure, texture, noise/compression and stronger perceptual similarity; evaluation list in section 4 above | Proposals, no current QualityAssessor implementation found for these signals. Edge variance/dHash do not claim these capabilities. The old exposure checkbox in the UX example is removed. | No algorithm/model/dependency selected. A concrete proposal must identify them; native/learned work belongs in an owned process, outside Qt. | Define typed measurements/units/unavailable reasons, versions and recipe inputs; labelled bounded fixtures must show useful behavior and downstream benefit against the existing baseline at stated cost. Only then expose a truthful independent control. |
+| Learned image-quality estimates; section 4 above | Proposal for advisory evidence only, no implemented or validated Prepare model. Perceptual quality is not reconstruction suitability. | Model, license, weights, runtime and worker contract unselected; future evaluation requires explicit authorization. | Probe actual Windows runtime/model identity in an owned worker; establish redistribution/provenance, bounded resource/failure/cancel behavior and measured reconstruction relevance. No universal quality gate without evidence. |
+| Geometry-informed/adaptive second-pass selection; preceding research gate and [M13b](../ROADMAP.md#m13--advanced-methods-and-automation) | Proposal; existing feature/match/geometry stages are separate working processing, not a feedback selector inside Prepare. No such selector is integrated here. | Requires a separately requested bounded first-pass/second-pass experiment and concrete consumed artifacts; no new dependency is selected by this note. | Compare coverage/bridge retention and reconstruction/resource outcomes with Fixed/Sharpest at bounded budgets; define immutable output/lineage/invalidation and no hidden processing loop. Keep it in M13b unless separately approved. |
+| Automatic segmentation, named SAM3/tracking and manual masks; [GUI future boundary](GUI_DESIGN.md#selected-materials-workspace--2026-10-28), [M13b](../ROADMAP.md#m13--advanced-methods-and-automation) and section 11 below | Future requirements/proposals, not implemented Prepare capabilities. A named model in a visual reference does not establish a runnable feature. Masks/tracking remain separately contracted tasks. | No mask/tracking model/runtime is integrated or downloaded here. Manual correction/persistence needs its own scope; automatic inference needs a selected model/dependency and owned worker. | Define image coordinates/transforms, mask identity/storage/publication, source-time tracking, correction and separate SfM/training consumers. Verify alignment, actual model/runtime/cancel/failure behavior and quality on genuine sequences before UI integration. |
+| Automatic image-count cap / keep-all mode; historical [FrameSelectionConfig](../src/splatforge/core/models.py) and old Prepare UX examples | Prototype `max_frames`/`reject_blur` fields and a proposal for keep-all; neither is a supported selector option. Preserve opaque legacy data without claiming a cap or inventing a blur threshold. Existing candidate resource limits refuse excess work; they are not a target image-count policy. | No new dependency needed merely to specify a policy, but a separate algorithm/contract task is required. | Define source/interval coverage, deterministic ties, empty/failure behavior and recipe/acceptance tests; demonstrate actual enforced behavior before exposing a control. |
+
+This backlog does not authorize implementation. Preparation profiles Fast / Medium /
+High / Max are replaced by direct settings at the user's decision; no researched
+technology is silently selected by a profile. Existing M7 reconstruction profiles
+and later training research are separate subjects.
+
 ## 5. M7a/M7b: local features, matching and geometric verification
 
 The current architecture choice remains sound: separate feature extraction, matching

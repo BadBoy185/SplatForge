@@ -40,6 +40,7 @@ from splatforge.core.features import (
     FeatureResourceLimits,
     FeatureSettings,
 )
+from splatforge.core.frame_review import ReviewedSelectedViewSet, reviewed_digest
 from splatforge.core.geometry import (
     GEOMETRY_ARTIFACT_TYPE,
     CameraPriorSet,
@@ -404,6 +405,48 @@ class ArtifactHandle(FrozenModel):
     recipe_key: str
     semantic_digest: str
     manifest_path: str
+
+
+class FrameReviewRoute(FrozenModel):
+    route_id: Literal["views.review"] = "views.review"
+    route_version: Literal[1] = 1
+    method_id: Literal["frame_selection.manual_review"] = "frame_selection.manual_review"
+    candidate: ArtifactHandle
+    automatic: ArtifactHandle
+    selection: ReviewedSelectedViewSet
+    node_id: Literal["selected_views"] = "selected_views"
+    target: OutputReference = OutputReference(
+        node_id="selected_views", output_name="selected_set",
+        artifact_type=SELECTED_ARTIFACT_TYPE, contract_version=1,
+    )
+
+    def input_handles(self) -> tuple[tuple[str, ArtifactHandle], ...]:
+        return (("candidate_views", self.candidate), ("automatic_selection", self.automatic))
+
+    def input_lineage(self) -> tuple[ArtifactInputLineage, ...]:
+        return tuple(ArtifactInputLineage(
+            input_name=name, **handle.model_dump(exclude={"manifest_path"}),
+        ) for name, handle in self.input_handles())
+
+    def literal_inputs(self) -> dict[str, object]:
+        return {"selection": self.selection.model_dump(mode="json")}
+
+    def recipe_key(self) -> str:
+        return reviewed_digest(self.selection)
+
+    @model_validator(mode="after")
+    def bound_inputs(self) -> FrameReviewRoute:
+        binding = self.selection.binding
+        if ((self.candidate.artifact_type, self.candidate.contract_version)
+                != (CANDIDATE_ARTIFACT_TYPE, 1)
+                or (self.automatic.artifact_type, self.automatic.contract_version)
+                != (SELECTED_ARTIFACT_TYPE, 1)
+                or (self.candidate.artifact_id, self.candidate.semantic_digest)
+                != (binding.candidate_artifact_id, binding.candidate_semantic_digest)
+                or (self.automatic.artifact_id, self.automatic.semantic_digest)
+                != (binding.automatic_artifact_id, binding.automatic_semantic_digest)):
+            raise ValueError("Manual review route differs from its bound inputs")
+        return self
 
 
 class PairSelectionRoute(FrozenModel):
@@ -1247,7 +1290,8 @@ class RunSnapshot(FrozenModel):
     created_at: AwareDatetime
     project_intent: ProjectDocument
     route: Annotated[
-        FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | PairSelectionRoute
+        FakeRoute | ViewPreparationRoute | SharpestViewPreparationRoute | FrameReviewRoute
+        | PairSelectionRoute
         | FeatureExtractionRoute | FeatureMatchingRoute | GeometricVerificationRoute
         | RetrievalBuildRoute | MappingRoute | IncrementalMappingRoute
         | HierarchicalMappingRoute | GlobalAcceleratedRoute | ValidationGeometryRoute

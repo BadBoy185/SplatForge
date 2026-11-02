@@ -91,7 +91,8 @@ def main() -> int:
         QTimer.singleShot(100, advance)
 
     def advance() -> None:
-        if vm.controller.executor.busy or vm._media._gallery.executor.busy:
+        if (vm.controller.executor.busy or vm._media._gallery.executor.busy
+                or vm._media.preview_executor.busy):
             QTimer.singleShot(100, advance)
             return
         if index == len(scenarios):
@@ -117,11 +118,14 @@ def main() -> int:
         vm.setTheme(theme)
         vm.setMode(mode)
         vm.navigate(page)
-        window.findChild(QObject, "pageScroll").property("contentItem").setProperty("contentY", 0)
+        scroll = window.findChild(QObject, "pageScroll")
+        if scroll is not None:
+            scroll.property("contentItem").setProperty("contentY", 0)
         if page == 1:
             photo = next((r for r in vm._source.rows if r.values["type"] == "photo"), None)
             if photo:
                 vm.media.selectSource(str(photo.identity))
+                vm.media.showSource(str(photo.identity))
         if page == 4:
             choices = vm.workflow.state["choices"]["dataset"]
             if len(choices) > 1:
@@ -162,7 +166,8 @@ def main() -> int:
         QTimer.singleShot(600, settle)
 
     def settle() -> None:
-        if vm.controller.executor.busy or vm._media._gallery.executor.busy:
+        if (vm.controller.executor.busy or vm._media._gallery.executor.busy
+                or vm._media.preview_executor.busy):
             QTimer.singleShot(100, settle)
         else:
             if scenarios[index][3] == "Advanced":

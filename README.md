@@ -31,6 +31,10 @@ relink ordinary JPEG/PNG/MP4/MOV sources, and execute or inspect the determinist
 route. `views prepare` materializes bounded JPEG/PNG candidate pixels from registered
 photos and independent video timelines, then publishes either a metadata-only fixed-FPS
 selection or a Pillow-backed QualityReport followed by sharpest-per-interval selection.
+Saved [used video intervals](docs/VIDEO_USAGE.md) restrict prepared frames with exact
+original timestamps through the project draft/Save contract. Materials / Trim now
+provides the full-source timeline, exact range editing and optional used-only review;
+expanded review and user acceptance remain open.
 Saved intent lives in `project.json`; immutable input inventories live under
 `sources/`; state v4 stores execution history and durable source-verification evidence.
 
@@ -207,6 +211,10 @@ The families are incompatible even when dimensions match. Current SfM defaults a
 
 Settings include `--max-features`, `--max-image-size`, explicit `--gpu/--cpu`, learned
 `--min-score` and LoMa `--fast-resize`. Unsupported backend options are refused.
+SIFT's native scale/orientation selection can exceed its requested count. The adapter
+validates all native rows, then retains a paired native prefix so `--max-features`
+remains a hard published per-view limit. SIFT adapter version 2 changes its numerical
+identity; learned extraction and view/PairSet caches are unaffected.
 M7a supports FP32 LoMa; BF16 is deferred. Resource gates include view/megapixel limits,
 descriptor storage, copied models and private database/workspace overhead; use
 `--max-views`, `--max-workspace-gib` and `--timeout` to configure bounded execution.
@@ -418,6 +426,13 @@ DatasetPreparation can consume valid explicit selections from reference pairing 
 selection**; an Exhaustive pilot does not satisfy that gate. M11 consumes these same
 published datasets independently of that production retrieval gate.
 See [M10 defaults, layout, validation, resources and cleanup](docs/M10.md).
+
+The [Ignatius pilot report](docs/TANKS_AND_TEMPLES_PILOT.md) records a reproducible
+official-image-set run, retained failures, reconstruction and held-out evaluation.
+The [GPU follow-up](docs/TANKS_AND_TEMPLES_GPU_PILOT.md) records the learned-feature
+route and separate CUDA/cuDSS/Caspar execution checks without changing defaults.
+The [single 30k training experiment](docs/TANKS_AND_TEMPLES_30K.md) compares the
+same SIFT M10 dataset/split with the original 7k result, including time and visuals.
 
 ## Intended workflow
 

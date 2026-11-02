@@ -22,8 +22,8 @@ from splatforge.core.execution import (
     RetrievalBuildRoute,
     RunSnapshot,
 )
+from splatforge.core.frame_review import EffectiveSelection
 from splatforge.core.pairs import Digest, PairingViewUniverse, project_pairing_universe
-from splatforge.core.quality import SharpestSelectedViewSet
 from splatforge.core.retrieval import (
     RetrievalExport,
     RetrievalRepresentationSet,
@@ -36,7 +36,6 @@ from splatforge.core.retrieval import (
 from splatforge.core.views import (
     CandidateViewSet,
     FrozenModel,
-    SelectedViewSet,
     canonical_json_bytes,
     sha256_bytes,
 )
@@ -69,7 +68,7 @@ class RetrievalAdapter(Protocol):
 def require_corpus(
     export: RetrievalExport,
     candidate: CandidateViewSet,
-    selected: SelectedViewSet | SharpestSelectedViewSet,
+    selected: EffectiveSelection,
 ) -> None:
     universe = project_pairing_universe(candidate, selected)
     pixels = {v.view_id: v for v in candidate.views}

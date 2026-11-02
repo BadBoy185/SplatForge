@@ -7,26 +7,28 @@ CheckBox {
     id: control
     font.family: Theme.font
     font.pixelSize: Theme.body
-    spacing: 10
-    implicitHeight: Math.max(36, implicitContentHeight + 12)
+    spacing: Theme.space
+    implicitHeight: Math.max(Theme.control, implicitContentHeight + Theme.space)
     opacity: enabled ? 1 : 0.5
     hoverEnabled: true
     indicator: Rectangle {
-        width: 20
-        height: 20
+        width: Theme.icon
+        height: Theme.icon
         x: control.leftPadding
         anchors.verticalCenter: parent.verticalCenter
-        radius: 4
+        radius: Theme.controlRadius
         color: control.checked ? Theme.accent : control.down ? Theme.hover : Theme.background
         border.width: control.visualFocus ? 2 : 1
         border.color: control.visualFocus || control.hovered ? Theme.accent : Theme.strong
         SplatButton {
             anchors.centerIn: parent
-            width: 20
-            height: 20
+            width: Theme.icon
+            height: Theme.icon
             leftPadding: 1
             rightPadding: 1
             iconName: "check"
+            icon.width: Theme.icon - 2
+            icon.height: Theme.icon - 2
             icon.color: Theme.accentText
             visible: control.checked
             kind: "ghost"

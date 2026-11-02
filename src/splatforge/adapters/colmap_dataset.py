@@ -48,6 +48,7 @@ from splatforge.core.capabilities import CapabilityStatus, FreshnessPolicy
 from splatforge.core.dataset import (
     INPUT_MODELS,
     DatasetBackend,
+    DatasetResourceLimits,
     DatasetSettings,
     PreparedDatasetComponent,
 )
@@ -89,6 +90,39 @@ def workspace_bytes(workspace: Path) -> int:
                 raise ValueError("dataset.unsafe_workspace: writable hardlink")
             size += observed.st_size
     return size
+
+
+class _PreparationGuard:
+    """Check cancellation/time on every checkpoint; bound filesystem polling cost."""
+
+    def __init__(
+        self,
+        workspace: Path,
+        limits: DatasetResourceLimits,
+        cancellation: FeatureCancellation,
+        *,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        self.workspace, self.limits, self.cancellation = workspace, limits, cancellation
+        self.clock = clock or time.monotonic
+        self.started = self.clock()
+        self.next_resource_check = self.started
+
+    def __call__(self, *, force_resources: bool = False) -> None:
+        if self.cancellation.is_cancelled():
+            raise FeatureCancelledError("Dataset cancelled after confirmed native teardown")
+        now = self.clock()
+        if now - self.started > self.limits.timeout_seconds:
+            raise FeatureTimeoutError("dataset.timeout: preparation time budget exceeded")
+        if not force_resources and now < self.next_resource_check:
+            return
+        if (
+            workspace_bytes(self.workspace) > self.limits.max_workspace_bytes
+            or shutil.disk_usage(self.workspace).free < self.limits.minimum_free_bytes
+        ):
+            raise FeatureResourceError("dataset.resource_limit: actual workspace/disk exhausted")
+        # Start the interval after the walk, including when the walk itself is slow.
+        self.next_resource_check = self.clock() + 0.25
 
 
 class ColmapDatasetAdapter(ColmapMatchingAdapter):
@@ -187,20 +221,7 @@ class ColmapDatasetAdapter(ColmapMatchingAdapter):
         from splatforge.core.views import CandidateViewSet
 
         backend, limits = route.backend, route.resource_limits
-        started = time.monotonic()
-
-        def guard():
-            if cancellation.is_cancelled():
-                raise FeatureCancelledError("Dataset cancelled after confirmed native teardown")
-            if time.monotonic() - started > limits.timeout_seconds:
-                raise FeatureTimeoutError("dataset.timeout: preparation time budget exceeded")
-            if (
-                workspace_bytes(workspace) > limits.max_workspace_bytes
-                or shutil.disk_usage(workspace).free < limits.minimum_free_bytes
-            ):
-                raise FeatureResourceError(
-                    "dataset.resource_limit: actual workspace/disk exhausted"
-                )
+        guard = _PreparationGuard(workspace, limits, cancellation)
 
         phase("materializing_input")
         guard()
@@ -279,6 +300,7 @@ class ColmapDatasetAdapter(ColmapMatchingAdapter):
                     "dataset.corrupt_geometry: source sparse bytes changed during copy"
                 )
         phase("validating_input")
+        guard(force_resources=True)
         canonical_names = {i.name: i.view_id for i in route.images}
         before = sparse_content(
             model,
@@ -295,10 +317,10 @@ class ColmapDatasetAdapter(ColmapMatchingAdapter):
             sparse=native_transport_path(model),
             output=native_transport_path(result),
         )
-        guard()
+        guard(force_resources=True)
         phase("undistorting")
         self._undistort(workspace, route, argv, cancellation, evidence, phase)
-        guard()
+        guard(force_resources=True)
         if runtime_files(backend.selection) != backend.runtime_files:
             raise FeatureCapabilityError("dataset.runtime_changed: native runtime changed")
         phase("validating_output")
@@ -344,7 +366,7 @@ class ColmapDatasetAdapter(ColmapMatchingAdapter):
         )
         (output / "dataset.json").write_bytes(canonical_json_bytes(payload.metadata()))
         read_dataset(output, checkpoint=guard, maximum_scratch_bytes=limits.max_workspace_bytes)
-        guard()
+        guard(force_resources=True)
         # Only this attempt's disposable transport is released. Publication is a
         # rename, so later independent components retain only completed payloads.
         for scratch in (inputs, model, result):

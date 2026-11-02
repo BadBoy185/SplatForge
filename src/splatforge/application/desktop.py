@@ -207,6 +207,9 @@ class GuiFacade:
                         "codec": s.probe.codec_name,
                         "sha256": s.content_sha256,
                         "sourceRevision": s.source_revision,
+                        "streamIndex": s.probe.selected_visual_stream_index,
+                        "timelineStart": s.probe.start_time,
+                        "playbackStart": s.probe.playback_start_time,
                         "lastHashedAt": s.last_full_hash_at.isoformat(),
                         "locator": s.external_locator,
                         "isIncluded": (

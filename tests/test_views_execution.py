@@ -188,6 +188,7 @@ class FakeMaterializer:
         *,
         timeout_seconds: int,
         expected_backend: ExecutableIdentity,
+        used_intervals=None,
         cancellation=None,
         evidence_sink=None,
         progress_sink=None,
@@ -216,6 +217,11 @@ class FakeMaterializer:
         frames = []
         timestamps = (0, 2, 4, 6, 8, 10) if self.mode == "too_many" else (0, 7, 10)
         for index, pts in enumerate(timestamps):
+            if used_intervals is not None and not any(
+                item.start.as_fraction() <= pts * time_base.as_fraction() < item.end.as_fraction()
+                for item in used_intervals
+            ):
+                continue
             path = output_directory / f"frame-{index:08d}.png"
             payload = png(16, 12)
             if self.mode == "large":

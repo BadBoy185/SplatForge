@@ -135,6 +135,7 @@ def test_missing_recent_exposes_locate_and_safe_remove(desktop, tmp_path):
     try:
         assert visual_item(window.contentItem(), "openRecentProject") is None
         assert visual_item(window.contentItem(), "locateRecentProject").isEnabled()
+        click(window, "recentProjectMenu")
         click(window, "removeRecentProject")
         idle(desktop)
         assert not desktop.state["recents"] and not missing.exists()

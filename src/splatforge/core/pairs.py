@@ -9,8 +9,9 @@ from uuid import UUID, uuid5
 
 from pydantic import Field, model_validator
 
+from splatforge.core.frame_review import EffectiveSelection
 from splatforge.core.media import MediaType
-from splatforge.core.quality import NonNegativeRational, SharpestSelectedViewSet
+from splatforge.core.quality import NonNegativeRational
 from splatforge.core.views import (
     MAX_VIEWS,
     CandidateViewSet,
@@ -133,7 +134,7 @@ def pairing_universe_digest(universe: PairingViewUniverse) -> str:
 
 def project_pairing_universe(
     candidate: CandidateViewSet,
-    selected: SelectedViewSet | SharpestSelectedViewSet,
+    selected: EffectiveSelection,
 ) -> PairingViewUniverse:
     if selected.candidate_semantic_digest != candidate_semantic_digest(candidate):
         raise ValueError("selected candidate semantics differ from candidate content")
@@ -474,7 +475,11 @@ class PairSet(FrozenModel):
     candidate_semantic_digest: Digest
     selected_artifact_id: UUID
     selected_semantic_digest: Digest
-    selected_method_id: Literal["frame_selection.fixed_fps", "frame_selection.sharpest_interval"]
+    selected_method_id: Literal[
+        "frame_selection.fixed_fps",
+        "frame_selection.sharpest_interval",
+        "frame_selection.manual_review",
+    ]
     universe: PairingViewUniverse
     universe_digest: Digest
     settings: PairSettings

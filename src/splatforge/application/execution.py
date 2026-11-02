@@ -35,11 +35,12 @@ from splatforge.core.fake_pipeline import (
     scale_recipe_key,
     sequence_recipe_key,
 )
+from splatforge.core.frame_review import EffectiveSelection
 from splatforge.core.media import SourceOccurrence, VerificationPolicyId
 from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.project import ProjectDocument
-from splatforge.core.quality import QualityReport, SharpestSelectedViewSet
-from splatforge.core.views import CandidateViewSet, SelectedViewSet
+from splatforge.core.quality import QualityReport
+from splatforge.core.views import CandidateViewSet
 
 
 class StateUpgradeRequiredError(ProjectError):
@@ -239,7 +240,7 @@ class ExecutionRepository(Protocol):
 
     def load_selected_views(
         self, root: Path, artifact: ArtifactHandle
-    ) -> SelectedViewSet | SharpestSelectedViewSet: ...
+    ) -> EffectiveSelection: ...
 
     def load_quality_report(self, root: Path, artifact: ArtifactHandle) -> QualityReport: ...
 

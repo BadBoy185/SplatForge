@@ -121,6 +121,8 @@ class NormalizedProbe(BaseModel):
     average_frame_rate: str | None = None
     raw_frame_rate: str | None = None
     duration: str | None = None
+    start_time: str | None = None
+    playback_start_time: str | None = None
     frame_count: int | None = Field(default=None, ge=0, strict=True)
     rotation_degrees: int | None = Field(default=None, strict=True)
     capture: CaptureMetadata | None = None

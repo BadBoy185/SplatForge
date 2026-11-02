@@ -215,6 +215,9 @@ and matcher settings. The work model is `features.selected_views_v1` (VIEWS + MP
 with bounded verified per-image logs or limited live evidence plus historical ETA.
 Tiny real SIFT publication/cache/immutability is opt-in; learned routes must be
 validated on a configured compatible machine before claiming their real integration.
+The Ignatius pilot exposed native SIFT scale/orientation overflow. SIFT adapter v2
+validates full native matrices before enforcing the existing hard per-view feature
+budget with a paired native prefix; learned routes retain strict refusal semantics.
 
 **M7b implemented:** `matches run` consumes exact M7a/M6 run outputs and publishes
 `MatchSet` v1; `verification run` independently publishes `VerifiedGeometrySet` v1.
@@ -368,6 +371,10 @@ image/camera/pose/point/track validation, dry-run resources/capability/cache/gat
 generic lifecycle controls and manual preview/apply cleanup with durable eviction/pins.
 See [M10 contracts and verification](docs/M10.md).
 
+The [Ignatius pilot](docs/TANKS_AND_TEMPLES_PILOT.md) adds bounded workspace-resource
+polling during sparse validation, retaining per-checkpoint cancellation/time checks
+and forced resource checks at boundaries without changing dataset numerics.
+
 **Production practical multi-video E2E acceptance remains externally pending M7c
 production VPR selection.** The acceptance requirement below is preserved. Valid explicit
 reference-pairing selections can be prepared, including the local mixed pilot; this does
@@ -447,6 +454,44 @@ passed 2026-10-27. [M12b2a Source Participation](docs/plans/completed/2026-10-27
 is complete with user UX acceptance on 2026-10-27 for reversible persisted Exclude/Restore.
 [M12b3 capture metadata and logical groups](docs/plans/active/2026-10-27-m12b3-capture-metadata-groups.md)
 is implemented for manual review; M12c Prepare Data is later.
+The [interface and Materials plan](docs/plans/active/2026-10-28-materials-workspace.md)
+records delivered Projects/Create/Open/return, Materials review and full-source Trim.
+Projects/Create layout and the latest Materials/Trim visual refinement are
+user-accepted. Functional Materials/Trim and corrected M12b3 manual scenarios remain
+unconfirmed. The [M12b4 folder relink plan](docs/plans/active/2026-10-29-m12b4-folder-relink.md)
+closes the mandatory folder-recovery implementation gap before M12c. Its explicit
+whole-folder matching/publication flow reuses source identity and inventory storage.
+That plan distinguishes the passing pre-implementation full gate from checks on the
+new relink tree. Earlier failure/layout results remain historical evidence.
+
+The separately requested entry slice now implements common shell → Projects /
+recent projects → Create/Open → Materials and visible global Projects return.
+The continuation plan owns current combined-tree gates and separates visual
+acceptance from the still unconfirmed functional manual checklists.
+Mandatory Sources implementation is delivered; its manual acceptance stays open.
+The authorized [M12c1](docs/plans/completed/2026-10-29-m12c1-prepare-data.md) is implemented:
+Prepare Data through the existing views service to a persisted result and bounded
+selected-image review, with targeted/native verification and independent review.
+Manual acceptance is open. The next authorized bounded
+[image-review scenario](docs/plans/completed/2026-10-29-m12c-image-review.md) adds saved
+Exclude / Keep Anyway / Reset decisions and explicit immutable effective input.
+The authorized [source scopes/provenance scenario](docs/plans/completed/2026-10-29-m12c-source-scopes-provenance.md)
+adds display-only source/group scopes and saved frame provenance without changing
+manual decisions, source participation or effective input. Earlier and current
+manual acceptance stay open. The user's later
+[direct-settings decision](docs/plans/completed/2026-10-29-m12c-direct-prepare-settings.md)
+replaces Prepare profiles: existing method, density, encoding and optional filters
+are directly editable, saved and passed to real preparation. Unready technologies
+remain in the [technical backlog](docs/TECHNOLOGY_STRATEGY.md#prepare-data-technical-backlog--2026-10-29).
+Separately contracted masks/tracking remain M12c work; this does not complete the whole slice.
+This reuses existing services without starting a Core/Application rewrite.
+See [layout and acceptance](docs/GUI_DESIGN.md#reference-led-interface-contract--2026-10-28)
+and the [reference catalog](docs/design/references/README.md). Mockup controls are not
+implemented support. Saved video interval intent and real preparation now have
+[implemented contracts and Materials / Trim UI](docs/VIDEO_USAGE.md), including
+the full-source timeline and used-only playback. Expanded review and user acceptance
+remain open. Masks/tracking need separate contracts;
+360/fisheye remains M14 and LiDAR is not introduced by this plan.
 
 M12f is required: a bounded sparse/camera viewer within Reconstruction Result / Review,
 with component context and the existing ReconstructionSelection / validation flow for

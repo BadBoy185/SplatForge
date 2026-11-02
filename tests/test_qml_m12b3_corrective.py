@@ -10,10 +10,11 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6", reason="Install the optional GUI extra")
 
-from PySide6.QtCore import QPointF, Qt  # noqa: E402
-from PySide6.QtGui import QImage  # noqa: E402
+from PySide6.QtCore import Q_ARG, QMetaObject, QObject, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QAccessible, QImage  # noqa: E402
 from PySide6.QtQml import QQmlExpression, qmlContext  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
+from shiboken6 import delete, isValid  # noqa: E402
 from test_qml import app as app  # noqa: E402
 from test_qml import desktop as desktop  # noqa: E402
 from test_qml import until, visual_item  # noqa: E402
@@ -37,20 +38,76 @@ def populate(vm, tmp_path, count=6):
     return root, paths, files, [str(r.identity) for r in vm.sources.rows]
 
 
-def mouse(window, name, modifiers=Qt.KeyboardModifier.NoModifier):
-    item = visual_item(window.contentItem(), name)
-    assert item is not None and item.isVisible(), name
-    # Stay in identity/content area, away from the child action buttons.
-    pos = item.mapToScene(QPointF(28, item.height() / 2)).toPoint()
-    QTest.mouseClick(window, Qt.MouseButton.LeftButton, modifiers, pos)
-    QTest.qWait(20)
-
-
 def value(engine, item, expression):
-    query = QQmlExpression(qmlContext(item), item, expression)
+    # A missing/retired delegate is a test failure. Passing its null QML context
+    # into Qt's evaluator causes a native access violation rather than an assertion.
+    assert item is not None and isValid(item), f"No live QML object for {expression}"
+    context = qmlContext(item)
+    assert context is not None and isValid(context), f"No QML context for {expression}"
+    query = QQmlExpression(context, item, expression)
     result = query.evaluate()[0]
     assert not query.hasError(), query.error().toString()
     return result
+
+
+def accessible_name(item):
+    assert item is not None and isValid(item), "No live accessible control"
+    active = QAccessible.isActive()
+    QAccessible.setActive(True)
+    try:
+        interface = QAccessible.queryAccessibleInterface(item)
+        assert interface is not None
+        return interface.text(QAccessible.Text.Name)
+    finally:
+        QAccessible.setActive(active)
+
+
+def test_expression_helper_refuses_missing_deleted_and_unbound_objects(app):
+    with pytest.raises(AssertionError, match="No live QML object"):
+        value(None, None, "Accessible.name")
+    item = QObject()
+    with pytest.raises(AssertionError, match="No QML context"):
+        value(None, item, "Accessible.name")
+    delete(item)
+    with pytest.raises(AssertionError, match="No live QML object"):
+        value(None, item, "Accessible.name")
+
+
+def source_item(vm, window, identity):
+    """Scroll by model UUID before using a bounded visible delegate's coordinates."""
+    grid = vm.state["sourceView"] == "Grid"
+    browser_name = "sourceGrid" if grid else "sourceList"
+    until(lambda: visual_item(window.contentItem(), browser_name) is not None)
+    browser = visual_item(window.contentItem(), browser_name)
+    index = next(i for i, row in enumerate(vm.sources.rows) if str(row.identity) == identity)
+    assert QMetaObject.invokeMethod(
+        browser, "positionViewAtIndex", Q_ARG(int, index), Q_ARG(int, 1)  # Center
+    )
+    name = ("tile-" if grid else "source-") + identity
+
+    def ready():
+        item = visual_item(window.contentItem(), name)
+        if item is None or not item.isVisible():
+            return False
+        center = item.mapToItem(browser, QPointF(item.width() / 2, item.height() / 2))
+        return 0 <= center.x() < browser.width() and 0 <= center.y() < browser.height()
+
+    until(ready)
+    return visual_item(window.contentItem(), name)
+
+
+def source_mouse(vm, window, identity, modifiers=Qt.KeyboardModifier.NoModifier):
+    item = source_item(vm, window, identity)
+    pos = item.mapToScene(QPointF(28, item.height() / 2)).toPoint()
+    QTest.mouseClick(window, Qt.MouseButton.LeftButton, modifiers, pos)
+
+
+def row_menu(vm, window, identity):
+    item = source_item(vm, window, identity)
+    item.forceActiveFocus(Qt.FocusReason.TabFocusReason)
+    prefix = "tile-" if vm.state["sourceView"] == "Grid" else ""
+    click(window, prefix + "actions-" + identity)
+    return prefix
 
 
 @pytest.mark.parametrize("start", ["List", "Grid"])
@@ -86,7 +143,12 @@ def test_availability_updates_both_retained_presentations(desktop, tmp_path, sta
             for identity, status in zip(ids, expected, strict=True):
                 item = visual_item(window.contentItem(), prefix + identity)
                 assert value(engine, item, "record.availability") == status
+        desktop.navigate(0)
         desktop.openProject(str(root))
+        idle(desktop)
+        assert [r.values["availability"] for r in desktop.sources.rows] == expected
+        # Only an explicit reload, not returning to the session, resets check evidence.
+        desktop.controller.open(root)
         idle(desktop)
         assert all(r.values["availabilityState"] == "neutral" for r in desktop.sources.rows)
         assert not engine.load_errors
@@ -104,26 +166,26 @@ def test_desktop_selection_and_selected_unselected_icon_batch_rule(desktop, tmp_
     engine = create_engine(desktop)
     window = engine.rootObjects()[0]
     window.resize(1440, 900)
-    prefix = "source-" if view == "List" else "tile-"
     action_prefix = "" if view == "List" else "tile-"
     try:
-        QTest.qWait(100)
-        mouse(window, prefix + ids[0])
-        mouse(window, prefix + ids[2], Qt.KeyboardModifier.ControlModifier)
-        mouse(window, prefix + ids[4], Qt.KeyboardModifier.ControlModifier)
+        source_mouse(desktop, window, ids[0])
+        source_mouse(desktop, window, ids[2], Qt.KeyboardModifier.ControlModifier)
+        source_mouse(desktop, window, ids[4], Qt.KeyboardModifier.ControlModifier)
         assert set(desktop.sources.selectedIds) == {ids[0], ids[2], ids[4]}
-        mouse(window, prefix + ids[2], Qt.KeyboardModifier.ControlModifier)
+        source_mouse(desktop, window, ids[2], Qt.KeyboardModifier.ControlModifier)
         assert set(desktop.sources.selectedIds) == {ids[0], ids[4]}
-        mouse(window, prefix + ids[1])
-        mouse(window, prefix + ids[4], Qt.KeyboardModifier.ShiftModifier)
+        source_mouse(desktop, window, ids[1])
+        source_mouse(desktop, window, ids[4], Qt.KeyboardModifier.ShiftModifier)
         assert desktop.sources.selectedIds == ids[1:5]
         before = build_project_service().open(root).revision
+        row_menu(desktop, window, ids[2])
         click(window, action_prefix + "participation-" + ids[2])
         idle(desktop)
         saved = build_project_service().open(root)
         assert saved.revision == before + 1
         assert set(map(str, saved.source_participation.excluded_source_ids)) == set(ids[1:5])
-        assert desktop.media.state["previewIndex"] == 0
+        assert desktop.media.state["previewSource"]["identity"] == ids[4]
+        row_menu(desktop, window, ids[0])
         click(window, action_prefix + "participation-" + ids[0])
         idle(desktop)
         saved = build_project_service().open(root)
@@ -253,37 +315,41 @@ def test_icon_details_preview_keyboard_and_no_event_bubbling(desktop, tmp_path, 
     window.resize(1024, 640)
     prefix = "" if view == "List" else "tile-"
     try:
-        QTest.qWait(100)
         desktop.sources.selectAllVisible()
-        QTest.qWait(80)
+        row_menu(desktop, window, ids[1])
         if view == "Grid":
             grid = visual_item(window.contentItem(), "sourceGrid")
             thumb = visual_item(grid, "photoThumbnail")
             assert thumb.height() > 32  # Batch controls must leave a usable thumbnail.
         info = visual_item(window.contentItem(), prefix + "details-" + ids[1])
-        assert info.property("text") == ""
-        assert value(engine, info, "Accessible.name") == "Details"
+        assert info is not None and info.isVisible()
+        assert info.property("text") == "Details…"
+        assert accessible_name(info) == "Details…"
         click(window, info.objectName())
         assert desktop.sources.selectedId == ids[1]
         assert desktop.sources.selectedCount == 3
         assert desktop.media.state["previewIndex"] == 0
         click(window, "closeSourceDetails")
+        row_menu(desktop, window, ids[1])
         preview = visual_item(window.contentItem(), prefix + "preview-" + ids[1])
-        assert value(engine, preview, "Accessible.name") == "Preview"
+        assert accessible_name(preview) == "View material"
         preview.forceActiveFocus(Qt.FocusReason.TabFocusReason)
         QTest.keyClick(window, Qt.Key.Key_Space)
         idle(desktop)
         assert desktop.media.state["previewTitle"] == "1.png"
         assert desktop.sources.selectedCount == 3
-        action = visual_item(window.contentItem(), "previewParticipation")
-        assert value(engine, action, "Accessible.name") == "Exclude from processing"
-        assert action.property("text") == ""
-        click(window, "previewParticipation")
+        click(window, "restoreMaterialProperties")
+        action = visual_item(window.contentItem(), "currentMaterialParticipation")
+        assert accessible_name(action) == "Exclude from processing"
+        assert action.property("text") == "Exclude from processing"
+        click(window, "currentMaterialParticipation")
         idle(desktop)
         assert desktop.media.state["previewTitle"] == "2.png"
         assert desktop.sources.selectedCount == 2
         assert desktop.media.state["previewIndex"] == 2
-        click(window, "closeImagePreview")
+        desktop.media.closePreview()
+        assert desktop.media.state["previewIndex"] == 0
+        assert desktop.media.state["largeImage"] == ""
         assert not engine.load_errors
     finally:
         idle(desktop)

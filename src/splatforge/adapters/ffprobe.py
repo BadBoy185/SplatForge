@@ -290,6 +290,13 @@ def normalize_ffprobe(
             frame_count = int(str(raw_frame_count))
         except ValueError as exc:
             raise ProbeOutputError("FFprobe frame count is invalid") from exc
+    time_base = _optional_rational(stream.get("time_base"), "time_base")
+    start_time = _optional_text(stream.get("start_time"))
+    if time_base is not None and stream.get("start_pts") not in (None, "N/A"):
+        try:
+            start_time = str(int(str(stream["start_pts"])) * Fraction(time_base))
+        except (ValueError, ZeroDivisionError) as exc:
+            raise ProbeOutputError("FFprobe start_pts is invalid") from exc
     return NormalizedProbe(
         backend=backend,
         selected_visual_stream_index=index,
@@ -297,10 +304,12 @@ def normalize_ffprobe(
         width=width,
         height=height,
         orientation=None,
-        time_base=_optional_rational(stream.get("time_base"), "time_base"),
+        time_base=time_base,
+        start_time=start_time,
+        playback_start_time=_optional_text(format_data.get("start_time")),
         average_frame_rate=_optional_rational(stream.get("avg_frame_rate"), "avg_frame_rate"),
         raw_frame_rate=_optional_rational(stream.get("r_frame_rate"), "r_frame_rate"),
-        duration=_optional_text(stream.get("duration") or format_data.get("duration")),
+        duration=_optional_text(stream.get("duration")),
         frame_count=frame_count,
         rotation_degrees=_rotation(stream),
         capture=container_capture(format_data, stream),

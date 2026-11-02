@@ -47,7 +47,9 @@ def real_mapping_input(tmp_path, monkeypatch, executable: Path, count: int = 12)
         value,
         target="10",
         candidate_fps="10",
-        resource_limits=upstream.limits(byte_count=100000000),
+        # GPU integration needs >=50 views; the old 12-view budget refused 60
+        # generated frames before any native GPU mapping could run.
+        resource_limits=upstream.limits(byte_count=max(100000000, count * 4 * 1024**2)),
     )
     assert views.selected_count == count
     pairs = build_pairs(value, views, settings=ExhaustiveSettings())

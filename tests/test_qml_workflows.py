@@ -65,7 +65,7 @@ def test_destination_preview_is_pure_and_create_round_trips_with_cli(desktop, tm
     parent, name = tmp_path / "Projects with spaces", "Lom Plešivec — Київ (1)"
     preview = desktop.projectDestination(str(parent), name)
     root = parent / name
-    assert preview == {"path": str(root), "error": "", "valid": True}
+    assert preview == {"path": str(root), "error": "", "field": "", "valid": True}
     assert not parent.exists()
     assert desktop.projectDestination(str(parent), "Other")["path"] == str(parent / "Other")
     assert desktop.projectDestination(str(tmp_path), name)["path"] == str(tmp_path / name)
@@ -211,7 +211,7 @@ def test_create_dialog_preview_validation_cancel_and_sources(desktop, tmp_path):
     engine = create_engine(desktop)
     window = engine.rootObjects()[0]
     try:
-        assert not visual_item(window.contentItem(), "nav-Sources").isVisible()
+        assert visual_item(window.contentItem(), "nav-Materials") is None
         click(window, "newProject")
         name = window.findChild(QObject, "projectName")
         location = window.findChild(QObject, "projectLocation")

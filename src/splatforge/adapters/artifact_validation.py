@@ -34,6 +34,7 @@ from splatforge.core.features import (
     MAX_FEATURE_METADATA_BYTES,
     LocalFeatureSet,
 )
+from splatforge.core.frame_review import ReviewedSelectedViewSet, reviewed_digest
 from splatforge.core.geometry import GEOMETRY_ARTIFACT_TYPE, VerifiedGeometrySet
 from splatforge.core.matching import MATCH_ARTIFACT_TYPE, MatchSet
 from splatforge.core.pairs import (
@@ -112,6 +113,7 @@ class ValidatedArtifact:
         | QualityReport
         | SelectedViewSet
         | SharpestSelectedViewSet
+        | ReviewedSelectedViewSet
     )
 
 
@@ -258,6 +260,20 @@ def validate_published_artifact(
             or lineage["quality_report"].semantic_digest != validated.parsed.quality_semantic_digest
         ):
             raise ValueError("Sharpest selection provenance differs from lineage")
+    if isinstance(validated.parsed, ReviewedSelectedViewSet):
+        binding = validated.parsed.binding
+        lineage = {item.input_name: item for item in manifest.input_lineage}
+        expected = {
+            "candidate_views": (binding.candidate_artifact_id, binding.candidate_semantic_digest),
+            "automatic_selection": (
+                binding.automatic_artifact_id, binding.automatic_semantic_digest,
+            ),
+        }
+        if len(manifest.input_lineage) != 2 or set(lineage) != set(expected) or any(
+            (lineage[name].artifact_id, lineage[name].semantic_digest) != identity
+            for name, identity in expected.items()
+        ):
+            raise ValueError("Manual selection provenance differs from exact input lineage")
     if isinstance(validated.parsed, PairSet):
         validate_pair_lineage(validated.parsed, manifest)
     if isinstance(validated.parsed, (GaussianScene, GaussianSceneSet, TrainingCheckpoint)):
@@ -487,8 +503,11 @@ def _validate_selected(
     data = _read_bounded(metadata, MAX_METADATA_BYTES, "selected metadata")
     decoded = json.loads(data)
     method_id = decoded.get("selection_method_id") if isinstance(decoded, dict) else None
-    parsed: SelectedViewSet | SharpestSelectedViewSet
-    if method_id == "frame_selection.sharpest_interval":
+    parsed: SelectedViewSet | SharpestSelectedViewSet | ReviewedSelectedViewSet
+    if method_id == "frame_selection.manual_review":
+        parsed = ReviewedSelectedViewSet.model_validate_json(data)
+        semantic_digest = reviewed_digest(parsed)
+    elif method_id == "frame_selection.sharpest_interval":
         parsed = SharpestSelectedViewSet.model_validate_json(data)
         semantic_digest = sharpest_selected_semantic_digest(parsed)
     elif method_id == "frame_selection.fixed_fps":

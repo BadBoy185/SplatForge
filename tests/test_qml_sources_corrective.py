@@ -10,9 +10,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6", reason="Install the optional GUI extra")
 
-from PySide6.QtCore import QObject, QSize, Qt  # noqa: E402
+from PySide6.QtCore import QObject, QPointF, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtQml import QQmlExpression, qmlContext  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from test_qml import app as app  # noqa: E402
 from test_qml import desktop as desktop  # noqa: E402
 from test_qml import until, visual_item  # noqa: E402
@@ -29,7 +30,7 @@ from splatforge_gui.source_status import SourceSession  # noqa: E402
 
 
 def idle(desktop):
-    until(lambda: not desktop.controller.executor.busy)
+    until(lambda: not desktop.controller.executor.busy and not desktop.media.preview_executor.busy)
 
 
 def provider_image(provider, url):
@@ -123,6 +124,8 @@ def test_real_project_photo_video_switch_revokes_images_and_selection(desktop, t
         desktop.setSourceView("List")
         assert desktop.sources.selectedId == str(row_b.identity)
         desktop.setSourceView("Grid")
+        until(lambda: visual_item(window.contentItem(), tile_name) is not None)
+        tile = visual_item(window.contentItem(), tile_name)
         assert tile.property("imageUrl") == ""
         # Reverse direction: video project -> photo project has no retained video selection.
         desktop.openProject(str(root_a))
@@ -202,7 +205,11 @@ def test_session_evidence_reopen_check_missing_and_failed_check(desktop, tmp_pat
     idle(desktop)
     assert desktop.sources.rows[0].values["availabilityState"] == "available"
     assert desktop.sources.rows[0].values["checkedLabel"] == "Checked during import"
+    desktop.navigate(0)
     desktop.openProject(str(root))
+    idle(desktop)
+    assert desktop.sources.rows[0].values["availabilityState"] == "available"
+    desktop.controller.open(root)  # Explicit reload, not retained-session return.
     idle(desktop)
     assert desktop.sources.rows[0].values["availabilityState"] == "neutral"
     desktop.verifySources()
@@ -210,7 +217,11 @@ def test_session_evidence_reopen_check_missing_and_failed_check(desktop, tmp_pat
     row = desktop.sources.rows[0]
     assert row.values["availabilityState"] == "available"
     # Even persisted successful verification is historical after an Open/reopen.
+    desktop.navigate(0)
     desktop.openProject(str(root))
+    idle(desktop)
+    assert desktop.sources.rows[0].values["availabilityState"] == "available"
+    desktop.controller.open(root)  # Explicit reload, not retained-session return.
     idle(desktop)
     assert desktop.sources.rows[0].values["availabilityState"] == "neutral"
     assert desktop.sources.rows[0].values["lastVerifiedLabel"] != "Not recorded"
@@ -332,13 +343,27 @@ def test_source_switch_buttons_apply_current_theme_and_selection_immediately(
     try:
         desktop.setTheme(theme)
         until(lambda: visual_item(window.contentItem(), "sourceGridMode") is not None)
-        click(window, "sourceGridMode")
-        for name, token in [("sourceGridMode", "accent"), ("sourceListMode", "raised")]:
-            button = visual_item(window.contentItem(), name)
-            expression = QQmlExpression(qmlContext(button), button, "Theme." + token)
-            expected = expression.evaluate()[0]
-            assert not expression.hasError()
-            assert button.property("background").property("color") == expected
+        for view in ("Grid", "List"):
+            click(window, "source" + view + "Mode")
+            assert desktop.state["sourceView"] == view
+            # Quiet mode toggles use a bordered secondary surface, not the page's
+            # primary-action accent. Move off the buttons before checking it.
+            QTest.mouseMove(window, QPointF(5, 5).toPoint())
+            for mode in ("Grid", "List"):
+                button = visual_item(window.contentItem(), "source" + mode + "Mode")
+                selected = mode == view
+                assert button.property("kind") == ("secondary" if selected else "ghost")
+                background = button.property("background")
+                if selected:
+                    expression = QQmlExpression(qmlContext(button), button, "Theme.raised")
+                    expected = expression.evaluate()[0]
+                    assert not expression.hasError()
+                    assert background.property("color") == expected
+                    border = QQmlExpression(qmlContext(button), button, "background.border.width")
+                    assert border.evaluate()[0] >= 1
+                    assert not border.hasError()
+                else:
+                    assert background.property("color").alpha() == 0
         assert not engine.load_errors
     finally:
         idle(desktop)

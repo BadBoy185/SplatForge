@@ -6,411 +6,557 @@ import QtQuick.Dialogs
 import "../theme"
 import "../components"
 
-ColumnLayout {
+FocusScope {
     id: page
     objectName: "sourcesPage"
     required property var vm
-    property real viewportHeight: 512
+    focus: vm.state.page === 1
+    Keys.priority: Keys.AfterItem
+    Keys.onPressed: event => {
+        event.accepted = !page.vm.prepare.state.active && event.modifiers === Qt.NoModifier
+            && currentViewer.handleKey(event.key, event.isAutoRepeat);
+    }
+    property real viewportHeight: height
+    property bool catalogVisible: true
+    readonly property bool compact: width < 1180
+    property bool propertiesVisible: !compact
+    onCompactChanged: propertiesVisible = !compact
+    property bool expandedGrid: false
     readonly property bool populated: vm.state.sourcesSummary.registered > 0
-    readonly property real listHeight: Math.max(128, viewportHeight - header.implicitHeight
-                                                - (check.visible ? check.implicitHeight + 16 : 0)
-                                                - (videoHint.visible ? videoHint.implicitHeight + 16 : 0)
-                                                - footer.implicitHeight - 32)
-    spacing: 16
-    SplatPageHeader {
-        id: header
-        title: "Sources"
-        subtitle: page.populated
-                  ? !page.vm.state.participationSupported
-                    ? page.vm.state.sourcesSummary.registered + " registered · Participation unavailable"
-                    : page.vm.state.sourcesSummary.registered + " registered · "
-                    + page.vm.state.sourcesSummary.included + " included · "
-                    + page.vm.state.sourcesSummary.excluded + " excluded"
-                  : "Add the photos and videos you want to use."
-        Layout.fillWidth: true
-        Loader {
-            active: page.populated
-            sourceComponent: compactActions
-        }
+    function resetFilters() {
+        page.vm.setSourceSection("");
+        page.vm.setSourceFilter("All");
     }
-    Component {
-        id: compactActions
+    Action {
+        id: importPhotosAction
+        enabled: page.vm.state.canMutate
+        onTriggered: photos.open()
+    }
+    Action {
+        id: importVideoAction
+        enabled: page.vm.state.canMutate
+        onTriggered: videos.open()
+    }
+    Action {
+        id: importFolderAction
+        enabled: page.vm.state.canMutate
+        onTriggered: folders.open()
+    }
+    ColumnLayout {
+        anchors.fill: parent
+        visible: !page.vm.prepare.state.active
+        spacing: 0
         RowLayout {
-            spacing: 8
-            SplatButton {
-                objectName: "addPhotos"
-                text: "Photos"
-                iconName: "plus"
-                enabled: page.vm.state.canMutate
-                onClicked: photos.open()
-            }
-            SplatButton {
-                objectName: "addVideo"
-                text: "Video"
-                iconName: "plus"
-                enabled: page.vm.state.canMutate
-                onClicked: videos.open()
-            }
-            SplatButton {
-                objectName: "addFolder"
-                text: "Folder"
-                iconName: "folder"
-                enabled: page.vm.state.canMutate
-                onClicked: folders.open()
-            }
-        }
-    }
-    SplatCard {
-        id: check
-        visible: page.populated && !(page.vm.sources.selectedCount > 1 && page.viewportHeight < 600)
-        Layout.fillWidth: true
-        padding: 12
-        implicitHeight: checkContent.implicitHeight + padding * 2
-        RowLayout {
-            id: checkContent
-            width: parent.width
-            spacing: 12
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 4
-                SplatLabel {
-                    objectName: "sourceCheckSummary"
-                    text: page.vm.state.participationWarnings.length > 0
-                          ? page.vm.state.participationWarnings.join("\n")
-                          : page.vm.state.sourceCheckResult + page.vm.state.sourcesSummary.checkMessage
-                    font.weight: Font.DemiBold
-                    Layout.fillWidth: true
-                }
-                SplatLabel {
-                    text: "Check that SplatForge can still access the original files."
-                    color: Theme.secondary
-                    font.pixelSize: Theme.small
-                    Layout.fillWidth: true
-                }
-            }
-            SplatButton {
-                objectName: "checkSourceFiles"
-                text: "Check Source Files"
-                enabled: page.populated && page.vm.state.canMutate
-                onClicked: page.vm.verifySources()
-                ToolTip.visible: hovered
-                ToolTip.text: "Checks that the original files are still available at their saved locations."
-            }
-        }
-    }
-    SplatCard {
-        objectName: "sourcesEmptyState"
-        visible: !page.populated
-        Layout.fillWidth: true
-        Layout.preferredHeight: page.listHeight
-        Loader {
-            anchors.centerIn: parent
-            width: Math.min(parent.width, 560)
-            active: !page.populated
-            sourceComponent: emptyActions
-        }
-    }
-    Component {
-        id: emptyActions
-        ColumnLayout {
-            spacing: 16
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 12
-                SplatButton {
-                    objectName: "addPhotos"
-                    text: "Add Photos"
-                    iconName: "plus"
-                    kind: "primary"
-                    Layout.preferredWidth: 156
-                    enabled: page.vm.state.canMutate
-                    onClicked: photos.open()
-                }
-                SplatButton {
-                    objectName: "addVideo"
-                    text: "Add Video"
-                    iconName: "plus"
-                    kind: "primary"
-                    Layout.preferredWidth: 156
-                    enabled: page.vm.state.canMutate
-                    onClicked: videos.open()
-                }
-            }
-            SplatButton {
-                objectName: "addFolder"
-                text: "Add Folder"
-                iconName: "folder"
-                Layout.alignment: Qt.AlignHCenter
-                enabled: page.vm.state.canMutate
-                onClicked: folders.open()
-            }
+            Layout.fillWidth: true
+            Layout.preferredHeight: Theme.panelHeader
+            Layout.leftMargin: Theme.panelInset
+            Layout.rightMargin: Theme.panelInset
             SplatLabel {
-                text: "or drop files or a folder here"
+                text: "Sources"
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
                 color: Theme.secondary
             }
-            SplatLabel {
-                text: "SplatForge keeps your original files in place."
-                color: Theme.secondary
-                font.pixelSize: Theme.small
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
+            SplatButton {
+                objectName: "prepareDataEntry"
+                text: "Prepare Data →"
+                kind: "primary"
+                enabled: page.populated && !page.vm.state.busy
+                onClicked: page.vm.prepare.enter()
             }
         }
-    }
-    SplatCard {
-        visible: page.populated
-        Layout.fillWidth: true
-        Layout.preferredHeight: page.listHeight
-        padding: 0
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 0
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.margins: 8
-                Repeater {
-                    model: ["Included", "Excluded", "All"]
-                    delegate: SplatButton {
-                        required property string modelData
-                        objectName: "filter" + modelData
-                        text: modelData + " " + (modelData === "Included"
-                              ? page.vm.state.sourcesSummary.included : modelData === "Excluded"
-                              ? page.vm.state.sourcesSummary.excluded
-                              : page.vm.state.sourcesSummary.registered)
-                        kind: page.vm.state.sourceFilter === modelData ? "primary" : "ghost"
-                        enabled: page.vm.state.participationSupported || modelData === "All"
-                        onClicked: page.vm.setSourceFilter(modelData)
-                        Accessible.name: text + " sources"
-                    }
-                }
-                Item { Layout.fillWidth: true }
-                SplatButton {
-                    objectName: "sourceListMode"
-                    text: "List"
-                    kind: page.vm.state.sourceView === "List" ? "primary" : "secondary"
-                    onClicked: page.vm.setSourceView("List")
-                    Accessible.description: "Show sources as a list"
-                }
-                SplatButton {
-                    objectName: "sourceGridMode"
-                    text: "Grid"
-                    kind: page.vm.state.sourceView === "Grid" ? "primary" : "secondary"
-                    onClicked: page.vm.setSourceView("Grid")
-                    Accessible.description: "Show sources as a grid"
-                }
-                SplatButton {
-                    objectName: "sourceDetails"
-                    iconName: "info"
-                    Accessible.name: "Details"
-                    kind: "ghost"
-                    enabled: page.vm.sources.selectedId !== ""
-                    onClicked: details.open()
-                }
-                SplatButton {
-                    objectName: "sourceParticipation"
-                    iconName: page.vm.sources.selected.isIncluded === false ? "refresh" : "exclude"
-                    enabled: page.vm.sources.selectedId !== "" && page.vm.state.canMutate
-                             && page.vm.state.participationSupported
-                    Accessible.name: page.vm.sources.selected.isIncluded === false ? "Restore to processing" : "Exclude from processing"
-                    ToolTip.visible: hovered
-                    ToolTip.text: Accessible.name + ". Original file stays in place."
-                    onClicked: page.vm.setSourceIncluded(page.vm.sources.selectedId,
-                                                        page.vm.sources.selected.isIncluded === false)
-                }
+        SplatLabel {
+            visible: page.vm.state.participationWarnings.length > 0
+            text: page.vm.state.participationWarnings.join("\n")
+            color: Theme.warning
+            font.pixelSize: Theme.small
+            Layout.fillWidth: true
+            Layout.margins: 8
+        }
+        SplitView {
+            id: split
+            objectName: "materialsSplit"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            orientation: Qt.Horizontal
+            handle: Rectangle {
+                implicitWidth: 5
+                color: SplitHandle.pressed ? Theme.accent : SplitHandle.hovered ? Theme.strong : Theme.border
             }
-            Flow {
-                objectName: "sourceBatchBar"
-                visible: page.vm.sources.selectedCount > 1
-                Layout.fillWidth: true
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.bottomMargin: 8
-                spacing: 4
-                SplatLabel {
-                    text: page.vm.sources.selectedCount + " selected"
-                    height: 36
-                    verticalAlignment: Text.AlignVCenter
-                }
-                SplatButton {
-                    objectName: "batchCreateGroup"
-                    text: "Create Group…"
-                    enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
-                    onClicked: { groups.mode = "create"; groups.open(); }
-                }
-                SplatButton {
-                    objectName: "batchMoveGroup"
-                    text: "Move to Group…"
-                    enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
-                    onClicked: { groups.mode = "move"; groups.open(); }
-                }
-                SplatButton {
-                    objectName: "batchExclude"
-                    text: "Exclude"
-                    visible: page.vm.state.sourceFilter !== "Excluded"
-                    enabled: page.vm.state.canMutate && page.vm.state.participationSupported
-                    onClicked: page.vm.setSelectedIncluded(false)
-                }
-                SplatButton {
-                    objectName: "batchRestore"
-                    text: "Restore"
-                    visible: page.vm.state.sourceFilter !== "Included"
-                    enabled: page.vm.state.canMutate && page.vm.state.participationSupported
-                    onClicked: page.vm.setSelectedIncluded(true)
-                }
-                SplatButton {
-                    objectName: "clearSourceSelection"
-                    text: "Clear"
-                    kind: "ghost"
-                    onClicked: page.vm.sources.clearSelection()
-                }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.bottomMargin: 8
-                SplatComboBox {
-                    objectName: "sourceSectionPicker"
-                    model: page.vm.state.sourceSections
-                    textRole: "label"
-                    valueRole: "value"
-                    selectedValue: page.vm.state.sourceSection
-                    Layout.preferredWidth: Math.min(340, page.width * 0.42)
-                    Accessible.name: "Browse source group or captured device"
-                    onActivated: page.vm.setSourceSection(currentValue)
-                }
-                SplatLabel {
-                    objectName: "sourceSectionSummary"
-                    text: page.vm.state.sourceSectionSummary
-                    color: Theme.secondary
-                    font.pixelSize: Theme.small
-                    Layout.fillWidth: true
-                    elide: Text.ElideRight
-                    wrapMode: Text.NoWrap
-                }
-                SplatButton {
-                    objectName: "sourceGroups"
-                    text: "Groups…"
-                    enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
-                    onClicked: { groups.mode = "manage"; groups.open(); }
-                    Accessible.description: "Create, rename, delete groups or move the selected source"
-                }
-            }
-            Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+            Rectangle {
+                id: catalog
+                objectName: "materialsCatalog"
+                visible: page.catalogVisible
+                color: Theme.surface
+                SplitView.fillWidth: page.expandedGrid
+                SplitView.preferredWidth: page.expandedGrid ? Math.max(500, page.width * 0.65) : 280
+                SplitView.minimumWidth: 248
+                SplitView.maximumWidth: page.expandedGrid ? page.width - 100 : Math.max(300, page.width * 0.45)
                 ColumnLayout {
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width - 32, 520)
-                    visible: page.vm.sources.count === 0
-                    SplatLabel {
-                        objectName: "participationEmptyState"
-                        text: page.vm.state.sourceSection !== "" ? "No sources in this group for this filter."
-                              : page.vm.state.sourceFilter === "Excluded" ? "No excluded sources."
-                              : "All sources are excluded from processing."
-                        font.pixelSize: Theme.section
+                    anchors.fill: parent
+                    spacing: 4
+                    RowLayout {
                         Layout.fillWidth: true
-                        horizontalAlignment: Text.AlignHCenter
+                        Layout.preferredHeight: Theme.panelHeader
+                        Layout.leftMargin: Theme.panelInset
+                        Layout.rightMargin: Theme.space
+                        spacing: 2
+                        SplatLabel {
+                            text: "Sources"
+                            font.pixelSize: Theme.panelHeading
+                            font.weight: Font.DemiBold
+                            Layout.fillWidth: true
+                        }
+                        SplatButton {
+                            id: catalogMenuButton
+                            objectName: "catalogOptions"
+                            text: "⋯"
+                            kind: "ghost"
+                            Accessible.name: "Catalog actions"
+                            onClicked: catalogMenu.popup(catalogMenuButton, 0, catalogMenuButton.height)
+                        }
+                        SplatButton {
+                            objectName: "collapseMaterialsCatalog"
+                            iconName: "close"
+                            kind: "ghost"
+                            Accessible.name: "Hide sources catalog"
+                            onClicked: {
+                                page.expandedGrid = false;
+                                page.catalogVisible = false;
+                                currentViewer.forceActiveFocus();
+                            }
+                        }
                     }
-                    SplatLabel {
-                        visible: page.vm.state.sourceFilter === "Included" && page.vm.state.sourceSection === ""
-                        text: "Restore sources to use them in Prepare Data."
-                        color: Theme.secondary
+                    MediaImportActions {
+                        id: catalogImport
+                        objectName: "catalogImportActions"
                         Layout.fillWidth: true
-                        horizontalAlignment: Text.AlignHCenter
+                        Layout.leftMargin: 8
+                        Layout.rightMargin: 8
+                        compact: true
+                        photosAction: importPhotosAction
+                        videoAction: importVideoAction
+                        folderAction: importFolderAction
                     }
-                    SplatButton {
-                        objectName: "viewExcluded"
-                        visible: page.vm.state.sourceFilter === "Included" && page.vm.state.sourceSection === ""
-                        text: "View Excluded"
-                        Layout.alignment: Qt.AlignHCenter
-                        onClicked: page.vm.setSourceFilter("Excluded")
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 8
+                        Layout.rightMargin: 8
+                        spacing: 2
+                        Repeater {
+                            model: ["Included", "Excluded", "All"]
+                            delegate: SplatButton {
+                                required property string modelData
+                                objectName: "filter" + modelData
+                                text: modelData
+                                Layout.fillWidth: true
+                                leftPadding: 6
+                                rightPadding: 6
+                                font.pixelSize: Theme.small
+                                kind: page.vm.state.sourceFilter === modelData ? "primary" : "ghost"
+                                enabled: page.vm.state.participationSupported || modelData === "All"
+                                onClicked: page.vm.setSourceFilter(modelData)
+                            }
+                        }
                     }
-                }
-                Repeater {
-                    model: 2
-                    delegate: Loader {
-                        required property int index
-                        property bool visited: false
-                        readonly property bool current: page.populated
-                            && page.vm.state.page === 1
-                            && (page.vm.state.sourceView === "Grid" ? index === 1 : index === 0)
-                        anchors.fill: parent
-                        active: visited || current
-                        visible: current && page.vm.sources.count > 0
-                        onCurrentChanged: { if (current) visited = true; }
-                        Component.onCompleted: { if (current) visited = true; }
-                        sourceComponent: index === 0 ? listBrowser : gridBrowser
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.margins: 8
+                        spacing: 4
+                        SplatComboBox {
+                            objectName: "sourceSectionPicker"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 80
+                            model: page.vm.state.sourceSections
+                            textRole: "label"
+                            valueRole: "value"
+                            selectedValue: page.vm.state.sourceSection
+                            Accessible.name: "Browse source group or captured device"
+                            onActivated: page.vm.setSourceSection(currentValue)
+                        }
+                        SplatButton {
+                            objectName: "sourceGroups"
+                            iconName: "folder"
+                            kind: "ghost"
+                            Accessible.name: "Manage source groups"
+                            enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
+                            onClicked: {
+                                groups.mode = "manage";
+                                groups.open();
+                            }
+                        }
+                    }
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        ColumnLayout {
+                            objectName: page.populated ? "filteredSourcesEmptyState" : "sourcesEmptyState"
+                            anchors.centerIn: parent
+                            width: parent.width - 24
+                            visible: page.vm.sources.count === 0
+                            SplatLabel {
+                                objectName: "participationEmptyState"
+                                text: !page.populated ? "No sources yet." : page.vm.state.sourceSection !== "" ? "No sources in this group for this filter." : page.vm.state.sourceFilter === "Excluded" ? "No excluded sources." : "All sources are excluded."
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                            SplatButton {
+                                objectName: "viewExcluded"
+                                text: "View Excluded"
+                                visible: page.populated && page.vm.state.sourceFilter === "Included"
+                                onClicked: page.vm.setSourceFilter("Excluded")
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+                            SplatButton {
+                                objectName: "resetSourceFilters"
+                                text: "Reset filters"
+                                visible: page.populated
+                                Layout.alignment: Qt.AlignHCenter
+                                onClicked: page.resetFilters()
+                            }
+                        }
+                        Repeater {
+                            model: 2
+                            delegate: Loader {
+                                required property int index
+                                readonly property bool current: page.populated && page.vm.state.page === 1 && (page.vm.state.sourceView === "Grid" ? index === 1 : index === 0)
+                                anchors.fill: parent
+                                active: current
+                                visible: current && page.vm.sources.count > 0
+                                sourceComponent: index === 0 ? listBrowser : gridBrowser
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.margins: 8
+                        spacing: 2
+                        SplatLabel {
+                            text: page.vm.sources.count + " sources"
+                            font.pixelSize: Theme.small
+                            color: Theme.secondary
+                            Layout.fillWidth: true
+                        }
+                        SplatButton {
+                            objectName: "sourceListMode"
+                            text: "List"
+                            leftPadding: 8
+                            rightPadding: 8
+                            kind: page.vm.state.sourceView === "List" ? "secondary" : "ghost"
+                            onClicked: {
+                                page.vm.setSourceView("List");
+                                page.expandedGrid = false;
+                            }
+                        }
+                        SplatButton {
+                            objectName: "sourceGridMode"
+                            text: "Grid"
+                            leftPadding: 8
+                            rightPadding: 8
+                            kind: page.vm.state.sourceView === "Grid" ? "secondary" : "ghost"
+                            onClicked: page.vm.setSourceView("Grid")
+                        }
+                        SplatButton {
+                            objectName: "expandMaterialsGrid"
+                            text: page.expandedGrid ? "↙" : "↗"
+                            kind: "ghost"
+                            visible: page.vm.state.sourceView === "Grid"
+                            Accessible.name: page.expandedGrid ? "Back to viewer" : "Expand grid"
+                            onClicked: page.expandedGrid = !page.expandedGrid
+                        }
                     }
                 }
             }
+            MaterialViewer {
+                id: currentViewer
+                media: page.vm.media
+                videoUsage: page.vm.videoUsage
+                registeredCount: page.vm.state.sourcesSummary.registered
+                visibleCount: page.vm.sources.count
+                onResetFiltersRequested: page.resetFilters()
+                emptyContent: Component {
+                    ColumnLayout {
+                        spacing: 12
+                        SplatButton {
+                            iconName: "sources"
+                            icon.width: 28
+                            icon.height: 28
+                            background: null
+                            enabled: false
+                            opacity: 1
+                            focusPolicy: Qt.NoFocus
+                            Accessible.ignored: true
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                        SplatLabel {
+                            objectName: "emptyMediaTitle"
+                            text: "Add your media"
+                            font.pixelSize: Theme.section
+                            font.weight: Font.DemiBold
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        SplatLabel {
+                            text: "Drag photos, videos, or a folder here"
+                            color: Theme.secondary
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        MediaImportActions {
+                            objectName: "emptyMediaActions"
+                            Layout.preferredWidth: Math.min(naturalWidth, parent.width)
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.topMargin: 8
+                            namePrefix: "empty-"
+                            photosAction: importPhotosAction
+                            videoAction: importVideoAction
+                            folderAction: importFolderAction
+                        }
+                    }
+                }
+                catalogCollapsed: !page.catalogVisible
+                propertiesCollapsed: !page.propertiesVisible || page.compact
+                onCatalogRequested: {
+                    page.catalogVisible = true;
+                    catalogImport.forceActiveFocus();
+                }
+                onPropertiesRequested: page.propertiesVisible = !page.propertiesVisible
+                workspaceActive: page.vm.state.page === 1 && !page.vm.prepare.state.active && page.vm.media.state.embeddedPreview
+                shortcutsEnabled: workspaceActive && !details.visible && !groups.visible
+                visible: !page.expandedGrid
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 260
+            }
+            Loader {
+                id: propertiesDock
+                objectName: "materialProperties"
+                visible: page.propertiesVisible && !page.compact
+                active: visible
+                SplitView.preferredWidth: 300
+                SplitView.minimumWidth: 260
+                SplitView.maximumWidth: 440
+                sourceComponent: propertiesContent
+            }
         }
+        Popup {
+            id: propertiesOverlay
+            objectName: "materialPropertiesOverlay"
+            parent: page
+            x: parent.width - width
+            y: 0
+            width: 300
+            height: page.height
+            padding: 0
+            visible: page.compact && page.propertiesVisible && page.visible
+            focus: true
+            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+            onClosed: {
+                if (page.compact)
+                    page.propertiesVisible = false;
+                currentViewer.forceActiveFocus();
+            }
+            background: Rectangle {
+                color: Theme.surface
+                border.color: Theme.border
+            }
+            contentItem: Loader {
+                active: propertiesOverlay.visible
+                sourceComponent: propertiesContent
+            }
+        }
+        Component {
+            id: propertiesContent
+            Loader { sourceComponent: currentViewer.trimMode ? trimProperties : reviewProperties }
+        }
+        Component {
+            id: trimProperties
+            VideoTrimProperties {
+                session: currentViewer.trimSession
+                media: page.vm.media
+                onCloseRequested: {
+                    page.propertiesVisible = false;
+                    currentViewer.forceActiveFocus();
+                }
+            }
+        }
+        Component {
+            id: reviewProperties
+            MaterialProperties {
+                vm: page.vm
+                onCloseRequested: {
+                    page.propertiesVisible = false;
+                    currentViewer.forceActiveFocus();
+                }
+                onDetailsRequested: {
+                    // The detail dialog follows focus; viewing does not alter the batch set.
+                    page.vm.media.focusSource(page.vm.media.state.previewSource.identity);
+                    details.open();
+                }
+            }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            height: 1
+            color: Theme.border
+        }
+        Flow {
+            objectName: "sourceBatchBar"
+            visible: page.vm.sources.selectedCount > 1
+            Layout.fillWidth: true
+            Layout.margins: 8
+            spacing: 4
+            SplatLabel {
+                text: page.vm.sources.selectedCount + " selected · Batch actions"
+                height: 36
+                verticalAlignment: Text.AlignVCenter
+            }
+            SplatButton {
+                objectName: "batchCreateGroup"
+                text: "Create Group…"
+                enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
+                onClicked: {
+                    groups.mode = "create";
+                    groups.open();
+                }
+            }
+            SplatButton {
+                objectName: "batchMoveGroup"
+                text: "Move to Group…"
+                enabled: page.vm.state.canMutate && page.vm.state.groupsSupported
+                onClicked: {
+                    groups.mode = "move";
+                    groups.open();
+                }
+            }
+            SplatButton {
+                objectName: "batchExclude"
+                text: "Exclude selected"
+                visible: page.vm.state.sourceFilter !== "Excluded"
+                enabled: page.vm.state.canMutate && page.vm.state.participationSupported
+                onClicked: page.vm.setSelectedIncluded(false)
+            }
+            SplatButton {
+                objectName: "batchRestore"
+                text: "Restore selected"
+                visible: page.vm.state.sourceFilter !== "Included"
+                enabled: page.vm.state.canMutate && page.vm.state.participationSupported
+                onClicked: page.vm.setSelectedIncluded(true)
+            }
+            SplatButton {
+                objectName: "clearSourceSelection"
+                text: "Clear selection"
+                kind: "ghost"
+                onClicked: page.vm.sources.clearSelection()
+            }
+        }
+    }
+    PreparePage {
+        anchors.fill: parent
+        vm: page.vm
+        visible: page.vm.prepare.state.active
     }
     Component {
         id: listBrowser
-            ListView {
-                id: sources
-                objectName: "sourceList"
-                anchors.fill: parent
-                model: page.vm.sources
-                clip: true
-                reuseItems: true
-                section.property: "sectionKey"
-                section.criteria: ViewSection.FullString
-                section.delegate: SplatLabel {
-                    required property string section
-                    objectName: "sourceSectionHeader"
-                    width: sources.width
-                    text: (page.vm.state.sourceSections.find(option => option.value === section) || {}).label || section
-                    padding: 12
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                    wrapMode: Text.NoWrap
-                    color: Theme.secondary
+        ListView {
+            id: sources
+            objectName: "sourceList"
+            anchors.fill: parent
+            model: page.vm.sources
+            clip: true
+            reuseItems: true
+            section.property: "sectionKey"
+            section.criteria: ViewSection.FullString
+            section.delegate: SplatLabel {
+                required property string section
+                objectName: "sourceSectionHeader"
+                width: sources.width
+                text: (page.vm.state.sourceSections.find(option => option.value === section) || {}).label || section
+                leftPadding: Theme.panelInset
+                rightPadding: Theme.panelInset
+                topPadding: Theme.space
+                bottomPadding: Theme.space
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                wrapMode: Text.NoWrap
+                color: Theme.secondary
+            }
+            currentIndex: page.vm.sources.selectedIndex
+            onCurrentIndexChanged: {
+                if (currentIndex >= 0)
+                    positionViewAtIndex(currentIndex, ListView.Contain);
+            }
+            delegate: ItemDelegate {
+                id: sourceRow
+                required property var record
+                required property string recordId
+                required property string imageUrl
+                required property bool sourceSelected
+                readonly property bool reviewing: page.vm.media.state.previewSource.identity === recordId
+                width: sources.width
+                height: Theme.sourceRow
+                padding: Theme.sourceRowInset
+                hoverEnabled: true
+                focusPolicy: Qt.StrongFocus
+                objectName: "source-" + recordId
+                Accessible.name: record.filename + ", " + record.description + ", " + record.availability + ", " + (record.participationLabel || "Included")
+                onClicked: page.vm.media.activateSource(recordId)
+                onDoubleClicked: {
+                    page.vm.media.showSource(recordId);
                 }
-                currentIndex: page.vm.sources.selectedIndex
-                onCurrentIndexChanged: {
-                    if (currentIndex >= 0)
-                        positionViewAtIndex(currentIndex, ListView.Contain);
+                background: Rectangle {
+                    color: sourceRow.sourceSelected ? Theme.selection : sourceRow.hovered ? Theme.hover : "transparent"
+                    border.width: sourceRow.visualFocus || sourceRow.sourceSelected ? 2 : 0
+                    border.color: Theme.accent
                 }
-                delegate: ItemDelegate {
-                    id: source
-                    required property var record
-                    required property string recordId
-                    required property bool sourceSelected
-                    width: sources.width
-                    height: 76
-                    hoverEnabled: true
-                    focusPolicy: Qt.StrongFocus
-                    objectName: "source-" + recordId
-                    Accessible.name: record.filename + ", " + record.description + ", " + record.availability + ", " + (record.participationLabel || "Included")
-                    onClicked: page.vm.media.activateSource(recordId)
-                    onDoubleClicked: {
-                        if (record.type === "photo") page.vm.media.previewSource(recordId);
-                        else { page.vm.media.selectSource(source.recordId); details.open(); }
+                contentItem: Item {
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        width: Theme.icon
+                        height: Theme.icon
+                        z: 1
+                        color: Theme.surface
+                        visible: sourceRow.reviewing
+                        SplatLabel {
+                            anchors.centerIn: parent
+                            text: "▶"
+                            font.pixelSize: Theme.caption
+                            color: Theme.accent
+                        }
                     }
-                    background: Rectangle {
-                        color: source.sourceSelected ? Theme.selection :
-                               source.hovered ? Theme.hover : "transparent"
-                        border.width: source.visualFocus || source.sourceSelected ? 2 : 0
-                        border.color: Theme.accent
-                    }
-                    contentItem: RowLayout {
-                        spacing: 16
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: 8
+                        Item {
+                            Layout.preferredWidth: Theme.sourceThumbnailWidth
+                            Layout.preferredHeight: Theme.sourceThumbnailHeight
+                            Image {
+                                anchors.fill: parent
+                                source: sourceRow.imageUrl
+                                sourceSize: Qt.size(192, 192)
+                                cache: false
+                                fillMode: Image.PreserveAspectFit
+                                visible: sourceRow.record.type === "photo"
+                            }
+                            SplatLabel {
+                                anchors.centerIn: parent
+                                text: sourceRow.record.type === "video" ? "▶" : "No preview"
+                                font.pixelSize: Theme.small
+                                color: Theme.secondary
+                                visible: sourceRow.record.type === "video" || sourceRow.imageUrl === ""
+                            }
+                        }
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 4
                             SplatLabel {
-                                text: source.record.filename
+                                text: sourceRow.record.filename
                                 font.weight: Font.DemiBold
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 wrapMode: Text.NoWrap
                             }
                             SplatLabel {
-                                text: (source.record.device || "Unknown device") + " · " + source.record.description
+                                text: sourceRow.record.description
                                 color: Theme.secondary
                                 font.pixelSize: Theme.small
                                 Layout.fillWidth: true
@@ -418,29 +564,32 @@ ColumnLayout {
                                 wrapMode: Text.NoWrap
                             }
                             SplatLabel {
-                                visible: source.record.isIncluded === false
-                                text: source.record.participationLabel || "Excluded from processing"
-                                color: Theme.secondary
+                                visible: sourceRow.reviewing || sourceRow.record.isIncluded === false || ["missing", "warning"].indexOf(sourceRow.record.availabilityState) >= 0
+                                text: (sourceRow.reviewing ? "Viewing" : "") + (sourceRow.record.isIncluded === false ? (sourceRow.reviewing ? " · Excluded" : "Excluded") : !sourceRow.reviewing ? sourceRow.record.availability : "")
+                                color: sourceRow.reviewing ? Theme.accent : Theme.secondary
                                 font.pixelSize: Theme.caption
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                                wrapMode: Text.NoWrap
                             }
                         }
-                        SourceAvailability {
-                            record: source.record
-                            Layout.preferredWidth: implicitWidth
-                            Layout.maximumWidth: 172
-                        }
-                        SourceActions {
-                            vm: page.vm
-                            record: source.record
-                            sourceId: source.recordId
-                            onDetailsRequested: details.open()
-                        }
+                    }
+                    SourceActions {
+                        id: rowActions
+                        visible: sourceRow.hovered || sourceRow.activeFocus || interacting
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        vm: page.vm
+                        record: sourceRow.record
+                        sourceId: sourceRow.recordId
+                        onDetailsRequested: details.open()
                     }
                 }
-                ScrollBar.vertical: ScrollBar {
-                    policy: sources.contentHeight > sources.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
-                }
             }
+            ScrollBar.vertical: ScrollBar {
+                policy: sources.contentHeight > sources.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+            }
+        }
     }
     Component {
         id: gridBrowser
@@ -455,7 +604,8 @@ ColumnLayout {
             cellHeight: Math.max(128, Math.min(240, height))
             currentIndex: count > 0 ? page.vm.sources.selectedIndex : -1
             onCurrentIndexChanged: {
-                if (currentIndex >= 0) positionViewAtIndex(currentIndex, GridView.Contain);
+                if (currentIndex >= 0)
+                    positionViewAtIndex(currentIndex, GridView.Contain);
             }
             delegate: ItemDelegate {
                 id: tile
@@ -473,15 +623,13 @@ ColumnLayout {
                 Accessible.name: record.filename + ", " + record.description + ", " + record.availability + ", " + (record.participationLabel || "Included")
                 onClicked: page.vm.media.activateSource(recordId)
                 onDoubleClicked: {
-                    if (record.type === "photo") page.vm.media.previewSource(recordId);
-                    else { page.vm.media.selectSource(tile.recordId); details.open(); }
+                    page.vm.media.showSource(recordId);
                 }
                 background: Rectangle {
-                    color: tile.sourceSelected ? Theme.selection :
-                           tile.hovered ? Theme.hover : Theme.surface
+                    color: tile.sourceSelected ? Theme.selection : tile.hovered ? Theme.hover : Theme.surface
                     radius: Theme.radius
                     border.color: tile.visualFocus || tile.sourceSelected ? Theme.accent : Theme.border
-                    border.width: tile.visualFocus || tile.sourceSelected ? 2 : 1
+                    border.width: tile.visualFocus || tile.sourceSelected ? 2 : 0
                 }
                 contentItem: ColumnLayout {
                     spacing: 4
@@ -489,6 +637,20 @@ ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.minimumHeight: 36
+                        SplatLabel {
+                            objectName: "currentTile-" + tile.recordId
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            z: 1
+                            text: "▶ Viewing"
+                            padding: 4
+                            font.pixelSize: Theme.caption
+                            color: Theme.accent
+                            visible: page.vm.media.state.previewSource.identity === tile.recordId
+                            background: Rectangle {
+                                color: Theme.surface
+                            }
+                        }
                         Loader {
                             anchors.fill: parent
                             active: tile.record.type === "photo"
@@ -511,6 +673,7 @@ ColumnLayout {
                         Rectangle {
                             anchors.top: parent.top
                             anchors.right: parent.right
+                            visible: tile.hovered || tile.activeFocus || tileActions.interacting
                             width: tileActions.implicitWidth
                             height: tileActions.implicitHeight
                             color: Theme.surface
@@ -543,6 +706,7 @@ ColumnLayout {
                     }
                     SourceAvailability {
                         record: tile.record
+                        visible: ["missing", "warning"].indexOf(tile.record.availabilityState) >= 0
                         Layout.fillWidth: true
                     }
                     SplatLabel {
@@ -557,52 +721,114 @@ ColumnLayout {
             ScrollBar.vertical: ScrollBar {}
         }
     }
-    SplatLabel {
-        id: videoHint
-        visible: page.populated && page.vm.state.sourcesSummary.videos > 0
-        text: "Frames from included videos will be extracted during Prepare Data."
-        color: Theme.secondary
-        font.pixelSize: Theme.small
-        Layout.fillWidth: true
-    }
-    RowLayout {
-        id: footer
-        Layout.fillWidth: true
-        SplatLabel {
-            text: page.populated
-                  ? "Sources are saved. Prepare Data is not available yet."
-                  : "Add photos or videos to get started."
-            color: Theme.secondary
-            Layout.fillWidth: true
+    Menu {
+        id: catalogMenu
+        palette.window: Theme.surface
+        palette.windowText: Theme.text
+        MenuItem {
+            text: "Select all visible"
+            enabled: page.vm.sources.count > 0
+            onTriggered: page.vm.sources.selectAllVisible()
         }
-        SplatButton {
-            objectName: "sourcesContinue"
-            text: "Continue →"
-            enabled: false
-            Accessible.description: "Prepare Data is not available yet"
+        MenuItem {
+            objectName: "sourceParticipation"
+            text: "Exclude selected"
+            enabled: page.vm.sources.selectedCount > 0 && page.vm.state.canMutate && page.vm.state.participationSupported
+            onTriggered: page.vm.setSelectedIncluded(false)
+        }
+        MenuItem {
+            objectName: "restoreSelectedSources"
+            text: "Restore selected"
+            enabled: page.vm.sources.selectedCount > 0 && page.vm.state.canMutate && page.vm.state.participationSupported
+            onTriggered: page.vm.setSelectedIncluded(true)
+        }
+        MenuSeparator {}
+        MenuItem {
+            objectName: "checkSourceFiles"
+            text: "Check source files…"
+            enabled: page.populated && page.vm.state.canMutate
+            onTriggered: sourceChecks.open()
+        }
+        MenuItem {
+            objectName: "locateSourceFolder"
+            text: "Locate source folder…"
+            enabled: page.populated && page.vm.state.canMutate
+            onTriggered: page.vm.folderRelink.begin()
+        }
+        MenuItem {
+            text: "Reset panel widths"
+            onTriggered: {
+                catalog.SplitView.preferredWidth = 280;
+                propertiesDock.SplitView.preferredWidth = 300;
+                page.expandedGrid = false;
+            }
+        }
+    }
+    SplatDialog {
+        id: sourceChecks
+        title: "Check source files"
+        height: 300
+        ColumnLayout {
+            anchors.fill: parent
+            SplatLabel {
+                text: "Checks originals at their saved locations."
+                Layout.fillWidth: true
+            }
+            SplatLabel {
+                objectName: "sourceCheckSummary"
+                text: page.vm.state.sourceCheckResult + page.vm.state.sourcesSummary.checkMessage
+                color: Theme.secondary
+                Layout.fillWidth: true
+            }
+            Item {
+                Layout.fillHeight: true
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                SplatButton {
+                    text: "Close"
+                    onClicked: sourceChecks.close()
+                }
+                SplatButton {
+                    objectName: "runSourceCheck"
+                    text: "Check source files"
+                    kind: "primary"
+                    enabled: page.populated && page.vm.state.canMutate
+                    onClicked: page.vm.verifySources()
+                }
+            }
         }
     }
     SourceDetailsDialog {
         id: details
         vm: page.vm
     }
+    FolderRelinkDialog {
+        vm: page.vm
+    }
     Connections {
         target: page.vm
         function onDialogRequested(name: string) {
-            if (name === "closeSourceDetails") { details.close(); groups.close(); }
+            if (name === "closeSourceDetails") {
+                details.close();
+                groups.close();
+            }
         }
     }
-    SourceGroupsDialog { id: groups; vm: page.vm }
+    SourceGroupsDialog {
+        id: groups
+        vm: page.vm
+    }
     Shortcut {
         sequence: StandardKey.SelectAll
-        enabled: page.vm.state.page === 1 && !details.visible && !groups.visible
-                 && page.vm.media.state.previewIndex === 0
+        enabled: page.vm.state.page === 1 && !details.visible && !groups.visible && !currentViewer.overlayHasFocus && (page.vm.media.state.embeddedPreview || page.vm.media.state.previewIndex === 0)
         onActivated: page.vm.sources.selectAllVisible()
     }
     Connections {
         target: page.vm.sources
         function onSelectionChanged() {
-            if (page.vm.sources.selectedId === "") details.close();
+            if (page.vm.sources.selectedId === "")
+                details.close();
         }
     }
     FileDialog {
@@ -626,5 +852,42 @@ ColumnLayout {
         objectName: "folderPicker"
         title: "Add folder"
         onAccepted: page.vm.addFolder(String(selectedFolder))
+    }
+    DropArea {
+        id: mediaDrop
+        objectName: "materialsDropArea"
+        anchors.fill: parent
+        enabled: page.vm.state.page === 1 && !page.vm.prepare.state.active && page.vm.state.canMutate
+        onEntered: drag => {
+            drag.accepted = drag.hasUrls && page.vm.canDropMedia(drag.urls.map(u => String(u)));
+        }
+        onDropped: drop => {
+            if (drop.hasUrls && page.vm.canDropMedia(drop.urls.map(u => String(u)))) {
+                drop.acceptProposedAction();
+                page.vm.dropUrls(drop.urls.map(u => String(u)));
+            } else {
+                drop.accepted = false;
+            }
+        }
+    }
+    Rectangle {
+        objectName: "materialsDropFeedback"
+        anchors.fill: parent
+        z: 20
+        visible: mediaDrop.containsDrag
+        color: Qt.alpha(Theme.accent, 0.06)
+        border.color: Theme.accent
+        border.width: 2
+        SplatLabel {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 64
+            text: "Drop to add media"
+            padding: 12
+            font.weight: Font.DemiBold
+            background: Rectangle {
+                color: Theme.surface
+                radius: Theme.radius
+            }
+        }
     }
 }

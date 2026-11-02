@@ -38,10 +38,10 @@ from splatforge.core.features import (
     feature_recipe_key,
     feature_semantic_digest,
 )
+from splatforge.core.frame_review import EffectiveSelection
 from splatforge.core.process import ProcessInvocationEvidence
 from splatforge.core.progress import WorkMetric
-from splatforge.core.quality import SharpestSelectedViewSet
-from splatforge.core.views import CandidateView, CandidateViewSet, FrozenModel, SelectedViewSet
+from splatforge.core.views import CandidateView, CandidateViewSet, FrozenModel
 
 
 class FeatureRepository(ExecutionRepository, Protocol):
@@ -51,7 +51,7 @@ class FeatureRepository(ExecutionRepository, Protocol):
 
     def load_pairing_inputs(
         self, root: Path, candidate: ArtifactHandle, selected: ArtifactHandle
-    ) -> tuple[CandidateViewSet, SelectedViewSet | SharpestSelectedViewSet]: ...
+    ) -> tuple[CandidateViewSet, EffectiveSelection]: ...
 
     def load_local_features(self, root: Path, handle: ArtifactHandle) -> LocalFeatureSet: ...
 

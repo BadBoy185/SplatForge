@@ -19,6 +19,23 @@ Read relevant sections and code, not every document end to end:
 Completed milestone notes and legacy prompts are optional history/detail lookups,
 not startup context. Follow their links only for a concrete dependency.
 
+## Delegation and session handoff
+
+- Recheck [project state](docs/PROJECT_STATE.md) against Git and files at session start;
+  it is a handoff, not authority over contracts or new task authorization.
+- Use real subagents for substantial independent work when useful; keep small
+  sequential tasks local. The main agent owns requirements, contracts and integration.
+- Use the [role configurations and workflow](docs/AGENT_WORKFLOW.md); explicitly set
+  each subagent's model and effort. Keep the main model user-selectable.
+- At most three subagents run concurrently, at most two edit code; one file has one
+  editor. Assign shared fixtures, documents, tests, app/GPU runs and caches explicitly.
+  No nested delegation without the main agent's specific decision.
+- Give compact goals, acceptance, facts/docs, file ownership, dependencies, checks
+  and result format; do other useful work while agents run, without duplicating it.
+- After meaningful code changes, request a fresh read-only reviewer who did not
+  implement them. Resolve confirmed findings, verify the combined tree using
+  [DEVELOPMENT](docs/DEVELOPMENT.md#verification-workflow), then refresh project state.
+
 ## Product and scope
 
 - Build a Windows-first, local-first desktop product for photos/videos to 3D Gaussian
@@ -28,6 +45,22 @@ not startup context. Follow their links only for a concrete dependency.
   perspective-view contracts. Do not require a rewrite of SfM or training.
 - Keep large media, models, checkpoints, generated projects and machine-specific
   configuration outside Git. Use tiny synthetic fixtures in tests.
+
+## Product UI and visual quality
+
+- SplatForge is a professional desktop workspace for media and 3D scenes. The
+  user-selected layout and current [GUI design](docs/GUI_DESIGN.md) own its direction.
+- User photos, video and the 3D scene occupy the main area. Do not build a generic
+  AI-generated SaaS dashboard. Group with placement, spacing, typography and dividers.
+- Follow the agreed references/catalog in the design document; use purposeful density,
+  readable typography and consistent spacing across screens and both themes.
+- Use cards, borders, badges, buttons and color for a function, without decorative repetition.
+  No decorative gradients, glow, glassmorphism, AI sparkles, excessive rounding,
+  oversized headings or KPI cards without a practical task.
+- Keep key actions in the workspace; disclose additional evidence when needed.
+- Review visual changes in real application screenshots. Tests and qmllint alone
+  do not establish visual readiness. Never present invented data or unimplemented
+  capabilities as working features.
 
 ## Architectural invariants
 
@@ -111,14 +144,27 @@ not startup context. Follow their links only for a concrete dependency.
 
 ## Before finishing a task
 
+### Verification authorization (all agents and future sessions)
+
+- Full pytest, full verify, broad long-running suites and heavy benchmarks require
+  a separate direct user request. "Continue", "check" or "implement the next stage"
+  does not authorize them, including at milestone/completion boundaries.
+- Default to short targeted tests and relevant lint/QML/documentation checks. For
+  known slow files select specific tests; investigate and stop an unexpectedly long
+  owned run rather than blindly restarting it.
+- Do not bypass this rule by splitting a full suite into many runs, delegating it or
+  running it in the background. If a long check is needed, prepare its exact command
+  and purpose without launching it. Report that full verification was not run;
+  its absence alone does not block user-authorized development.
+
 1. Always read AGENTS.md, then the task's listed contract sections and relevant code.
    Follow additional documents only when a concrete dependency requires them.
 2. Make the smallest coherent change within the authorized task; flag contradictions.
 3. Add/update meaningful tests for changed behavior, especially compatibility,
    dependency invalidation, persistence, migrations and interruption recovery.
    Documentation-only tasks need documentation checks, not artificial code tests.
-4. Use affected tests/lint during development; use full verification at completion
-   gates defined in [DEVELOPMENT](docs/DEVELOPMENT.md#verification-workflow).
+4. Use short affected tests/lint; full verification requires the separate direct
+   request above. [DEVELOPMENT](docs/DEVELOPMENT.md#verification-workflow) owns commands.
    Documentation-only work needs links/claims/diff checks. Report failures/skips and
    who ran each check; do not repair unrelated code or repeat unchanged full results.
 5. Update the authoritative owner of each changed fact; link rather than duplicate.

@@ -9,6 +9,7 @@ import time
 import warnings
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 from typing import Never
@@ -36,6 +37,7 @@ from splatforge.application.views_contracts import (
 )
 from splatforge.core.media import ExecutableIdentity, MediaType, SourceOccurrence
 from splatforge.core.process import ProcessResult
+from splatforge.core.video_usage import VideoInterval
 from splatforge.core.views import (
     CandidatePoolSettings,
     ImageFormat,
@@ -122,12 +124,19 @@ class FFmpegAdapter:
         *,
         timeout_seconds: int,
         expected_backend: ExecutableIdentity,
+        used_intervals: tuple[VideoInterval, ...] | None = None,
         cancellation: ProcessCancellation | None = None,
         evidence_sink: ProcessEvidenceSink | None = None,
         progress_sink: Callable[[MaterializationProgress], None] | None = None,
     ) -> tuple[MaterializedFrame, ...]:
         absolute = source_path.absolute()
         output_directory.mkdir(parents=True, exist_ok=False)
+        if cancellation is not None and cancellation.is_cancelled():
+            raise FFmpegCancelledError("FFmpeg was cancelled", teardown_confirmed=True)
+        if source.media_type == MediaType.PHOTO and used_intervals is not None:
+            raise ValueError("Video intervals cannot restrict a photo")
+        if used_intervals == ():
+            return ()
         suffix = ".jpg" if settings.encoding.image_format == ImageFormat.JPEG else ".png"
         pattern = output_directory / f"frame-%08d{suffix}"
         operation = (
@@ -160,9 +169,88 @@ class FFmpegAdapter:
             ",".join(filters),
             "-fps_mode",
             "passthrough",
-            "-start_number",
-            "0",
         ]
+        selected_metadata: tuple[tuple[int, int, RationalValue], ...] | None = None
+        filter_path: Path | None = None
+        started = self._monotonic()
+        source_duration = (
+            float(Fraction(source.probe.duration)) if progress_sink is not None
+            and source.media_type == MediaType.VIDEO else 0.0
+        )
+        phase_progress_warned = False
+
+        def report_phase(fraction: float) -> None:
+            nonlocal phase_progress_warned
+            if progress_sink is not None:
+                try:
+                    progress_sink(MaterializationProgress(
+                        processed_source_seconds=fraction * source_duration,
+                        total_source_seconds=source_duration,
+                        elapsed_seconds=max(0, self._monotonic() - started),
+                    ))
+                except Exception:
+                    if not phase_progress_warned:
+                        phase_progress_warned = True
+                        with suppress(RuntimeWarning):
+                            warnings.warn(
+                                "FFmpeg progress unavailable", RuntimeWarning, stacklevel=2,
+                            )
+
+        if used_intervals is not None:
+            # Admission uses actual integer PTS, never FFmpeg's binary-float t/pts
+            # comparisons. This first decode writes no images and preserves the
+            # original minimum-interval grid, including candidates before a cut.
+            # Restricted storage estimates must not inherit an unbounded -progress
+            # file from a long excluded prefix. Report actual phase completions;
+            # the contained runner still polls cancellation throughout both passes.
+            report_phase(0)
+            probe = ProcessRequest(
+                executable=expected_backend.resolved_path,
+                argv=tuple(argv + ["-f", "null", "-"]),
+                working_directory=output_directory.parent,
+                environment={},
+                timeout_seconds=timeout_seconds,
+                max_stdout_bytes=64 * 1024,
+                max_stderr_bytes=self._max_metadata_bytes,
+                expected_executable=expected_backend,
+            )
+            result = self._run_materialization(
+                probe, source=source, expected_backend=expected_backend,
+                cancellation=cancellation, evidence_sink=evidence_sink,
+                tool_role="ffmpeg.candidate_timestamps",
+            )
+            metadata = parse_showinfo(result.stderr_text())
+            if [row[0] for row in metadata] != list(range(len(metadata))):
+                raise FFmpegOutputError("FFmpeg selected-frame sequence is not contiguous")
+            selected_metadata = tuple(
+                row for row in metadata if any(
+                    item.start.as_fraction() <= row[1] * row[2].as_fraction()
+                    < item.end.as_fraction() for item in used_intervals
+                )
+            )
+            report_phase(0.5)
+            if not selected_metadata:
+                return ()
+            # n is the bounded candidate index, not an assumed frame rate or
+            # timestamp. A script avoids Windows' command-line length limit.
+            ranges: list[tuple[int, int]] = []
+            for sequence, _, _ in selected_metadata:
+                if ranges and sequence == ranges[-1][1] + 1:
+                    ranges[-1] = (ranges[-1][0], sequence)
+                else:
+                    ranges.append((sequence, sequence))
+            expression = "+".join(f"between(n\\,{a}\\,{b})" for a, b in ranges)
+            filtered = [filters[0], f"select='{expression}'", *filters[1:]]
+            script = ",".join(filtered)
+            if len(script.encode("utf-8")) > self._max_metadata_bytes:
+                raise FFmpegOutputError(
+                    "FFmpeg admission filter exceeded its bounded metadata size"
+                )
+            filter_path = output_directory.parent / f".ffmpeg-filter-{uuid4().hex}"
+            filter_path.write_text(script, encoding="utf-8")
+            option = argv.index("-vf")
+            argv[option:option + 2] = ["-filter_script:v", str(filter_path)]
+        argv.extend(("-start_number", "0"))
         if source.media_type == MediaType.PHOTO:
             argv.extend(("-frames:v", "1"))
         if settings.encoding.image_format == ImageFormat.JPEG:
@@ -187,9 +275,10 @@ class FFmpegAdapter:
             )
         progress_path = output_directory.parent / f".ffmpeg-progress-{uuid4().hex}"
         progress_reader = None
-        if progress_sink is not None and source.media_type == MediaType.VIDEO:
+        if (progress_sink is not None and source.media_type == MediaType.VIDEO
+                and used_intervals is None):
             progress_reader = FFmpegProgressReader(
-                progress_path, float(Fraction(source.probe.duration)), progress_sink,
+                progress_path, source_duration, progress_sink,
                 monotonic=self._monotonic,
             )
             argv.extend(("-nostats", "-progress", str(progress_path)))
@@ -204,6 +293,38 @@ class FFmpegAdapter:
             max_stderr_bytes=self._max_metadata_bytes,
             expected_executable=expected_backend,
         )
+        try:
+            if cancellation is not None and cancellation.is_cancelled():
+                raise FFmpegCancelledError("FFmpeg was cancelled", teardown_confirmed=True)
+            remaining = timeout_seconds - (self._monotonic() - started)
+            if remaining <= 0:
+                raise FFmpegTimeoutError("FFmpeg source materialization exceeded its timeout")
+            request = replace(request, timeout_seconds=remaining)
+            result = self._run_materialization(
+                request, source=source, expected_backend=expected_backend,
+                cancellation=cancellation, evidence_sink=evidence_sink,
+                progress_reader=progress_reader,
+            )
+        finally:
+            if filter_path is not None:
+                with suppress(OSError):
+                    filter_path.unlink(missing_ok=True)
+        frames = self._read_frames(
+            output_directory, source=source, suffix=suffix, result=result,
+            selected_metadata=selected_metadata,
+        )
+        if used_intervals is not None:
+            report_phase(1)
+        return frames
+
+    def _run_materialization(
+        self, request: ProcessRequest, *, source: SourceOccurrence,
+        expected_backend: ExecutableIdentity,
+        cancellation: ProcessCancellation | None,
+        evidence_sink: ProcessEvidenceSink | None,
+        progress_reader: FFmpegProgressReader | None = None,
+        tool_role: str = "ffmpeg.materialize",
+    ) -> ProcessResult:
         started = time.monotonic()
 
         def record(result: ProcessResult | None = None, error: Exception | None = None) -> None:
@@ -215,7 +336,7 @@ class FFmpegAdapter:
                         request,
                         executable=expected_backend,
                         diagnostic_argv=request.argv,
-                        tool_role="ffmpeg.materialize",
+                        tool_role=tool_role,
                         source_id=source.source_id,
                         elapsed_seconds=max(0, time.monotonic() - started),
                         result=result,
@@ -255,7 +376,7 @@ class FFmpegAdapter:
             if progress_reader is not None:
                 progress_reader.poll_safely()
                 with suppress(OSError):
-                    progress_path.unlink(missing_ok=True)
+                    progress_reader.path.unlink(missing_ok=True)
         record(result=result)
         self._require_success(result, version_probe=False)
         if not self._same_binary(expected_backend, result.executable):
@@ -267,6 +388,14 @@ class FFmpegAdapter:
             raise FFmpegOutputError(
                 "FFmpeg frame metadata exceeded the bounded stderr capture"
             )
+        return result
+
+    @staticmethod
+    def _read_frames(
+        output_directory: Path, *, source: SourceOccurrence, suffix: str,
+        result: ProcessResult,
+        selected_metadata: tuple[tuple[int, int, RationalValue], ...] | None,
+    ) -> tuple[MaterializedFrame, ...]:
         entries = sorted(output_directory.iterdir(), key=lambda path: path.name)
         if any(not path.is_file() or path.is_symlink() or path.is_junction() for path in entries):
             raise FFmpegOutputError("FFmpeg output contains a non-file or redirected entry")
@@ -295,10 +424,17 @@ class FFmpegAdapter:
         for index, ((sequence, pts, time_base), path) in enumerate(paired):
             if sequence != index:
                 raise FFmpegOutputError("FFmpeg selected-frame sequence is not contiguous")
+            original_sequence = index
+            if selected_metadata is not None:
+                if len(selected_metadata) != len(metadata):
+                    raise FFmpegOutputError("FFmpeg admission count changed between decodes")
+                original_sequence, expected_pts, expected_time_base = selected_metadata[index]
+                if (pts, time_base) != (expected_pts, expected_time_base):
+                    raise FFmpegOutputError("FFmpeg presentation identity changed between decodes")
             frames.append(
                 MaterializedFrame(
                     temporary_path=path,
-                    sequence_index=index,
+                    sequence_index=original_sequence,
                     pts=pts,
                     time_base=time_base,
                 )

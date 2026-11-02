@@ -63,6 +63,7 @@ from splatforge.core.execution import (
     FakeRoute,
     FeatureExtractionRoute,
     FeatureMatchingRoute,
+    FrameReviewRoute,
     GeometricVerificationRoute,
     MappingRoute,
     PairSelectionRoute,
@@ -89,6 +90,11 @@ from splatforge.core.features import (
     MAX_FEATURE_METADATA_BYTES,
     LocalFeatureSet,
     feature_recipe_key,
+)
+from splatforge.core.frame_review import (
+    EffectiveSelection,
+    ReviewedSelectedViewSet,
+    build_reviewed_selection,
 )
 from splatforge.core.geometry import CameraPriorSet, VerifiedGeometrySet
 from splatforge.core.matching import MAX_MATCH_METADATA_BYTES, MatchSet
@@ -874,6 +880,13 @@ class LocalExecutionRepository(
         validated = validate_workspace_output(
             output, artifact_type, checkpoint=dataset_checkpoint
             if artifact_type.startswith(("dataset.", "training.")) else None)
+        if isinstance(validated.parsed, ReviewedSelectedViewSet):
+            route = self._load_run_snapshot(root, run_id).route
+            if not isinstance(route, FrameReviewRoute):
+                raise ValueError("Manual selection requires a frozen review route")
+            self.validate_frame_review_route(root, route, validated.parsed)
+            if input_lineage != route.input_lineage() or recipe_key != route.recipe_key():
+                raise ValueError("Manual selection publication differs from frozen review route")
         content_digest = validated.semantic_digest
         artifact_id = uuid4()
         manifest = ArtifactManifest(
@@ -1131,9 +1144,11 @@ class LocalExecutionRepository(
 
     def load_selected_views(
         self, root: Path, artifact: ArtifactHandle
-    ) -> SelectedViewSet | SharpestSelectedViewSet:
+    ) -> EffectiveSelection:
         _, _, validated = self._validate_indexed_artifact(root.resolve(), artifact)
-        if not isinstance(validated.parsed, (SelectedViewSet, SharpestSelectedViewSet)):
+        if not isinstance(validated.parsed, (
+            SelectedViewSet, SharpestSelectedViewSet, ReviewedSelectedViewSet,
+        )):
             raise ValueError("Artifact is not a supported SelectedViewSet")
         return validated.parsed
 
@@ -1145,7 +1160,9 @@ class LocalExecutionRepository(
         output_name: str,
     ) -> ArtifactHandle:
         snapshot = self._load_run_snapshot(root, run_id)
-        if isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute)):
+        if isinstance(snapshot.route, FrameReviewRoute):
+            allowed = {("candidate_views", "candidate_set"), ("selected_views", "selected_set")}
+        elif isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute)):
             allowed = {(snapshot.route.candidate.node_id, "candidate_set"),
                        (snapshot.route.selection.node_id, "selected_set")}
         elif isinstance(snapshot.route, (FeatureExtractionRoute, PairSelectionRoute,
@@ -1196,18 +1213,47 @@ class LocalExecutionRepository(
         root: Path,
         candidate: ArtifactHandle,
         selected: ArtifactHandle,
-    ) -> tuple[CandidateViewSet, SelectedViewSet | SharpestSelectedViewSet]:
+    ) -> tuple[CandidateViewSet, EffectiveSelection]:
         result = []
         with self.validation_operation():
             for handle in (candidate, selected):
                 _, _, validated = self._validate_indexed_artifact(root, handle, metadata_only=True)
                 result.append(validated.parsed)
         if not isinstance(result[0], CandidateViewSet) or not isinstance(
-            result[1], (SelectedViewSet, SharpestSelectedViewSet)
+            result[1], (SelectedViewSet, SharpestSelectedViewSet, ReviewedSelectedViewSet)
         ):
             raise ValueError("Pairing requires CandidateViewSet and a supported SelectedViewSet")
         project_pairing_universe(result[0], result[1])
         return result[0], result[1]
+
+    def validate_frame_review_route(
+        self, root: Path, route: FrameReviewRoute,
+        payload: ReviewedSelectedViewSet | None = None,
+    ) -> None:
+        """Rebuild against the exact historical automatic run, including on recovery."""
+        binding = route.selection.binding
+        snapshot = self._load_run_snapshot(root, binding.run_id)
+        if not isinstance(snapshot.route, (ViewPreparationRoute, SharpestViewPreparationRoute)):
+            raise ValueError("Manual review requires an automatic preparation run")
+        for node, output, expected in (
+            ("candidate_views", "candidate_set", route.candidate),
+            ("selected_views", "selected_set", route.automatic),
+        ):
+            if self.resolve_run_output(root, binding.run_id, node, output) != expected:
+                raise ValueError("Manual review automatic run binding differs")
+        candidate = self._validate_indexed_artifact(
+            root, route.candidate, metadata_only=True,
+        )[2].parsed
+        automatic = self._validate_indexed_artifact(
+            root, route.automatic, metadata_only=True,
+        )[2].parsed
+        if not isinstance(candidate, CandidateViewSet) or not isinstance(
+            automatic, (SelectedViewSet, SharpestSelectedViewSet),
+        ):
+            raise ValueError("Manual review inputs have incompatible contracts")
+        rebuilt = build_reviewed_selection(binding, candidate, automatic)
+        if route.selection != rebuilt or (payload is not None and payload != rebuilt):
+            raise ValueError("Manual review payload differs from the frozen decisions")
 
     def load_pair_set(self, root: Path, handle: ArtifactHandle) -> PairSet:
         _, _, validated = self._validate_indexed_artifact(root, handle)
@@ -1447,6 +1493,8 @@ class LocalExecutionRepository(
                                          MappingRoute, ReconstructionEvidenceRoute, DatasetRoute,
                                          TrainingRoute)):
             required = {snapshot.route.node_id}
+        elif isinstance(snapshot.route, FrameReviewRoute):
+            required = {"candidate_views", "selected_views"}
         elif isinstance(snapshot.route, SharpestViewPreparationRoute):
             required = {
                 snapshot.route.candidate.node_id,
@@ -1811,6 +1859,14 @@ class LocalExecutionRepository(
                 expected_literal_inputs = {}
             else:
                 raise ValueError("Attempt node is not present in the frozen fake route")
+        elif isinstance(route, FrameReviewRoute):
+            if attempt["node_id"] != route.node_id:
+                raise ValueError("Attempt node absent from frozen manual review route")
+            self.validate_frame_review_route(root, route)
+            output = route.target
+            expected_recipe_key = route.recipe_key()
+            expected_lineage = route.input_lineage()
+            expected_literal_inputs = route.literal_inputs()
         elif isinstance(route, TrainingRoute):
             if attempt["node_id"] != route.node_id:
                 raise ValueError("training.orphan_node_mismatch")
@@ -2049,7 +2105,9 @@ class LocalExecutionRepository(
         ):
             raise ValueError("Orphan publication identity or contract mismatch")
         validated = validate_published_artifact(artifact_directory, manifest)
-        if isinstance(route, TrainingRoute):
+        if isinstance(route, FrameReviewRoute):
+            self.validate_frame_review_route(root, route, validated.parsed)
+        elif isinstance(route, TrainingRoute):
             self.validate_training_route(root, route, validated.parsed, artifact_directory)
         elif isinstance(route, DatasetRoute):
             from splatforge.adapters.dataset_artifacts import require_dataset_source
@@ -2420,6 +2478,13 @@ class LocalExecutionRepository(
             if ((artifact_directory / "input_cameras.json").read_bytes()
                     != (directory / "cameras.json").read_bytes()):
                 raise ValueError("mapping.input_mismatch: camera priors differ from lineage")
+        if isinstance(validated.parsed, ReviewedSelectedViewSet):
+            route = self._load_run_snapshot(root, manifest.producer_run_id).route
+            if not isinstance(route, FrameReviewRoute):
+                raise ValueError("Manual selection producer is not a frozen review route")
+            if route.selection.binding.effective_run_id != manifest.producer_run_id:
+                raise ValueError("Manual selection effective run identity differs")
+            self.validate_frame_review_route(root, route, validated.parsed)
         if (manifest.artifact_type.startswith("validation.")
                 or manifest.artifact_type == "reconstruction.selection"):
             from splatforge.application.reconstruction_validation import require_validation_payload

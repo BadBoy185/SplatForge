@@ -1,9 +1,38 @@
 # M12b3 - Capture Metadata & Logical Source Groups
 
-Status: ACTIVE - corrective pass implemented and verified; awaiting new manual UX acceptance.
-Owner: Codex, 2026-10-28. Full H remains the user's later gate after acceptance.
+Status: ACTIVE - implementation checked; functional manual acceptance unconfirmed.
+Owner: Codex, 2026-10-29. Current combined-tree gates belong to the continuation below.
 Base: accepted M12b2a `40375875ff1cb170baa98783d62a5582180a8d60`.
 Review snapshot: user-authorized isolated commit on `codex/m12b3-ux-review`; see below.
+
+The user separately authorized the [Materials workspace redesign](2026-10-28-materials-workspace.md)
+on 2026-10-28. Its video/layout implementation supersedes the earlier stop-before-next-slice
+restriction for that bounded task; it does not record M12b3 manual UX acceptance.
+
+2026-10-28 reference-alignment clarification: the interface plan now separates
+documentation-only preparation from future implementation starting with Projects
+and Create/Open. This plan retains M12b3 behavior/evidence and its pending user
+acceptance; its earlier layout checklists are not a competing presentation assignment.
+The later Materials full verification was interrupted and is not a passing full H.
+
+2026-10-29 independent review: the current user request authorizes combined
+Materials/Trim/M12b3 verification before manual acceptance. The
+[current review](2026-10-28-materials-workspace.md#independent-materials--trim--m12b3-review--2026-10-29)
+records confirmed single-selection group and catalog-participation corrections,
+fresh reproduction of the older selection/native-expression scenarios, independent
+final review, native screenshots and full-gate results. This supersedes older
+task-specific full-H deferral instructions; it does not close manual acceptance or
+start M12c. Historical results below remain dated evidence.
+
+2026-10-29 continuation: the user accepted the latest Materials/Trim **visual**
+refinement, without claiming completion of this plan's functional manual checklist.
+The [folder relink continuation](2026-10-29-m12b4-folder-relink.md) closes the old
+technical gates with a passing full pre-implementation run, implements the mandatory
+broader-M12b recovery scenario, and records its later full run, now stopped at the
+user's request without a full result. The subsequently authorized
+[M12c1](../completed/2026-10-29-m12c1-prepare-data.md) is delivered with short checks;
+this plan's manual acceptance stays open. Full/long checks require a separate direct
+request under AGENTS; earlier automatic gate/deferral instructions are historical.
 
 ## Scope and contracts
 

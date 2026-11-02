@@ -19,6 +19,7 @@ from splatforge.core.media import (
 )
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
+    CandidateBudgetExceeded,
     CandidateEncodingSettings,
     CandidatePoolSettings,
     CandidateResourceLimits,
@@ -230,7 +231,7 @@ def test_candidate_budget_accepts_bounded_input_and_refuses_all_unbounded_cases(
     )
     assert allowed.total_candidates == 7
 
-    with pytest.raises(ValueError, match="max_candidates"):
+    with pytest.raises(CandidateBudgetExceeded, match="max_candidates") as count_error:
         estimate_candidate_budget(
             (video,),
             settings=settings("2"),
@@ -240,7 +241,10 @@ def test_candidate_budget_accepts_bounded_input_and_refuses_all_unbounded_cases(
                 per_source_timeout_seconds=30,
             ),
         )
-    with pytest.raises(ValueError, match="max_candidate_bytes"):
+    assert (count_error.value.resource, count_error.value.estimated, count_error.value.limit) == (
+        "candidates", 7, 1,
+    )
+    with pytest.raises(CandidateBudgetExceeded, match="max_candidate_bytes") as byte_error:
         estimate_candidate_budget(
             (video,),
             settings=settings("2"),
@@ -250,6 +254,9 @@ def test_candidate_budget_accepts_bounded_input_and_refuses_all_unbounded_cases(
                 per_source_timeout_seconds=30,
             ),
         )
+    assert (byte_error.value.resource, byte_error.value.estimated, byte_error.value.limit) == (
+        "candidate_bytes", allowed.candidate_bytes, 1,
+    )
     unknown = video.model_copy(update={"probe": video.probe.model_copy(update={"duration": None})})
     with pytest.raises(ValueError, match="no bounded duration"):
         estimate_candidate_budget(

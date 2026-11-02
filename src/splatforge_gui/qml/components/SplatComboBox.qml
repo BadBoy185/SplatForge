@@ -18,8 +18,8 @@ ComboBox {
     implicitWidth: 240
     font.family: Theme.font
     font.pixelSize: Theme.body
-    leftPadding: 12
-    rightPadding: 32
+    leftPadding: Theme.controlInset
+    rightPadding: Theme.control
     opacity: enabled ? 1 : 0.45
     contentItem: SplatLabel {
         text: control.displayText
@@ -30,8 +30,8 @@ ComboBox {
     indicator: SplatButton {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        width: 30
-        height: 30
+        width: Theme.control
+        height: Theme.control
         kind: "ghost"
         iconName: "chevron"
         focusPolicy: Qt.NoFocus
@@ -39,7 +39,7 @@ ComboBox {
         Accessible.name: "Choose option"
     }
     background: Rectangle {
-        radius: Theme.radius
+        radius: Theme.controlRadius
         color: control.down ? Theme.hover : Theme.raised
         border.color: control.visualFocus ? Theme.accent : control.hovered ? Theme.strong :
                                                                              Theme.border
@@ -64,14 +64,14 @@ ComboBox {
         }
         background: Rectangle {
             color: option.highlighted ? Theme.selection : Theme.raised
-            radius: 4
+            radius: Theme.controlRadius
         }
     }
     popup: Popup {
-        y: control.height + 4
+        y: control.height + Theme.spaceSmall
         width: control.width
-        padding: 4
-        implicitHeight: Math.min(contentItem.implicitHeight + 8, 320)
+        padding: Theme.spaceSmall
+        implicitHeight: Math.min(contentItem.implicitHeight + 2 * padding, 320)
         contentItem: ListView {
             clip: true
             implicitHeight: contentHeight
@@ -81,7 +81,7 @@ ComboBox {
         }
         background: Rectangle {
             color: Theme.raised
-            radius: Theme.radius
+            radius: Theme.menuRadius
             border.color: Theme.strong
         }
     }

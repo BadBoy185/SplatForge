@@ -1,0 +1,3078 @@
+{
+  "schema_version": 1,
+  "recorded_utc": "2026-10-26T14:45:08.327292+00:00",
+  "data": {
+    "url": "https://storage.googleapis.com/t2-downloads/image_sets/Ignatius.zip",
+    "retrieved_utc": "2026-10-26T10:08:46.742104+00:00",
+    "archive_sha256": "80314fcd49f290ec97a9f262171ae573a1fc562e03727b71a8dc9466d8a3e5ea",
+    "images": 263,
+    "resolution": [
+      1920,
+      1080
+    ],
+    "current_official_object_md5": "3f581feda897a35918ebf85dfd2ac2e6",
+    "legacy_manifest_md5": "1f86a3977fbfd260d89321c65a33ade6",
+    "post_processing_full_sha256_unchanged": true
+  },
+  "code": {
+    "base_commit": "9a4c8acf06407d6f0a922c83f7884b9dbb6f6c0b",
+    "files": {
+      "src/splatforge/adapters/colmap_dataset.py": "6768a2e2fb3b79c27621ab7bf00710efb0267af4c58383be04b4d45593d8549b",
+      "src/splatforge/adapters/colmap_features.py": "112caafe24defa0444746908561f249921e3dd58d09a0d216dfdf3c85391a752",
+      "src/splatforge/adapters/feature_database.py": "02a7a1fb6a927e67b95792687061cfacb5abed3380ec5faf55bf535bb89e189c",
+      "src/splatforge/adapters/feature_progress.py": "290c4646275b498a160687d3f433a69f1931f4803330c826ecb393854ef24a0a",
+      "tests/test_dataset_resource_guard.py": "6a8de9bc0b9d183922e6762ff5e8600db82815ef488b8a6d42731950a669ab9d",
+      "tests/test_sift_feature_budget.py": "fc337ea4e72748b5f79f821eb7efee8de58268bc69fe965b9efc5f0308825b7a",
+      "tests/test_features_progress.py": "93dc8dcc6685d0f89304b837f005d1265a0c6cbc88cd3f5c82ba303c86ada539"
+    },
+    "recorded_utc": "2026-10-26T14:26:19.864220+00:00"
+  },
+  "backend": {
+    "worker_version": 1,
+    "worker_sha256": "182cae2c48acfb8883864f09501a51d34f06b077b00cd43c1964663cb0b586b5",
+    "python_sha256": "0b471133e110cfb53a061cad528ce8e517d7b9ac41a0a396c39ad795a487fc14",
+    "python_version": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+    "torch_version": "2.7.1+cu128",
+    "torch_cuda": "12.8",
+    "gsplat_version": "1.5.3",
+    "gsplat_commit": "937e29912570c372bed6747a5c9bf85fed877bae",
+    "packages_digest": "46f82c62ba6dabd6ea2149c58fbec4b153c528d5a3eda5b36da96b356d30b28b",
+    "cuda_runtime": "12080",
+    "driver": "610.62",
+    "gpu_uuid": "886e6a58-60fa-dc29-87bf-02c3303be36f",
+    "gpu_name": "NVIDIA GeForce RTX 5080",
+    "gpu_ordinal": 0,
+    "compute_capability": [
+      12,
+      0
+    ],
+    "device_total_bytes": 17094475776,
+    "features": [
+      "default",
+      "absgrad",
+      "antialiased",
+      "mcmc"
+    ],
+    "kernel_backward_optimizer": true,
+    "determinism": "seeded_gpu_not_bitwise_proven"
+  },
+  "project": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+  "settings": {
+    "mapping-settings": {
+      "method_id": "mapping.colmap_incremental",
+      "settings_version": 1,
+      "multiple_models": false,
+      "extract_colors": false,
+      "min_num_matches": 15,
+      "min_model_size": 3,
+      "num_threads": 8,
+      "random_seed": 0,
+      "min_focal_length_ratio": 0.1,
+      "max_focal_length_ratio": 10.0,
+      "max_extra_param": 1.0,
+      "ba_refine_focal_length": true,
+      "ba_refine_principal_point": false,
+      "ba_refine_extra_params": true,
+      "ba_refine_sensor_from_rig": false,
+      "ba_local_backend": "CERES",
+      "ba_global_backend": "CERES",
+      "ba_use_gpu": false,
+      "ba_gpu_index": -1,
+      "ba_local_max_num_iterations": -1,
+      "ba_global_max_num_iterations": -1,
+      "ba_global_frames_ratio": 1.1,
+      "ba_global_points_ratio": 1.1,
+      "init_num_trials": 200,
+      "init_min_num_inliers": 100,
+      "init_max_error": 4.0,
+      "init_min_tri_angle": 16.0,
+      "structure_less_registration_fallback": true
+    },
+    "matching-settings": {
+      "settings_version": 1,
+      "use_gpu": true,
+      "num_threads": 1,
+      "max_num_matches": 32768,
+      "random_seed": 0,
+      "method_id": "feature_matching.sift_bruteforce",
+      "variant": "SIFT_BRUTEFORCE",
+      "max_ratio": 0.8,
+      "max_distance": 0.7,
+      "cross_check": true,
+      "cpu_brute_force_matcher": false
+    },
+    "matching-limits": {
+      "max_pairs": 35000,
+      "max_total_features": 3000000,
+      "max_raw_matches": 300000000,
+      "max_workspace_bytes": 34359738368,
+      "timeout_seconds": 7200,
+      "max_pair_working_bytes": 4294967296,
+      "max_model_bytes": 8589934592
+    },
+    "verification-settings": {
+      "method_id": "geometric_verification.colmap",
+      "settings_version": 1,
+      "min_num_inliers": 15,
+      "max_error": 4.0,
+      "confidence": 0.999,
+      "max_num_trials": 10000,
+      "min_inlier_ratio": 0.0,
+      "multiple_models": false,
+      "compute_relative_pose": false,
+      "detect_watermark": true,
+      "multiple_ignore_watermark": true,
+      "watermark_detection_max_error": 4.0,
+      "filter_stationary_matches": false,
+      "stationary_matches_max_error": 4.0,
+      "use_degensac": false,
+      "use_sampson_refinement": true,
+      "random_seed": 0,
+      "num_threads": 8,
+      "batch_size": 1000
+    },
+    "training-settings": {
+      "settings_version": 1,
+      "strategy": {
+        "strategy": "default",
+        "absgrad": false,
+        "grow_grad2d": 0.0002,
+        "prune_opa": 0.005,
+        "grow_scale3d": 0.01,
+        "grow_scale2d": 0.05,
+        "prune_scale3d": 0.1,
+        "prune_scale2d": 0.15,
+        "refine_start_iter": 500,
+        "refine_stop_iter": 15000,
+        "refine_every": 100,
+        "reset_every": 3000
+      },
+      "max_steps": 7000,
+      "sh_degree": 3,
+      "sh_degree_interval": 1000,
+      "data_factor": 2,
+      "ssim_weight": 0.2,
+      "seed": 42,
+      "evaluation_every": 7000,
+      "checkpoint_every": 7000,
+      "final_export": true,
+      "antialiased": false,
+      "pose_opt": false,
+      "initialization": "sfm",
+      "normalize_world_space": false,
+      "split": {
+        "policy": "explicit_views_v1",
+        "held_out_view_ids": [
+          "012a9cad-0919-510b-a6ad-1b1191c61b35",
+          "01becbac-8a6a-53b3-b4b8-e3a646065e48",
+          "05340f50-2441-5ca1-b333-09c632ae05b2",
+          "06ce2c73-df22-587f-9f38-4d85e154fa68",
+          "1b1614b3-1d6f-5757-b888-85d94aafde5f",
+          "25d8b926-b7c4-5d90-b793-96f634b1e0a2",
+          "2a9fee97-5006-590a-9800-d2c3e6c38609",
+          "3077acf9-907c-5d9a-9487-11dd87136dc8",
+          "3550ae76-a10b-5906-a0dc-415315b62a3a",
+          "3e0a4835-d345-590c-b070-52539a680bf3",
+          "3f7999cd-2593-578b-ae8b-96fbf9a52818",
+          "46e8a3dc-f678-59b1-82df-ef840120ea12",
+          "6215ce06-2014-55bd-8d56-9db19b031291",
+          "6540c4a0-d8b4-5913-8b7a-090b81a71274",
+          "7f361640-8554-530b-a719-e710e9b23719",
+          "98182b58-bd1f-5bb1-b526-ac1a3dddfe88",
+          "985eb895-d20c-5cfe-8ffd-f9e477513390",
+          "9a468a64-0efd-5a45-8f0e-0793d72e7392",
+          "9bdc6cf5-2ac7-5136-83af-eb48b293a14d",
+          "a3044d34-626b-5c2a-8a4f-298914bf0055",
+          "a63fc40e-541b-54f1-84f3-94585a24a2a8",
+          "ab8f8260-b0b8-5bcf-8ab4-ac4eaa04dd22",
+          "b0225b39-2457-5f86-879c-1ff2f0d56b86",
+          "b5d0760c-24a6-5539-b439-0654f6cff2d8",
+          "bc6b08d4-c67a-593e-97b3-a5702e2ab59a",
+          "be3bda90-8b19-53dd-a2d4-a45ae73fde9e",
+          "c4f2efcb-b788-5186-82c5-33c86d96c6c7",
+          "cf7baea5-8d75-51d2-b14d-fe349474ddc2",
+          "d2e7dacd-146d-5925-af51-ccf541db779d",
+          "dd39f9b4-2597-58d9-8639-a8343ad84d30",
+          "dd3fdbc5-c83d-51e3-8d8d-c6465ce4a9ce",
+          "efd470b3-c5f0-5cad-afdd-b48399a54605",
+          "ff98b1b6-2b94-52f7-bd85-a82d9148654d"
+        ],
+        "warning": "Every eighth original image in natural numeric filename order, starting index 0. SfM uses all 263 frames. Novel-view interpolation with known SfM cameras; not unseen-camera reconstruction or official Tanks & Temples geometry evaluation."
+      },
+      "means_lr": 0.00016,
+      "scales_lr": 0.005,
+      "opacities_lr": 0.05,
+      "quats_lr": 0.001,
+      "sh0_lr": 0.0025,
+      "shN_lr": 0.000125,
+      "init_opacity": 0.1,
+      "near_plane": 0.01,
+      "far_plane": 10000000000.0
+    }
+  },
+  "camera_priors": {
+    "model": "SIMPLE_RADIAL",
+    "shared_camera": "a66dc576-f2f4-59fb-b2cc-78fe07c449c8",
+    "focal_length_pixels": 1344,
+    "principal_point_pixels": [
+      960,
+      540
+    ],
+    "initial_radial_distortion": 0,
+    "focal_length_is_exact": false,
+    "prior_focal_length": false,
+    "reference": "https://tanksandtemples.org/download/",
+    "policy": "Authors' approximate 0.7*W seed, augmented with explicit zero initial radial distortion; one shared ordinary perspective camera. Ceres refines focal and radial distortion."
+  },
+  "split": {
+    "policy": "original_numeric_sequence_every_8_start_0",
+    "sfm_used_all_263": true,
+    "train_count": 230,
+    "eval_count": 33,
+    "held_out": [
+      {
+        "original_sequence_index": 0,
+        "original_name": "000001.jpg",
+        "view_id": "01becbac-8a6a-53b3-b4b8-e3a646065e48",
+        "source_id": "737c1fdc-13c9-45d3-9405-3b6ada4e66a7",
+        "source_sha256": "2587612e15ec1f628e34a2be27513fcdf9269b06e04e1c635e70849d31e03213",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 8,
+        "original_name": "000009.jpg",
+        "view_id": "efd470b3-c5f0-5cad-afdd-b48399a54605",
+        "source_id": "c07d2e1e-2c37-47e4-9fd7-55ed08e5e3f7",
+        "source_sha256": "08dddefc96323a5e5108b11f4442f6585c0da548bd9c95da03abb7f3b336f402",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 16,
+        "original_name": "000017.jpg",
+        "view_id": "bc6b08d4-c67a-593e-97b3-a5702e2ab59a",
+        "source_id": "0beb8801-676a-4cb6-a806-36029bd281d9",
+        "source_sha256": "4fcfd28090458bdc3a75fb071c65e9c896a4e834c8a8b2b7068c46ed7ddbd912",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 24,
+        "original_name": "000025.jpg",
+        "view_id": "6540c4a0-d8b4-5913-8b7a-090b81a71274",
+        "source_id": "7ca69779-cd5e-4d12-8511-c78e74215613",
+        "source_sha256": "536b5f77bed1ab557c3dd24d970df84647e0a8c68b56da00fce6a6766d793df2",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 32,
+        "original_name": "000033.jpg",
+        "view_id": "06ce2c73-df22-587f-9f38-4d85e154fa68",
+        "source_id": "aea090f2-c270-4a8c-a306-fde12f07fda9",
+        "source_sha256": "2b1de20c5948a37add8d4c80a14f25d7d3efa7db0acd5270306974c0cbebdf77",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 40,
+        "original_name": "000041.jpg",
+        "view_id": "2a9fee97-5006-590a-9800-d2c3e6c38609",
+        "source_id": "9b66428d-4623-4d98-9070-f05bd3d619a6",
+        "source_sha256": "54338071d45a9276c533b4c6ac9486570282b76bc0e435d1b019ba94e2505d69",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 48,
+        "original_name": "000049.jpg",
+        "view_id": "012a9cad-0919-510b-a6ad-1b1191c61b35",
+        "source_id": "31211444-7c7c-473e-b971-2338498c8447",
+        "source_sha256": "992a51947eda50cc6222f3a63eeed368b61037aa14bc5cebe16053d2385da25c",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 56,
+        "original_name": "000057.jpg",
+        "view_id": "46e8a3dc-f678-59b1-82df-ef840120ea12",
+        "source_id": "de182687-954c-4c36-b7ef-56b266226db1",
+        "source_sha256": "9f8a8fd97d086e4bad8e1d82b78c01617030c562cf736ee6574cfba9dde8c8b6",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 64,
+        "original_name": "000065.jpg",
+        "view_id": "7f361640-8554-530b-a719-e710e9b23719",
+        "source_id": "8fe05477-4b44-4ffd-b0ae-7cd15500c698",
+        "source_sha256": "70a225a533121d589cbd46587a42e0d6f9b805d767ccccf9ba15068ef5bda43f",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 72,
+        "original_name": "000073.jpg",
+        "view_id": "dd39f9b4-2597-58d9-8639-a8343ad84d30",
+        "source_id": "497a78fc-a368-4fce-b67a-0c2b885e3671",
+        "source_sha256": "75d36a3f40f36107725181d881e4b1a0129b136ee7c8030cf1260ed30e61a9cf",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 80,
+        "original_name": "000081.jpg",
+        "view_id": "3550ae76-a10b-5906-a0dc-415315b62a3a",
+        "source_id": "7f8518c4-8576-438d-952a-422bbde0bcda",
+        "source_sha256": "350fcf067e9fcac5653a5fa2347cc6fab53e1d21ae93ed06c1e43367fb87cc00",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 88,
+        "original_name": "000089.jpg",
+        "view_id": "d2e7dacd-146d-5925-af51-ccf541db779d",
+        "source_id": "bc149bf3-dd2c-4e8b-a2f6-fef38d7ed097",
+        "source_sha256": "f12a3628a10674902cb529c739f41d7cca7e1f47a30dc9c75bc24e97fba37fb6",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 96,
+        "original_name": "000097.jpg",
+        "view_id": "3f7999cd-2593-578b-ae8b-96fbf9a52818",
+        "source_id": "544de327-c732-4cd9-b192-4d4fcfb51c72",
+        "source_sha256": "b92f5ea5ca8954772669e71a488b007d014c6320e183d6a5679e45b958d43cc4",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 104,
+        "original_name": "000105.jpg",
+        "view_id": "ff98b1b6-2b94-52f7-bd85-a82d9148654d",
+        "source_id": "0cf2d240-b9d0-434e-88c5-079bd6046470",
+        "source_sha256": "d55b74357de37db389ebac86340c74cdf9c7b4248ba76dd326dc93ddc654df31",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 112,
+        "original_name": "000113.jpg",
+        "view_id": "9a468a64-0efd-5a45-8f0e-0793d72e7392",
+        "source_id": "fb84c4d3-932e-4149-9163-0851378d692f",
+        "source_sha256": "48571ca0812ebc2dc068effaf9a44b97a4ed62fa7ec1c3a843ea13035f9dd89d",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 120,
+        "original_name": "000121.jpg",
+        "view_id": "c4f2efcb-b788-5186-82c5-33c86d96c6c7",
+        "source_id": "6d41887c-1d8f-449e-8378-0cdd31ff4ee2",
+        "source_sha256": "5b5e0fbbfa30908fcab809d27dfe143c41f53c8eac34124fee167be09d8599da",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 128,
+        "original_name": "000129.jpg",
+        "view_id": "05340f50-2441-5ca1-b333-09c632ae05b2",
+        "source_id": "6c989aa5-46fc-4df3-a30b-d4e5cfa7e290",
+        "source_sha256": "90fe66b7e4cc6ed5bb2b874409c96a7a208b8af7e87f4d0ad3ba920b14c6fca2",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 136,
+        "original_name": "000137.jpg",
+        "view_id": "a63fc40e-541b-54f1-84f3-94585a24a2a8",
+        "source_id": "76a2a981-1b68-443c-ae56-a0c121d60d80",
+        "source_sha256": "8e98aead10004f79ea565d3485014769074d8b4ec0d93d660b652f1091afdecb",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 144,
+        "original_name": "000145.jpg",
+        "view_id": "9bdc6cf5-2ac7-5136-83af-eb48b293a14d",
+        "source_id": "b15f5019-1d18-424d-99cb-48eeaf1d6462",
+        "source_sha256": "284481b64dc01bfd652217058be037f6460ea187f2a0f5dc434c09bd0e9fd010",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 152,
+        "original_name": "000153.jpg",
+        "view_id": "be3bda90-8b19-53dd-a2d4-a45ae73fde9e",
+        "source_id": "7fd40243-07c8-482e-af19-22afd5b6c792",
+        "source_sha256": "ace7ea6246d1b9925d498667e14d660188a940412c532a3ef2cddc17c7f479d6",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 160,
+        "original_name": "000161.jpg",
+        "view_id": "985eb895-d20c-5cfe-8ffd-f9e477513390",
+        "source_id": "ea92876b-14f6-41f7-a79a-4d105ac273eb",
+        "source_sha256": "26ac0352fd435f5037ad8229e9f73950a986632b79ac710c209ea41f4e11e7e5",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 168,
+        "original_name": "000169.jpg",
+        "view_id": "b0225b39-2457-5f86-879c-1ff2f0d56b86",
+        "source_id": "649bf3fd-16bd-4ddd-9959-e442e1b2d225",
+        "source_sha256": "fc137b6e6cbe1d96f01187c9728ed389509735270a4cfcaa81a584131febd91c",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 176,
+        "original_name": "000177.jpg",
+        "view_id": "6215ce06-2014-55bd-8d56-9db19b031291",
+        "source_id": "c5faa24b-0c5e-4f7f-bfc9-d014f34905ab",
+        "source_sha256": "ff14da1b4a684004b87671af97c14114c0e888348e74572c7c9ece539e6abd60",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 184,
+        "original_name": "000185.jpg",
+        "view_id": "3e0a4835-d345-590c-b070-52539a680bf3",
+        "source_id": "bf2206ea-ade1-4c79-8fd9-5fa809a9b33d",
+        "source_sha256": "ac157f9e2a9f9f36b509bdae87c98bfa17c859271fe2b627f984cef68743e18f",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 192,
+        "original_name": "000193.jpg",
+        "view_id": "b5d0760c-24a6-5539-b439-0654f6cff2d8",
+        "source_id": "4e522ade-7570-47fa-9c91-3afae8d92d7d",
+        "source_sha256": "74048eddb3eed66273ccaf829bc4b4d27f5fb56eaed9b1e32ef6d98c4cf2bccd",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 200,
+        "original_name": "000201.jpg",
+        "view_id": "cf7baea5-8d75-51d2-b14d-fe349474ddc2",
+        "source_id": "aa4a5e5c-e269-4555-991a-baacda07073b",
+        "source_sha256": "41cdc38dc5c1cf783a601af8ee1ad49e29975cd67e668d54a985d56844a76b8a",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 208,
+        "original_name": "000209.jpg",
+        "view_id": "25d8b926-b7c4-5d90-b793-96f634b1e0a2",
+        "source_id": "e5e29c4a-18a4-495c-85c7-5bd8cec557d2",
+        "source_sha256": "34fe1289e6fc7a24508691a127710536f888340ce6f27eccd159cd292d70f470",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 216,
+        "original_name": "000217.jpg",
+        "view_id": "1b1614b3-1d6f-5757-b888-85d94aafde5f",
+        "source_id": "365eee4a-487e-475b-885b-c2801f096bbe",
+        "source_sha256": "e20cc284450dfcf33b5aadf7f821c2da1c8bb8745d8643af5ef492d5f9eda58b",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 224,
+        "original_name": "000225.jpg",
+        "view_id": "a3044d34-626b-5c2a-8a4f-298914bf0055",
+        "source_id": "e6d8feca-44aa-4cc8-8132-fea1fdc11692",
+        "source_sha256": "06222303cf445cbf9346d621d3c0574d435dc5218beb7eedce6819b656427108",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 232,
+        "original_name": "000233.jpg",
+        "view_id": "ab8f8260-b0b8-5bcf-8ab4-ac4eaa04dd22",
+        "source_id": "1ecedf5d-3902-4421-b917-0429b1ec925f",
+        "source_sha256": "69f343d8cc3818e761cf987ebd6accba169f9d6eff3e20af7736d5db7f2b8520",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 240,
+        "original_name": "000241.jpg",
+        "view_id": "3077acf9-907c-5d9a-9487-11dd87136dc8",
+        "source_id": "71b9edaa-c0d8-47fa-b2ab-ddb4b310e073",
+        "source_sha256": "92073cdc8f26d226b2004992688f80e14984304a4b3fb3291c57254970642776",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 248,
+        "original_name": "000249.jpg",
+        "view_id": "dd3fdbc5-c83d-51e3-8d8d-c6465ce4a9ce",
+        "source_id": "a8f2b3e2-f5f2-4bf1-896d-e364932c651c",
+        "source_sha256": "83ceeb081302561513659f8252cb932bbcd93cd7e0fcbf662a9013da71d3298a",
+        "split": "eval"
+      },
+      {
+        "original_sequence_index": 256,
+        "original_name": "000257.jpg",
+        "view_id": "98182b58-bd1f-5bb1-b526-ac1a3dddfe88",
+        "source_id": "530d8608-3d10-49eb-b7b0-7185baeb0a2d",
+        "source_sha256": "eb698bfed4f8ccb1ed87bd3d57b751e3e87371de4a8c2e97435af78c19a89395",
+        "split": "eval"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "project-create",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "project",
+        "create",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--label",
+        "Tanks & Temples Ignatius pilot"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:10:31.880050+00:00",
+      "wall_seconds": 0.9220000000204891,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {}
+    },
+    {
+      "label": "media-add",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "media",
+        "add",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000001.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000002.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000003.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000004.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000005.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000006.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000007.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000008.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000009.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000010.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000011.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000012.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000013.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000014.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000015.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000016.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000017.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000018.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000019.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000020.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000021.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000022.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000023.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000024.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000025.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000026.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000027.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000028.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000029.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000030.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000031.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000032.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000033.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000034.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000035.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000036.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000037.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000038.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000039.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000040.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000041.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000042.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000043.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000044.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000045.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000046.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000047.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000048.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000049.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000050.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000051.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000052.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000053.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000054.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000055.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000056.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000057.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000058.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000059.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000060.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000061.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000062.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000063.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000064.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000065.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000066.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000067.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000068.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000069.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000070.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000071.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000072.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000073.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000074.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000075.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000076.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000077.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000078.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000079.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000080.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000081.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000082.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000083.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000084.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000085.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000086.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000087.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000088.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000089.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000090.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000091.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000092.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000093.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000094.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000095.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000096.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000097.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000098.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000099.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000100.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000101.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000102.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000103.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000104.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000105.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000106.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000107.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000108.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000109.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000110.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000111.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000112.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000113.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000114.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000115.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000116.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000117.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000118.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000119.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000120.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000121.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000122.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000123.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000124.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000125.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000126.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000127.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000128.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000129.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000130.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000131.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000132.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000133.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000134.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000135.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000136.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000137.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000138.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000139.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000140.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000141.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000142.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000143.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000144.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000145.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000146.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000147.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000148.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000149.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000150.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000151.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000152.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000153.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000154.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000155.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000156.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000157.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000158.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000159.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000160.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000161.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000162.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000163.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000164.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000165.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000166.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000167.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000168.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000169.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000170.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000171.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000172.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000173.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000174.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000175.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000176.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000177.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000178.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000179.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000180.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000181.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000182.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000183.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000184.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000185.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000186.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000187.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000188.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000189.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000190.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000191.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000192.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000193.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000194.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000195.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000196.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000197.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000198.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000199.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000200.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000201.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000202.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000203.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000204.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000205.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000206.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000207.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000208.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000209.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000210.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000211.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000212.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000213.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000214.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000215.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000216.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000217.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000218.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000219.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000220.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000221.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000222.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000223.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000224.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000225.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000226.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000227.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000228.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000229.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000230.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000231.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000232.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000233.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000234.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000235.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000236.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000237.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000238.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000239.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000240.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000241.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000242.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000243.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000244.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000245.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000246.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000247.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000248.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000249.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000250.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000251.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000252.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000253.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000254.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000255.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000256.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000257.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000258.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000259.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000260.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000261.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000262.jpg",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\sources\\images\\Ignatius\\000263.jpg",
+        "--source-group",
+        "af6aca01-87ce-5516-9521-d52d83256051",
+        "--camera-group",
+        "a66dc576-f2f4-59fb-b2cc-78fe07c449c8",
+        "--ffprobe",
+        "C:\\Tools\\ffmpeg\\bin\\ffprobe.exe"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:10:32.798290+00:00",
+      "wall_seconds": 19.640000000130385,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {}
+    },
+    {
+      "label": "views-budget20",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "views",
+        "prepare",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--target-fps",
+        "1",
+        "--selection",
+        "fixed-fps",
+        "--verification",
+        "strict",
+        "--ffmpeg",
+        "C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe",
+        "--image-format",
+        "jpeg",
+        "--max-candidates",
+        "263",
+        "--max-disk-gib",
+        "20"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:11:29.052179+00:00",
+      "wall_seconds": 71.40599999995902,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "run_id": "7c36998d-5eb9-4c8b-b77a-076614725277",
+        "status": "succeeded"
+      }
+    },
+    {
+      "label": "pairs",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "pairs",
+        "build",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--views-run",
+        "7c36998d-5eb9-4c8b-b77a-076614725277",
+        "--method",
+        "exhaustive",
+        "--max-pairs",
+        "35000"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:13:44.943185+00:00",
+      "wall_seconds": 3.734999999869615,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "run_id": "35ba9623-7e3e-44a2-a5f4-78c4c4c533c7",
+        "status": "succeeded",
+        "cache_hit": false
+      }
+    },
+    {
+      "label": "features-cpu",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "features",
+        "extract",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--views-run",
+        "7c36998d-5eb9-4c8b-b77a-076614725277",
+        "--method",
+        "SIFT",
+        "--cpu",
+        "--max-features",
+        "8192",
+        "--max-image-size",
+        "2048",
+        "--max-views",
+        "263",
+        "--max-workspace-gib",
+        "32",
+        "--timeout",
+        "3600",
+        "--colmap",
+        "C:\\Dev\\SplatForge\\sample_data\\runtimes\\colmap-4.2.1-cuda12.8-cudnn9.27.0.42\\bin\\colmap.exe",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:24:44.559061+00:00",
+      "wall_seconds": 774.5470000000205,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "run_id": "e79206e2-0868-4246-b2e9-480003b87eb5",
+        "status": "succeeded",
+        "cache_hit": false
+      }
+    },
+    {
+      "label": "matches-budget",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "matches",
+        "run",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--features-run",
+        "e79206e2-0868-4246-b2e9-480003b87eb5",
+        "--pairs-run",
+        "35ba9623-7e3e-44a2-a5f4-78c4c4c533c7",
+        "--settings",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\matching-settings.json",
+        "--resource-limits",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\matching-limits.json",
+        "--colmap",
+        "C:\\Dev\\SplatForge\\sample_data\\runtimes\\colmap-4.2.1-cuda12.8-cudnn9.27.0.42\\bin\\colmap.exe",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:39:32.274833+00:00",
+      "wall_seconds": 104.26600000006147,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "run_id": "98a6c8d4-073f-4654-a702-fb2a414cdf03",
+        "status": "succeeded",
+        "cache_hit": false,
+        "artifact": {
+          "artifact_id": "8aed5621-1eb7-4e7c-83a3-c1591af33f85",
+          "artifact_type": "matching.match_set",
+          "recipe_key": "3488899fb3dc17d6004ddc44e7d3e4ae0a798239a86c2f79ed54a56958a860cf",
+          "semantic_digest": "edb206745f5fbced0f2599bed811a54563e4a7a702aa46d43fd62055c9e83ee5",
+          "manifest_path": "artifacts/raw_matches/8aed5621-1eb7-4e7c-83a3-c1591af33f85/manifest.json"
+        }
+      }
+    },
+    {
+      "label": "verification",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "verification",
+        "run",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--matches-run",
+        "98a6c8d4-073f-4654-a702-fb2a414cdf03",
+        "--camera-priors",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\camera-priors.json",
+        "--settings",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\verification-settings.json",
+        "--resource-limits",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\matching-limits.json",
+        "--colmap",
+        "C:\\Dev\\SplatForge\\sample_data\\runtimes\\colmap-4.2.1-cuda12.8-cudnn9.27.0.42\\bin\\colmap.exe",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:41:16.548642+00:00",
+      "wall_seconds": 394.405999999959,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "run_id": "8f310d36-6c06-446f-b83c-23412ea9174b",
+        "status": "succeeded",
+        "cache_hit": false,
+        "artifact": {
+          "artifact_id": "1c78db84-fc57-4d96-98ba-f4a1cd9c5beb",
+          "artifact_type": "geometry.verified_geometry_set",
+          "recipe_key": "31acc1bd7c8ab93ef838cdb63abf3a06bced9171f836857c42c45e1265143290",
+          "semantic_digest": "9f803010ab33a48b35527529405d9f7b47d94f1b7541743a44b8eadb3b9bef4e",
+          "manifest_path": "artifacts/verified_geometry/1c78db84-fc57-4d96-98ba-f4a1cd9c5beb/manifest.json"
+        }
+      }
+    },
+    {
+      "label": "mapping",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "mapping",
+        "run",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--verification-run",
+        "8f310d36-6c06-446f-b83c-23412ea9174b",
+        "--method",
+        "incremental",
+        "--settings",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\mapping-settings.json",
+        "--calibration",
+        "preserve-priors",
+        "--max-views",
+        "263",
+        "--max-pairs",
+        "35000",
+        "--max-workspace-gib",
+        "32",
+        "--max-output-gib",
+        "8",
+        "--timeout",
+        "7200",
+        "--colmap",
+        "C:\\Dev\\SplatForge\\sample_data\\runtimes\\colmap-4.2.1-cuda12.8-cudnn9.27.0.42\\bin\\colmap.exe",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:47:50.958454+00:00",
+      "wall_seconds": 621.094000000041,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "run_id": "47bd06e3-1a06-40c0-a2c8-683ff5fea0e9",
+        "status": "succeeded",
+        "cache_hit": false,
+        "recipe_key": "6568ff5ca5772de644c033c9e552b7fd4995f4559a81b16c1f17b006c87ff345",
+        "artifact": {
+          "artifact_id": "58adea2d-df98-48df-ba5d-a1ec9bd59fa3",
+          "artifact_type": "mapping.reconstruction_set",
+          "recipe_key": "6568ff5ca5772de644c033c9e552b7fd4995f4559a81b16c1f17b006c87ff345",
+          "semantic_digest": "c291640d082571e48838673889cc5b3e246766a9153981539140378f9b40c3b6",
+          "manifest_path": "artifacts/reconstruction/58adea2d-df98-48df-ba5d-a1ec9bd59fa3/manifest.json"
+        }
+      }
+    },
+    {
+      "label": "validation",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "reconstruction",
+        "validate",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--mapping-run",
+        "47bd06e3-1a06-40c0-a2c8-683ff5fea0e9",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T10:59:54.405080+00:00",
+      "wall_seconds": 537.0470000000205,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "run_id": "1d189a22-2f63-41d1-be0f-101e8f24dbb4",
+        "status": "succeeded",
+        "geometry_run": {
+          "run_id": "34857a50-9f87-4ef6-a1ff-d726b3760b9d",
+          "status": "succeeded",
+          "cache_hit": false,
+          "artifact": {
+            "artifact_id": "e4cac607-b85f-4290-96b0-d272f897e590",
+            "artifact_type": "validation.geometry_input",
+            "recipe_key": "ebea7b604aba62ab362f70aec0184eca70e99255c5d4b6b0d9862b6820c1339a",
+            "semantic_digest": "046f4b5296a06409090b84c5f4e79ee15cd18298f2caa690676f7a2f3d824c60",
+            "manifest_path": "artifacts/validation_geometry/e4cac607-b85f-4290-96b0-d272f897e590/manifest.json"
+          }
+        },
+        "metrics_run": {
+          "run_id": "f55ba538-500e-4bf0-a3c9-b63f2746bbf2",
+          "status": "succeeded",
+          "cache_hit": false,
+          "artifact": {
+            "artifact_id": "3c199921-1ad1-4aee-a939-71b02d775a57",
+            "artifact_type": "validation.reconstruction_metrics",
+            "recipe_key": "c12f7e2d8edc866a34d963f8c139164ec30a560e85a765f651d5b35c72fe5b27",
+            "semantic_digest": "db0431ce3aa10005f486a1550e293fc669aac0082aefb24d8c88c0cb5730a645",
+            "manifest_path": "artifacts/reconstruction_metrics/3c199921-1ad1-4aee-a939-71b02d775a57/manifest.json"
+          }
+        },
+        "report_run": {
+          "run_id": "1d189a22-2f63-41d1-be0f-101e8f24dbb4",
+          "status": "succeeded",
+          "cache_hit": false,
+          "artifact": {
+            "artifact_id": "fd60e0b0-065b-4782-8676-064540c337e4",
+            "artifact_type": "validation.reconstruction_report",
+            "recipe_key": "76342e9c680bbc507e3939f8a2a53631bfbf8cc37c6369572b3c129c64d9e5b4",
+            "semantic_digest": "b04c9b84794ca9e86b1e16edbb454a678d6cb8a74349ccd3a668060fb1862e9a",
+            "manifest_path": "artifacts/reconstruction_validation/fd60e0b0-065b-4782-8676-064540c337e4/manifest.json"
+          }
+        }
+      }
+    },
+    {
+      "label": "validation-details",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "reconstruction",
+        "validation-show",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "1d189a22-2f63-41d1-be0f-101e8f24dbb4",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T11:08:51.455911+00:00",
+      "wall_seconds": 32.98400000017136,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {}
+    },
+    {
+      "label": "selection",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "reconstruction",
+        "select",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--validation-run",
+        "1d189a22-2f63-41d1-be0f-101e8f24dbb4",
+        "--component",
+        "80f4d3c0-d0a4-5503-8b2c-c92728a3043d",
+        "--mode",
+        "manual",
+        "--reason",
+        "Explicit Ignatius pilot choice: the sole published component registers all 263 inputs; M9 baseline PASS with no issues, exact mean reprojection 0.9142 px and sampled p95 2.1638 px.",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T11:13:29.170993+00:00",
+      "wall_seconds": 33.437000000150874,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "status": "succeeded",
+        "run": {
+          "run_id": "0fee5df5-a771-4b7d-818e-01a179c27f58",
+          "status": "succeeded",
+          "cache_hit": false,
+          "artifact": {
+            "artifact_id": "39d7945c-e3c1-48b2-83e7-bf5ae28cf03b",
+            "artifact_type": "reconstruction.selection",
+            "recipe_key": "8de9d740b07987ae482ac144a25bc88b4b30aea10636d41e6c2aa8877dc811e7",
+            "semantic_digest": "1f97baa4651d94371952b6259853e5c2b3e872a64f95737cd4a18b450dea23c1",
+            "manifest_path": "artifacts/reconstruction_selection/39d7945c-e3c1-48b2-83e7-bf5ae28cf03b/manifest.json"
+          }
+        }
+      }
+    },
+    {
+      "label": "dataset-plan",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "dataset",
+        "plan",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--selection-run",
+        "0fee5df5-a771-4b7d-818e-01a179c27f58",
+        "--colmap",
+        "C:\\Dev\\SplatForge\\sample_data\\runtimes\\colmap-4.2.1-cuda12.8-cudnn9.27.0.42\\bin\\colmap.exe",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T11:14:02.616835+00:00",
+      "wall_seconds": 86.45299999997951,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "components": [
+          {
+            "cache_hit": false
+          }
+        ]
+      }
+    },
+    {
+      "label": "dataset-fixed",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "dataset",
+        "prepare",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--selection-run",
+        "0fee5df5-a771-4b7d-818e-01a179c27f58",
+        "--colmap",
+        "C:\\Dev\\SplatForge\\sample_data\\runtimes\\colmap-4.2.1-cuda12.8-cudnn9.27.0.42\\bin\\colmap.exe",
+        "--json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T11:33:31.016504+00:00",
+      "wall_seconds": 694.125,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "status": "succeeded",
+        "run_id": "332d96ea-c5f7-466c-b55b-428a8c8d3163",
+        "cache_hit": false,
+        "artifact": {
+          "artifact_id": "a4bac46b-0cff-477b-bdc5-fc8eb4643615",
+          "artifact_type": "dataset.prepared_set",
+          "recipe_key": "d6728fd5080c85550e399d0d13e673e9d6753ca15d071db9f073213cfcb3cfb1",
+          "semantic_digest": "2f3e93c11161f95ff4cdeb3a227561223206a70ccab2d1d0a44a5927592b92a0",
+          "manifest_path": "artifacts/dataset_set/a4bac46b-0cff-477b-bdc5-fc8eb4643615/manifest.json"
+        },
+        "dataset": {
+          "components": [
+            {
+              "artifact_id": "645d80f8-6cd4-4a66-9a3f-6252dc72b018",
+              "semantic_digest": "b242ca2d368f0c84fff22d25a41bbd0db4f4965ff83691dac75d06dcece948d5",
+              "manifest_path": "artifacts/dataset_component/645d80f8-6cd4-4a66-9a3f-6252dc72b018/manifest.json"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "training-plan",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "training",
+        "plan",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--dataset-run",
+        "332d96ea-c5f7-466c-b55b-428a8c8d3163",
+        "--runtime",
+        "C:\\Dev\\SplatForge\\sample_data\\m11-review\\runtime.json",
+        "--settings",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\training-settings.json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T14:24:58.337164+00:00",
+      "wall_seconds": 191.01500000013039,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "components": [
+          {
+            "cache_hit": false
+          }
+        ]
+      }
+    },
+    {
+      "label": "training",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "training",
+        "run",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "--dataset-run",
+        "332d96ea-c5f7-466c-b55b-428a8c8d3163",
+        "--runtime",
+        "C:\\Dev\\SplatForge\\sample_data\\m11-review\\runtime.json",
+        "--settings",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\training-settings.json"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T14:28:09.355032+00:00",
+      "wall_seconds": 539.0629999998491,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "status": "succeeded",
+        "jobs": [
+          {
+            "run_id": "2477d5f1-1368-480a-9583-7c02b688de7d",
+            "status": "succeeded",
+            "cache_hit": false,
+            "artifact": {
+              "artifact_id": "7472e070-084b-4537-90ce-c3345d629104",
+              "artifact_type": "training.checkpoint",
+              "recipe_key": "21feea77997d981eedb7572cca2040c857e53c100a891a1c17a00813fcf1ca04",
+              "semantic_digest": "bf9b0badd0bd0885365c6d3ea52bb0a18a9f843a92218e70f2028e239ed91d0e",
+              "manifest_path": "artifacts/training_checkpoint/7472e070-084b-4537-90ce-c3345d629104/manifest.json"
+            }
+          },
+          {
+            "run_id": "b33ae73c-22b9-4646-8c80-4eebb1937c94",
+            "status": "succeeded",
+            "cache_hit": false,
+            "artifact": {
+              "artifact_id": "c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e",
+              "artifact_type": "training.gaussian_scene",
+              "recipe_key": "a7d65904baf862f1d941f17493f7e15d1cef08b2de9a81fd5de29cb154339b70",
+              "semantic_digest": "52195914505f2d1acd8c1a9811474267d88f98d710feaaba0a13d862b3e5aaa3",
+              "manifest_path": "artifacts/gaussian_scene/c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e/manifest.json"
+            }
+          }
+        ],
+        "scene_set_run": "a23fea17-4602-490b-bcb8-4caf511f8a23",
+        "scene_set": {}
+      }
+    },
+    {
+      "label": "scene-validation",
+      "argv": [
+        "C:\\Dev\\SplatForge\\.venv\\Scripts\\splatforge.exe",
+        "training",
+        "show",
+        "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project",
+        "b33ae73c-22b9-4646-8c80-4eebb1937c94"
+      ],
+      "cwd": "C:\\Dev\\SplatForge",
+      "started_utc": "2026-10-26T14:37:08.420097+00:00",
+      "wall_seconds": 204.73399999993853,
+      "exit_code": 0,
+      "teardown_confirmed": true,
+      "outputs": {
+        "recipe_key": "a7d65904baf862f1d941f17493f7e15d1cef08b2de9a81fd5de29cb154339b70"
+      }
+    }
+  ],
+  "scene_directory": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project\\artifacts\\gaussian_scene\\c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e",
+  "ply_path": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project\\artifacts\\gaussian_scene\\c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e\\scene.ply",
+  "ply_bytes": 514899380,
+  "scene": {
+    "backend": {
+      "compute_capability": [
+        12,
+        0
+      ],
+      "cuda_runtime": "12080",
+      "determinism": "seeded_gpu_not_bitwise_proven",
+      "device_total_bytes": 17094475776,
+      "driver": "610.62",
+      "features": [
+        "default",
+        "absgrad",
+        "antialiased",
+        "mcmc"
+      ],
+      "gpu_name": "NVIDIA GeForce RTX 5080",
+      "gpu_ordinal": 0,
+      "gpu_uuid": "886e6a58-60fa-dc29-87bf-02c3303be36f",
+      "gsplat_commit": "937e29912570c372bed6747a5c9bf85fed877bae",
+      "gsplat_version": "1.5.3",
+      "kernel_backward_optimizer": true,
+      "packages_digest": "46f82c62ba6dabd6ea2149c58fbec4b153c528d5a3eda5b36da96b356d30b28b",
+      "python_sha256": "0b471133e110cfb53a061cad528ce8e517d7b9ac41a0a396c39ad795a487fc14",
+      "python_version": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+      "torch_cuda": "12.8",
+      "torch_version": "2.7.1+cu128",
+      "worker_sha256": "182cae2c48acfb8883864f09501a51d34f06b077b00cd43c1964663cb0b586b5",
+      "worker_version": 1
+    },
+    "backend_numerical_identity": "52e6fd433c841dc8e3929030a17e6e599702c9a76cf9d525b37181e03fde3b2b",
+    "checkpoint_lineage": [
+      "bf9b0badd0bd0885365c6d3ea52bb0a18a9f843a92218e70f2028e239ed91d0e"
+    ],
+    "contract_version": 1,
+    "coordinate_convention": "right_handed_camera_from_world_x_right_y_down_z_forward_wxyz_pixels_center_0.5_v1",
+    "dataset_digest": "b242ca2d368f0c84fff22d25a41bbd0db4f4965ff83691dac75d06dcece948d5",
+    "final_step": 7000,
+    "gaussian_count": 2076201,
+    "method_id": "gsplat.default",
+    "metrics": {
+      "duration_seconds": 149.7970000000205,
+      "evaluation_lpips": null,
+      "evaluation_psnr": 17.500848163257945,
+      "evaluation_ssim": 0.6510546622854291,
+      "evaluation_step": 7000,
+      "evaluation_views": 33,
+      "lpips_status": "unavailable_no_local_weights",
+      "peak_allocated_cuda_bytes": 3289412096,
+      "per_source_group": {
+        "af6aca01-87ce-5516-9521-d52d83256051": {
+          "psnr": 17.500848163257945,
+          "ssim": 0.6510546622854291,
+          "views": 33
+        }
+      },
+      "training_loss": 0.13106520473957062
+    },
+    "numerical_content_digest": "9b847a354b1361d03dafa1ee768fc47e145b9c061ba453ec0870f8a2e33d66c0",
+    "numerical_semantic_digest": "52195914505f2d1acd8c1a9811474267d88f98d710feaaba0a13d862b3e5aaa3",
+    "payload_format": "gaussian_ply_float32_le_v1",
+    "ply_sha256": "af01cac1a564a3515d86ac23b297ef6abbe8a654fab3e4ad64dceac3f1375e87",
+    "ply_size": 514899380,
+    "recipe_key": "a7d65904baf862f1d941f17493f7e15d1cef08b2de9a81fd5de29cb154339b70",
+    "scale": "unknown_arbitrary",
+    "settings": {
+      "antialiased": false,
+      "checkpoint_every": 7000,
+      "data_factor": 2,
+      "evaluation_every": 7000,
+      "far_plane": 10000000000.0,
+      "final_export": true,
+      "init_opacity": 0.1,
+      "initialization": "sfm",
+      "max_steps": 7000,
+      "means_lr": 0.00016,
+      "near_plane": 0.01,
+      "normalize_world_space": false,
+      "opacities_lr": 0.05,
+      "pose_opt": false,
+      "quats_lr": 0.001,
+      "scales_lr": 0.005,
+      "seed": 42,
+      "settings_version": 1,
+      "sh0_lr": 0.0025,
+      "shN_lr": 0.000125,
+      "sh_degree": 3,
+      "sh_degree_interval": 1000,
+      "split": {
+        "held_out_view_ids": [
+          "012a9cad-0919-510b-a6ad-1b1191c61b35",
+          "01becbac-8a6a-53b3-b4b8-e3a646065e48",
+          "05340f50-2441-5ca1-b333-09c632ae05b2",
+          "06ce2c73-df22-587f-9f38-4d85e154fa68",
+          "1b1614b3-1d6f-5757-b888-85d94aafde5f",
+          "25d8b926-b7c4-5d90-b793-96f634b1e0a2",
+          "2a9fee97-5006-590a-9800-d2c3e6c38609",
+          "3077acf9-907c-5d9a-9487-11dd87136dc8",
+          "3550ae76-a10b-5906-a0dc-415315b62a3a",
+          "3e0a4835-d345-590c-b070-52539a680bf3",
+          "3f7999cd-2593-578b-ae8b-96fbf9a52818",
+          "46e8a3dc-f678-59b1-82df-ef840120ea12",
+          "6215ce06-2014-55bd-8d56-9db19b031291",
+          "6540c4a0-d8b4-5913-8b7a-090b81a71274",
+          "7f361640-8554-530b-a719-e710e9b23719",
+          "98182b58-bd1f-5bb1-b526-ac1a3dddfe88",
+          "985eb895-d20c-5cfe-8ffd-f9e477513390",
+          "9a468a64-0efd-5a45-8f0e-0793d72e7392",
+          "9bdc6cf5-2ac7-5136-83af-eb48b293a14d",
+          "a3044d34-626b-5c2a-8a4f-298914bf0055",
+          "a63fc40e-541b-54f1-84f3-94585a24a2a8",
+          "ab8f8260-b0b8-5bcf-8ab4-ac4eaa04dd22",
+          "b0225b39-2457-5f86-879c-1ff2f0d56b86",
+          "b5d0760c-24a6-5539-b439-0654f6cff2d8",
+          "bc6b08d4-c67a-593e-97b3-a5702e2ab59a",
+          "be3bda90-8b19-53dd-a2d4-a45ae73fde9e",
+          "c4f2efcb-b788-5186-82c5-33c86d96c6c7",
+          "cf7baea5-8d75-51d2-b14d-fe349474ddc2",
+          "d2e7dacd-146d-5925-af51-ccf541db779d",
+          "dd39f9b4-2597-58d9-8639-a8343ad84d30",
+          "dd3fdbc5-c83d-51e3-8d8d-c6465ce4a9ce",
+          "efd470b3-c5f0-5cad-afdd-b48399a54605",
+          "ff98b1b6-2b94-52f7-bd85-a82d9148654d"
+        ],
+        "policy": "explicit_views_v1",
+        "warning": "Every eighth original image in natural numeric filename order, starting index 0. SfM uses all 263 frames. Novel-view interpolation with known SfM cameras; not unseen-camera reconstruction or official Tanks & Temples geometry evaluation."
+      },
+      "ssim_weight": 0.2,
+      "strategy": {
+        "absgrad": false,
+        "grow_grad2d": 0.0002,
+        "grow_scale2d": 0.05,
+        "grow_scale3d": 0.01,
+        "prune_opa": 0.005,
+        "prune_scale2d": 0.15,
+        "prune_scale3d": 0.1,
+        "refine_every": 100,
+        "refine_start_iter": 500,
+        "refine_stop_iter": 15000,
+        "reset_every": 3000,
+        "strategy": "default"
+      }
+    },
+    "sh_degree": 3,
+    "warnings": []
+  },
+  "independent_consumer": {
+    "worker_macro_psnr": 17.500848163257945,
+    "independent_minus_worker_psnr": 0.00859670535954038,
+    "consumer": "plyfile",
+    "consumer_version": "1.1.3",
+    "renderer": "gsplat 1.5.3",
+    "independence": "Independent PLY loader/camera assembly; same gsplat rasterization engine",
+    "scene_directory": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project\\artifacts\\gaussian_scene\\c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e",
+    "gaussians": 2076201,
+    "checkpoint_parameters_match": true,
+    "native_export_render_consistency": {
+      "max_abs_difference": 0.0025753378868103027,
+      "mean_abs_difference": 6.29727523460133e-08
+    },
+    "held_out_count": 33,
+    "independent_macro_psnr": 17.509444868617486,
+    "per_view": [
+      {
+        "view_id": "01becbac-8a6a-53b3-b4b8-e3a646065e48",
+        "original_name": "000001.jpg",
+        "psnr": 17.635376102032307,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "efd470b3-c5f0-5cad-afdd-b48399a54605",
+        "original_name": "000009.jpg",
+        "psnr": 18.49634363918447,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "bc6b08d4-c67a-593e-97b3-a5702e2ab59a",
+        "original_name": "000017.jpg",
+        "psnr": 17.606794621413588,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "6540c4a0-d8b4-5913-8b7a-090b81a71274",
+        "original_name": "000025.jpg",
+        "psnr": 18.49896110409943,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "06ce2c73-df22-587f-9f38-4d85e154fa68",
+        "original_name": "000033.jpg",
+        "psnr": 18.36420245232672,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "2a9fee97-5006-590a-9800-d2c3e6c38609",
+        "original_name": "000041.jpg",
+        "psnr": 17.84945384227044,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "012a9cad-0919-510b-a6ad-1b1191c61b35",
+        "original_name": "000049.jpg",
+        "psnr": 18.651148380662825,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "46e8a3dc-f678-59b1-82df-ef840120ea12",
+        "original_name": "000057.jpg",
+        "psnr": 18.32692703136304,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "7f361640-8554-530b-a719-e710e9b23719",
+        "original_name": "000065.jpg",
+        "psnr": 16.821512795050783,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "dd39f9b4-2597-58d9-8639-a8343ad84d30",
+        "original_name": "000073.jpg",
+        "psnr": 16.700957970098493,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "3550ae76-a10b-5906-a0dc-415315b62a3a",
+        "original_name": "000081.jpg",
+        "psnr": 15.77719180217342,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "d2e7dacd-146d-5925-af51-ccf541db779d",
+        "original_name": "000089.jpg",
+        "psnr": 15.068848737050933,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "3f7999cd-2593-578b-ae8b-96fbf9a52818",
+        "original_name": "000097.jpg",
+        "psnr": 17.613346267194885,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "ff98b1b6-2b94-52f7-bd85-a82d9148654d",
+        "original_name": "000105.jpg",
+        "psnr": 18.514756858652195,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "9a468a64-0efd-5a45-8f0e-0793d72e7392",
+        "original_name": "000113.jpg",
+        "psnr": 18.610944620531605,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "c4f2efcb-b788-5186-82c5-33c86d96c6c7",
+        "original_name": "000121.jpg",
+        "psnr": 17.54922631767721,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "05340f50-2441-5ca1-b333-09c632ae05b2",
+        "original_name": "000129.jpg",
+        "psnr": 17.368745992816766,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "a63fc40e-541b-54f1-84f3-94585a24a2a8",
+        "original_name": "000137.jpg",
+        "psnr": 18.552701346527783,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "9bdc6cf5-2ac7-5136-83af-eb48b293a14d",
+        "original_name": "000145.jpg",
+        "psnr": 14.094005433550372,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "be3bda90-8b19-53dd-a2d4-a45ae73fde9e",
+        "original_name": "000153.jpg",
+        "psnr": 18.817903611477526,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "985eb895-d20c-5cfe-8ffd-f9e477513390",
+        "original_name": "000161.jpg",
+        "psnr": 19.23387865294498,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "b0225b39-2457-5f86-879c-1ff2f0d56b86",
+        "original_name": "000169.jpg",
+        "psnr": 19.270075892762954,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "6215ce06-2014-55bd-8d56-9db19b031291",
+        "original_name": "000177.jpg",
+        "psnr": 18.326089265707164,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "3e0a4835-d345-590c-b070-52539a680bf3",
+        "original_name": "000185.jpg",
+        "psnr": 18.4331293832232,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "b5d0760c-24a6-5539-b439-0654f6cff2d8",
+        "original_name": "000193.jpg",
+        "psnr": 12.89556152052938,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "cf7baea5-8d75-51d2-b14d-fe349474ddc2",
+        "original_name": "000201.jpg",
+        "psnr": 17.80524568084541,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "25d8b926-b7c4-5d90-b793-96f634b1e0a2",
+        "original_name": "000209.jpg",
+        "psnr": 17.88201497869266,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "1b1614b3-1d6f-5757-b888-85d94aafde5f",
+        "original_name": "000217.jpg",
+        "psnr": 15.612265111464822,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "a3044d34-626b-5c2a-8a4f-298914bf0055",
+        "original_name": "000225.jpg",
+        "psnr": 17.485785823810215,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "ab8f8260-b0b8-5bcf-8ab4-ac4eaa04dd22",
+        "original_name": "000233.jpg",
+        "psnr": 16.64856605301746,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "3077acf9-907c-5d9a-9487-11dd87136dc8",
+        "original_name": "000241.jpg",
+        "psnr": 18.148899984610566,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "dd3fdbc5-c83d-51e3-8d8d-c6465ce4a9ce",
+        "original_name": "000249.jpg",
+        "psnr": 18.716114785508054,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "98182b58-bd1f-5bb1-b526-ac1a3dddfe88",
+        "original_name": "000257.jpg",
+        "psnr": 16.434704605105406,
+        "width": 986,
+        "height": 555
+      }
+    ],
+    "comparison_sheets": [
+      "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\visuals\\comparisons-1.png",
+      "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\visuals\\comparisons-2.png"
+    ],
+    "six_original_names": [
+      "000001.jpg",
+      "000049.jpg",
+      "000105.jpg",
+      "000153.jpg",
+      "000209.jpg",
+      "000257.jpg"
+    ]
+  },
+  "original_comparisons": {
+    "source_images_unchanged": true,
+    "note": "Raw original JPEG against undistorted render; geometric warp differs. Metrics and pixel comparisons use the separate M10 reference sheets.",
+    "six_original_names": [
+      "000001.jpg",
+      "000049.jpg",
+      "000105.jpg",
+      "000153.jpg",
+      "000209.jpg",
+      "000257.jpg"
+    ],
+    "sheets": [
+      "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\visuals\\original-comparisons-1.png",
+      "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\visuals\\original-comparisons-2.png"
+    ]
+  },
+  "verification": {
+    "pytest": "1608 passed, 72 skipped, 51 warnings in 3847.17 seconds",
+    "pytest_runner_seconds": 3848.7029999999795,
+    "ruff_full": "pre-existing E501 src/splatforge/core/registry.py:52; changed Python files pass"
+  },
+  "reconstruction_validation": {
+    "report": {
+      "contract_version": 1,
+      "reconstruction_digest": "c291640d082571e48838673889cc5b3e246766a9153981539140378f9b40c3b6",
+      "metrics_digest": "db0431ce3aa10005f486a1550e293fc669aac0082aefb24d8c88c0cb5730a645",
+      "policy": {
+        "policy_id": "baseline_v1",
+        "policy_version": 1,
+        "minimum_viable_cameras": 3,
+        "warn_registration_below": 0.7,
+        "warn_largest_coverage_below": 0.6,
+        "warn_source_group_below": 0.25,
+        "warn_registered_outside_largest_above": 0.25,
+        "warn_focal_ratio_below": 0.1,
+        "warn_focal_ratio_above": 10.0,
+        "warn_principal_offset_above": 0.5,
+        "warn_distortion_abs_above": 1.0,
+        "warn_focal_change_above": 0.5,
+        "warn_sharing_mismatch_above": 0,
+        "warn_reprojection_p95_above": 4.0,
+        "warn_triangulation_median_below": 1.0,
+        "warn_two_view_fraction_above": 0.8,
+        "fail_registration_below": null,
+        "fail_component_coverage_below": null,
+        "fail_source_group_below": null,
+        "fail_reprojection_p95_above": null,
+        "fail_triangulation_median_below": null,
+        "required_metrics": []
+      },
+      "status": "pass",
+      "project_status": "pass",
+      "components": [
+        {
+          "component_id": "80f4d3c0-d0a4-5503-8b2c-c92728a3043d",
+          "status": "pass"
+        }
+      ],
+      "issues": [],
+      "unknown_metrics": [],
+      "semantic_digest": "b04c9b84794ca9e86b1e16edbb454a678d6cb8a74349ccd3a668060fb1862e9a"
+    },
+    "metrics": {
+      "contract_version": 1,
+      "reconstruction_digest": "c291640d082571e48838673889cc5b3e246766a9153981539140378f9b40c3b6",
+      "universe_digest": "4f8eac9b3e344d6dca24e2b3f170de27885fdf181b3dd89607bff579a9c0b397",
+      "geometry": {
+        "contract_version": 1,
+        "reconstruction_digest": "c291640d082571e48838673889cc5b3e246766a9153981539140378f9b40c3b6",
+        "components": [
+          {
+            "component_id": "80f4d3c0-d0a4-5503-8b2c-c92728a3043d",
+            "component_semantic_digest": "4a7e889eb7c0e9c9338225b71112b958f4547cd7c9f634d9bc80d7edc4442d9a",
+            "content_digest": "2e68a1e77b64b9a1d085a9be8c02ba193d0a37b9c56116d6930cfac58af7b6d0",
+            "reference_digest": "89cfc1b130b0ee4f2b874d6d121074d1fed7685e3a182fec42d8cec654657488",
+            "points_available": true,
+            "tracks_available": true,
+            "point_count": 123891
+          }
+        ]
+      },
+      "settings": {
+        "method_id": "validation.sparse_measurements_v1",
+        "settings_version": 1,
+        "quantile_sample_bound": 10000,
+        "triangulation_ray_bound": 16,
+        "low_angle_degrees": 1.0,
+        "long_track_min_length": 10,
+        "projection_version": 1,
+        "quantile_method": "sha256_bottom_k_nearest_rank_v1",
+        "triangulation_method": "max_acute_angle_bounded_uuid_rays_v1"
+      },
+      "registration": {
+        "input_views": 263,
+        "registered_views": 263,
+        "ratio": 1.0
+      },
+      "unregistered_count": 0,
+      "component_count": 1,
+      "component_sizes": [
+        263
+      ],
+      "largest_component": {
+        "input_views": 263,
+        "registered_views": 263,
+        "ratio": 1.0
+      },
+      "second_largest_component": null,
+      "registered_outside_largest_fraction": 0.0,
+      "source_groups": [
+        {
+          "group_id": "af6aca01-87ce-5516-9521-d52d83256051",
+          "overall": {
+            "input_views": 263,
+            "registered_views": 263,
+            "ratio": 1.0
+          },
+          "components": [
+            {
+              "component_id": "80f4d3c0-d0a4-5503-8b2c-c92728a3043d",
+              "coverage": {
+                "input_views": 263,
+                "registered_views": 263,
+                "ratio": 1.0
+              }
+            }
+          ]
+        }
+      ],
+      "components": [
+        {
+          "component_id": "80f4d3c0-d0a4-5503-8b2c-c92728a3043d",
+          "component_semantic_digest": "4a7e889eb7c0e9c9338225b71112b958f4547cd7c9f634d9bc80d7edc4442d9a",
+          "geometry_digest": "2e68a1e77b64b9a1d085a9be8c02ba193d0a37b9c56116d6930cfac58af7b6d0",
+          "registration": {
+            "input_views": 263,
+            "registered_views": 263,
+            "ratio": 1.0
+          },
+          "source_count": 263,
+          "source_group_count": 1,
+          "camera_group_count": 1,
+          "camera_models": [
+            {
+              "model": "SIMPLE_RADIAL",
+              "count": 1
+            }
+          ],
+          "track_histogram": [
+            {
+              "length": 2,
+              "count": 3190
+            },
+            {
+              "length": 3,
+              "count": 36252
+            },
+            {
+              "length": 4,
+              "count": 21198
+            },
+            {
+              "length": 5,
+              "count": 13946
+            },
+            {
+              "length": 6,
+              "count": 9647
+            },
+            {
+              "length": 7,
+              "count": 7045
+            },
+            {
+              "length": 8,
+              "count": 5274
+            },
+            {
+              "length": 9,
+              "count": 4227
+            },
+            {
+              "length": 10,
+              "count": 3386
+            },
+            {
+              "length": 11,
+              "count": 2748
+            },
+            {
+              "length": 12,
+              "count": 2288
+            },
+            {
+              "length": 13,
+              "count": 1902
+            },
+            {
+              "length": 14,
+              "count": 1657
+            },
+            {
+              "length": 15,
+              "count": 1405
+            },
+            {
+              "length": 16,
+              "count": 1180
+            },
+            {
+              "length": 17,
+              "count": 1022
+            },
+            {
+              "length": 18,
+              "count": 890
+            },
+            {
+              "length": 19,
+              "count": 778
+            },
+            {
+              "length": 20,
+              "count": 741
+            },
+            {
+              "length": 21,
+              "count": 603
+            },
+            {
+              "length": 22,
+              "count": 489
+            },
+            {
+              "length": 23,
+              "count": 456
+            },
+            {
+              "length": 24,
+              "count": 438
+            },
+            {
+              "length": 25,
+              "count": 352
+            },
+            {
+              "length": 26,
+              "count": 333
+            },
+            {
+              "length": 27,
+              "count": 286
+            },
+            {
+              "length": 28,
+              "count": 251
+            },
+            {
+              "length": 29,
+              "count": 235
+            },
+            {
+              "length": 30,
+              "count": 188
+            },
+            {
+              "length": 31,
+              "count": 197
+            },
+            {
+              "length": 32,
+              "count": 179
+            },
+            {
+              "length": 33,
+              "count": 138
+            },
+            {
+              "length": 34,
+              "count": 117
+            },
+            {
+              "length": 35,
+              "count": 116
+            },
+            {
+              "length": 36,
+              "count": 106
+            },
+            {
+              "length": 37,
+              "count": 76
+            },
+            {
+              "length": 38,
+              "count": 82
+            },
+            {
+              "length": 39,
+              "count": 66
+            },
+            {
+              "length": 40,
+              "count": 55
+            },
+            {
+              "length": 41,
+              "count": 56
+            },
+            {
+              "length": 42,
+              "count": 39
+            },
+            {
+              "length": 43,
+              "count": 36
+            },
+            {
+              "length": 44,
+              "count": 23
+            },
+            {
+              "length": 45,
+              "count": 30
+            },
+            {
+              "length": 46,
+              "count": 26
+            },
+            {
+              "length": 47,
+              "count": 25
+            },
+            {
+              "length": 48,
+              "count": 19
+            },
+            {
+              "length": 49,
+              "count": 10
+            },
+            {
+              "length": 50,
+              "count": 9
+            },
+            {
+              "length": 51,
+              "count": 12
+            },
+            {
+              "length": 52,
+              "count": 13
+            },
+            {
+              "length": 53,
+              "count": 7
+            },
+            {
+              "length": 54,
+              "count": 2
+            },
+            {
+              "length": 55,
+              "count": 7
+            },
+            {
+              "length": 56,
+              "count": 3
+            },
+            {
+              "length": 57,
+              "count": 5
+            },
+            {
+              "length": 58,
+              "count": 3
+            },
+            {
+              "length": 59,
+              "count": 3
+            },
+            {
+              "length": 60,
+              "count": 4
+            },
+            {
+              "length": 61,
+              "count": 5
+            },
+            {
+              "length": 62,
+              "count": 1
+            },
+            {
+              "length": 63,
+              "count": 1
+            },
+            {
+              "length": 65,
+              "count": 2
+            },
+            {
+              "length": 67,
+              "count": 2
+            },
+            {
+              "length": 69,
+              "count": 1
+            },
+            {
+              "length": 70,
+              "count": 1
+            },
+            {
+              "length": 71,
+              "count": 1
+            },
+            {
+              "length": 76,
+              "count": 2
+            },
+            {
+              "length": 78,
+              "count": 1
+            },
+            {
+              "length": 83,
+              "count": 1
+            },
+            {
+              "length": 90,
+              "count": 1
+            },
+            {
+              "length": 119,
+              "count": 1
+            }
+          ],
+          "measurements": [
+            {
+              "name": "camera.distortion_abs_max",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.028477217553201192,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "camera.focal_change_max",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.13705206055569774,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "camera.focal_ratio_max",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.6040635576110116,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "camera.focal_ratio_min",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.6040635576110116,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "camera.principal_offset_max",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.0,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "camera.sharing_mismatch_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 0,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "point.count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 123891,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection.max",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 3.997479314922844,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection.mean",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.9142017007949238,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection.median",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 0.7660465488811598,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection.min",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 2.4768729736471883e-06,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection.p90",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 1.755703869914397,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection.p95",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 2.1637536669719926,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection.p99",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 2.9756112568826105,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection.rms",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 1.106647555001488,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection.supported_observation_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 844227,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection.undefined_observation_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 0,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection_supported.max",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 3.997479314922844,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection_supported.mean",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.9142017007949238,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection_supported.median",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 0.7660465488811598,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection_supported.min",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 2.4768729736471883e-06,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "reprojection_supported.p90",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 1.755703869914397,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection_supported.p95",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 2.1637536669719926,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection_supported.p99",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "sampled",
+                "value": 2.9756112568826105,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 844227,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "reprojection_supported.rms",
+              "unit": "pixels",
+              "evidence": {
+                "availability": "exact",
+                "value": 1.106647555001488,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.long_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 23112,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.long_fraction",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.18655108119233843,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.max",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 119,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.mean",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 6.81427222316391,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.median",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 5,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.min",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 2,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.observation_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 844227,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.observations_per_view",
+              "unit": "observations_per_view",
+              "evidence": {
+                "availability": "exact",
+                "value": 3209.9885931558933,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.p90",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 14,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.two_view_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 3190,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "track.two_view_fraction",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "exact",
+                "value": 0.025748440161109363,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "triangulation.low_angle_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "sampled",
+                "value": 0,
+                "reason": null,
+                "sampling": {
+                  "method": "uuid_bounded_rays_v1",
+                  "sample_count": 3039394,
+                  "population_count": 4678530,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "triangulation.low_angle_fraction",
+              "unit": "ratio",
+              "evidence": {
+                "availability": "sampled",
+                "value": 0.0,
+                "reason": null,
+                "sampling": {
+                  "method": "uuid_bounded_rays_v1",
+                  "sample_count": 3039394,
+                  "population_count": 4678530,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "triangulation.max",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 89.99916464982984,
+                "reason": null,
+                "sampling": {
+                  "method": "uuid_bounded_rays_v1",
+                  "sample_count": 3039394,
+                  "population_count": 4678530,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "triangulation.mean",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 14.723624812042393,
+                "reason": null,
+                "sampling": {
+                  "method": "uuid_bounded_rays_v1",
+                  "sample_count": 3039394,
+                  "population_count": 4678530,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "triangulation.median",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 7.628011959244714,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 123891,
+                  "upstream": {
+                    "method": "uuid_bounded_rays_v1",
+                    "sample_count": 3039394,
+                    "population_count": 4678530,
+                    "upstream": null
+                  }
+                }
+              }
+            },
+            {
+              "name": "triangulation.min",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 1.046994882372274,
+                "reason": null,
+                "sampling": {
+                  "method": "uuid_bounded_rays_v1",
+                  "sample_count": 3039394,
+                  "population_count": 4678530,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "triangulation.p90",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 38.954711680991245,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 123891,
+                  "upstream": {
+                    "method": "uuid_bounded_rays_v1",
+                    "sample_count": 3039394,
+                    "population_count": 4678530,
+                    "upstream": null
+                  }
+                }
+              }
+            },
+            {
+              "name": "triangulation.p95",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 59.327137374743195,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 123891,
+                  "upstream": {
+                    "method": "uuid_bounded_rays_v1",
+                    "sample_count": 3039394,
+                    "population_count": 4678530,
+                    "upstream": null
+                  }
+                }
+              }
+            },
+            {
+              "name": "triangulation.p99",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 88.43248303362049,
+                "reason": null,
+                "sampling": {
+                  "method": "sha256_bottom_k_v1",
+                  "sample_count": 10000,
+                  "population_count": 123891,
+                  "upstream": {
+                    "method": "uuid_bounded_rays_v1",
+                    "sample_count": 3039394,
+                    "population_count": 4678530,
+                    "upstream": null
+                  }
+                }
+              }
+            },
+            {
+              "name": "triangulation.point_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 123891,
+                "reason": null,
+                "sampling": null
+              }
+            },
+            {
+              "name": "triangulation.rms",
+              "unit": "degrees",
+              "evidence": {
+                "availability": "sampled",
+                "value": 23.144636004588456,
+                "reason": null,
+                "sampling": {
+                  "method": "uuid_bounded_rays_v1",
+                  "sample_count": 3039394,
+                  "population_count": 4678530,
+                  "upstream": null
+                }
+              }
+            },
+            {
+              "name": "triangulation.unmeasurable_point_count",
+              "unit": "count",
+              "evidence": {
+                "availability": "exact",
+                "value": 0,
+                "reason": null,
+                "sampling": null
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "individual_source_metrics_omitted": 263,
+    "full_evidence_path": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\validation-details.stdout.json"
+  },
+  "pre_training_audit": {
+    "dataset_directory": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project\\artifacts\\dataset_component\\645d80f8-6cd4-4a66-9a3f-6252dc72b018",
+    "dataset_digest": "b242ca2d368f0c84fff22d25a41bbd0db4f4965ff83691dac75d06dcece948d5",
+    "image_count": 263,
+    "camera_count": 1,
+    "cameras": [
+      {
+        "camera_id": "ae1e7b10-4429-5cd9-bb15-19ec8ab943b1",
+        "model": "PINHOLE",
+        "width": 1973,
+        "height": 1110,
+        "parameters": [
+          1159.8020306131423,
+          1159.8020306131423,
+          986.5,
+          555.0
+        ]
+      }
+    ],
+    "camera_convention": "right_handed_camera_from_world_x_right_y_down_z_forward_wxyz_pixels_center_0.5_v1",
+    "scale": "unknown_arbitrary",
+    "point_count": 123891,
+    "point_xyz_bounds": [
+      [
+        -177.9803300656389,
+        92.0500739095719
+      ],
+      [
+        -36.16930944139195,
+        15.580650798865323
+      ],
+      [
+        -117.68348095301897,
+        104.3071573243617
+      ]
+    ],
+    "sparse_observations": 844227,
+    "sparse_unique_rgb_count": 1,
+    "sparse_black_point_count": 123891,
+    "sparse_rgb_most_common": [
+      {
+        "rgb": [
+          0,
+          0,
+          0
+        ],
+        "count": 123891
+      }
+    ],
+    "rgb_note": "Incremental route explicitly disables color extraction. Zero RGB is preserved, not replaced or claimed measured scene color.",
+    "resolutions": {
+      "1973x1110": 263
+    },
+    "data_factor": 2,
+    "training_image_cache_bytes_if_all_train_fit": 377588700,
+    "resolution_decision": "Explicit factor 2 for this 7k diagnostic pilot: reduce rasterization load and keep the training image CPU cache near its bounded 512 MiB capacity; RTX 5080 capability positively verified with 16 GiB VRAM. No OOM fallback.",
+    "independent_dataset_reader": "passed full hashes, decode, cameras, poses, sparse reciprocal tracks",
+    "held_out_count": 33,
+    "train_count": 230,
+    "sfm_used_all_263": true
+  },
+  "training_view_diagnostic": {
+    "reference_33_eval_psnr": 17.500848163257945,
+    "diagnostic_train_minus_33_eval_psnr": 0.6330907122442895,
+    "consumer": "plyfile",
+    "consumer_version": "1.1.3",
+    "renderer": "gsplat 1.5.3",
+    "independence": "Independent PLY loader/camera assembly; same gsplat rasterization engine",
+    "scene_directory": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\project\\artifacts\\gaussian_scene\\c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e",
+    "gaussians": 2076201,
+    "checkpoint_parameters_match": true,
+    "native_export_render_consistency": {
+      "max_abs_difference": 0.003629237413406372,
+      "mean_abs_difference": 6.601178625942339e-08
+    },
+    "diagnostic_train_count": 6,
+    "diagnostic_train_macro_psnr": 18.133938875502235,
+    "per_view": [
+      {
+        "view_id": "388157eb-285f-5146-9afd-0f96d75d51ec",
+        "original_name": "000002.jpg",
+        "psnr": 17.998120860953822,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "9679fae9-39a7-56b6-8f10-210101446ac7",
+        "original_name": "000050.jpg",
+        "psnr": 19.31074258030989,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "7ff9c294-0ebe-5002-af38-49c4c248b6c2",
+        "original_name": "000106.jpg",
+        "psnr": 18.823063761091902,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "7d96dd7e-8739-5ade-a145-95de8d38d431",
+        "original_name": "000154.jpg",
+        "psnr": 18.5184334761019,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "d93a518a-b6c4-5ce1-9056-84a3b719a4c2",
+        "original_name": "000210.jpg",
+        "psnr": 16.02484301299978,
+        "width": 986,
+        "height": 555
+      },
+      {
+        "view_id": "d0fdc744-52d2-5a38-8e75-77158d249d6d",
+        "original_name": "000258.jpg",
+        "psnr": 18.12842956155612,
+        "width": 986,
+        "height": 555
+      }
+    ],
+    "comparison_sheets": [
+      "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\train-diagnostic-visuals\\comparisons-1.png",
+      "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\train-diagnostic-visuals\\comparisons-2.png"
+    ],
+    "six_original_names": [
+      "000002.jpg",
+      "000050.jpg",
+      "000106.jpg",
+      "000154.jpg",
+      "000210.jpg",
+      "000258.jpg"
+    ]
+  },
+  "quality_verdict": {
+    "technical_route_completed": true,
+    "full_scene_visual_quality_accepted": false,
+    "findings": [
+      "Recognizable aligned statue and plausible bronze colors.",
+      "Substantial lawn/foliage/water blur, lost paving detail, bright smears.",
+      "Upper-right green/yellow floaters and elongated upper-frame splats in 000001 and train 000002.",
+      "No observed gross pose flip or PLY/checkpoint corruption; exact cause of limited fitting is not uniquely isolated."
+    ],
+    "next_experiment": "One fresh 30000-step Ignatius recipe with exact dataset, seed, factor and split, before claiming quality acceptance or using Truck as a quality confirmation."
+  },
+  "retained_attempts": [
+    {
+      "label": "views",
+      "wall_seconds": 1.0160000000614673,
+      "exit_code": 1,
+      "teardown_confirmed": true,
+      "status": "preflight_refused",
+      "run_id": null,
+      "evidence_prefix": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\views"
+    },
+    {
+      "label": "features",
+      "wall_seconds": 28.780999999959022,
+      "exit_code": 1,
+      "teardown_confirmed": true,
+      "status": "failed",
+      "run_id": null,
+      "evidence_prefix": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\features",
+      "component_run_id": "f369c004-5baf-4608-9290-17c9c46a3815"
+    },
+    {
+      "label": "features-fixed",
+      "wall_seconds": 29.530999999959022,
+      "exit_code": 1,
+      "teardown_confirmed": true,
+      "status": "failed",
+      "run_id": null,
+      "evidence_prefix": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\features-fixed",
+      "component_run_id": "9b6fedb2-0897-44f1-a193-e2e60d42e372"
+    },
+    {
+      "label": "matches",
+      "wall_seconds": 10.609999999869615,
+      "exit_code": 1,
+      "teardown_confirmed": true,
+      "status": "preflight_refused",
+      "run_id": null,
+      "evidence_prefix": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\matches"
+    },
+    {
+      "label": "dataset",
+      "wall_seconds": 799.0779999999795,
+      "exit_code": 2,
+      "teardown_confirmed": true,
+      "status": "cancelled",
+      "run_id": "8345d769-5ac2-4894-8d43-fc5c7d51d9e6",
+      "evidence_prefix": "C:\\SplatForgeData\\benchmarks\\tanks-and-temples\\Ignatius\\pilot-20261026\\dataset",
+      "component_run_id": "8345d769-5ac2-4894-8d43-fc5c7d51d9e6"
+    }
+  ],
+  "artifact_references": [
+    {
+      "artifact_id": "f9737d2d-b1ce-43a8-8751-4cea7e53258f",
+      "artifact_type": "views.candidate_set",
+      "contract_version": 1,
+      "recipe_key": "5e7b3520db2450f6b5df65e715bc8e202d5a249c75c2eaade232619200b45585",
+      "semantic_digest": "c375db622140e5f4b17399a16c1f0fdaa53be11af024c0cef52f54fe2c9baed4",
+      "manifest_path": "artifacts/candidate_views/f9737d2d-b1ce-43a8-8751-4cea7e53258f/manifest.json"
+    },
+    {
+      "artifact_id": "ef90cb6f-e84f-4008-8a4c-74c4852a33dd",
+      "artifact_type": "views.selected_set",
+      "contract_version": 1,
+      "recipe_key": "a8ea3b0c499dc3b31f0927c29ff0042b9f9d2895aef4c56e1a3b5eb7e7f898f0",
+      "semantic_digest": "b973da30db75f528bf6379b90a5fe8f57eaa21335140706cc2ac07feeaa08fe0",
+      "manifest_path": "artifacts/selected_views/ef90cb6f-e84f-4008-8a4c-74c4852a33dd/manifest.json"
+    },
+    {
+      "artifact_id": "8dd046b6-2bc8-4192-85ed-01bdc2f67b53",
+      "artifact_type": "pairs.pair_set",
+      "contract_version": 1,
+      "recipe_key": "cf88729a977c8c64e5e8afe509a5f53fa4cee727ccc873aedac3b136c475345e",
+      "semantic_digest": "f16f2846146e9817c032845128b7fadc68e364d5c7dcf6abedc0339121a80598",
+      "manifest_path": "artifacts/pair_set/8dd046b6-2bc8-4192-85ed-01bdc2f67b53/manifest.json"
+    },
+    {
+      "artifact_id": "2d273be9-375f-48ec-bddb-d9483ffe053b",
+      "artifact_type": "features.local_feature_set",
+      "contract_version": 1,
+      "recipe_key": "4f914820108141385c7ad083785acb02bbe2a90af5bad6c8582df2c70d6ba2ba",
+      "semantic_digest": "53652e5e402941f23b84a2abef87f0968e40b63d89049675c912f5b5f3980990",
+      "manifest_path": "artifacts/local_features/2d273be9-375f-48ec-bddb-d9483ffe053b/manifest.json"
+    },
+    {
+      "artifact_id": "8aed5621-1eb7-4e7c-83a3-c1591af33f85",
+      "artifact_type": "matching.match_set",
+      "contract_version": 1,
+      "recipe_key": "3488899fb3dc17d6004ddc44e7d3e4ae0a798239a86c2f79ed54a56958a860cf",
+      "semantic_digest": "edb206745f5fbced0f2599bed811a54563e4a7a702aa46d43fd62055c9e83ee5",
+      "manifest_path": "artifacts/raw_matches/8aed5621-1eb7-4e7c-83a3-c1591af33f85/manifest.json"
+    },
+    {
+      "artifact_id": "1c78db84-fc57-4d96-98ba-f4a1cd9c5beb",
+      "artifact_type": "geometry.verified_geometry_set",
+      "contract_version": 1,
+      "recipe_key": "31acc1bd7c8ab93ef838cdb63abf3a06bced9171f836857c42c45e1265143290",
+      "semantic_digest": "9f803010ab33a48b35527529405d9f7b47d94f1b7541743a44b8eadb3b9bef4e",
+      "manifest_path": "artifacts/verified_geometry/1c78db84-fc57-4d96-98ba-f4a1cd9c5beb/manifest.json"
+    },
+    {
+      "artifact_id": "58adea2d-df98-48df-ba5d-a1ec9bd59fa3",
+      "artifact_type": "mapping.reconstruction_set",
+      "contract_version": 1,
+      "recipe_key": "6568ff5ca5772de644c033c9e552b7fd4995f4559a81b16c1f17b006c87ff345",
+      "semantic_digest": "c291640d082571e48838673889cc5b3e246766a9153981539140378f9b40c3b6",
+      "manifest_path": "artifacts/reconstruction/58adea2d-df98-48df-ba5d-a1ec9bd59fa3/manifest.json"
+    },
+    {
+      "artifact_id": "e4cac607-b85f-4290-96b0-d272f897e590",
+      "artifact_type": "validation.geometry_input",
+      "contract_version": 1,
+      "recipe_key": "ebea7b604aba62ab362f70aec0184eca70e99255c5d4b6b0d9862b6820c1339a",
+      "semantic_digest": "046f4b5296a06409090b84c5f4e79ee15cd18298f2caa690676f7a2f3d824c60",
+      "manifest_path": "artifacts/validation_geometry/e4cac607-b85f-4290-96b0-d272f897e590/manifest.json"
+    },
+    {
+      "artifact_id": "3c199921-1ad1-4aee-a939-71b02d775a57",
+      "artifact_type": "validation.reconstruction_metrics",
+      "contract_version": 1,
+      "recipe_key": "c12f7e2d8edc866a34d963f8c139164ec30a560e85a765f651d5b35c72fe5b27",
+      "semantic_digest": "db0431ce3aa10005f486a1550e293fc669aac0082aefb24d8c88c0cb5730a645",
+      "manifest_path": "artifacts/reconstruction_metrics/3c199921-1ad1-4aee-a939-71b02d775a57/manifest.json"
+    },
+    {
+      "artifact_id": "fd60e0b0-065b-4782-8676-064540c337e4",
+      "artifact_type": "validation.reconstruction_report",
+      "contract_version": 1,
+      "recipe_key": "76342e9c680bbc507e3939f8a2a53631bfbf8cc37c6369572b3c129c64d9e5b4",
+      "semantic_digest": "b04c9b84794ca9e86b1e16edbb454a678d6cb8a74349ccd3a668060fb1862e9a",
+      "manifest_path": "artifacts/reconstruction_validation/fd60e0b0-065b-4782-8676-064540c337e4/manifest.json"
+    },
+    {
+      "artifact_id": "39d7945c-e3c1-48b2-83e7-bf5ae28cf03b",
+      "artifact_type": "reconstruction.selection",
+      "contract_version": 1,
+      "recipe_key": "8de9d740b07987ae482ac144a25bc88b4b30aea10636d41e6c2aa8877dc811e7",
+      "semantic_digest": "1f97baa4651d94371952b6259853e5c2b3e872a64f95737cd4a18b450dea23c1",
+      "manifest_path": "artifacts/reconstruction_selection/39d7945c-e3c1-48b2-83e7-bf5ae28cf03b/manifest.json"
+    },
+    {
+      "artifact_id": "a4bac46b-0cff-477b-bdc5-fc8eb4643615",
+      "artifact_type": "dataset.prepared_set",
+      "contract_version": 1,
+      "recipe_key": "d6728fd5080c85550e399d0d13e673e9d6753ca15d071db9f073213cfcb3cfb1",
+      "semantic_digest": "2f3e93c11161f95ff4cdeb3a227561223206a70ccab2d1d0a44a5927592b92a0",
+      "manifest_path": "artifacts/dataset_set/a4bac46b-0cff-477b-bdc5-fc8eb4643615/manifest.json"
+    },
+    {
+      "artifact_id": "645d80f8-6cd4-4a66-9a3f-6252dc72b018",
+      "artifact_type": "dataset.prepared_component",
+      "contract_version": 1,
+      "recipe_key": "2e45290dfe1b8b1dec52755cec4f241c5ef8864e3b9e5d0c9df7d72ed9af6540",
+      "semantic_digest": "b242ca2d368f0c84fff22d25a41bbd0db4f4965ff83691dac75d06dcece948d5",
+      "manifest_path": "artifacts/dataset_component/645d80f8-6cd4-4a66-9a3f-6252dc72b018/manifest.json"
+    },
+    {
+      "artifact_id": "7472e070-084b-4537-90ce-c3345d629104",
+      "artifact_type": "training.checkpoint",
+      "contract_version": 1,
+      "recipe_key": "21feea77997d981eedb7572cca2040c857e53c100a891a1c17a00813fcf1ca04",
+      "semantic_digest": "bf9b0badd0bd0885365c6d3ea52bb0a18a9f843a92218e70f2028e239ed91d0e",
+      "manifest_path": "artifacts/training_checkpoint/7472e070-084b-4537-90ce-c3345d629104/manifest.json"
+    },
+    {
+      "artifact_id": "c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e",
+      "semantic_digest": "52195914505f2d1acd8c1a9811474267d88f98d710feaaba0a13d862b3e5aaa3",
+      "manifest_path": "artifacts/gaussian_scene/c3f83b30-72da-42c5-ad45-7f1c1b6b6e7e/manifest.json"
+    }
+  ],
+  "timing_breakdown": {
+    "timing_basis": "CLI wall time; native process elapsed_seconds and persisted attempt intervals. Early stages ran concurrently with pytest; not isolated CPU profiles.",
+    "geometric_verification": {
+      "command_wall_seconds": 394.406,
+      "native_verifier_seconds": 318.235,
+      "remaining_wall_seconds": 76.171,
+      "native_evidence": "project/runs/8f310d36-6c06-446f-b83c-23412ea9174b/attempts/cb92c22b-ff7c-49a9-b8b3-ee74cdf92e92/process.jsonl"
+    },
+    "m9": {
+      "command_wall_seconds": 537.047,
+      "geometry_attempt_seconds": 261.754512,
+      "measurement_attempt_seconds": 240.693217,
+      "policy_report_attempt_seconds": 0.173928,
+      "remaining_wall_seconds": 34.425343,
+      "note": "Attempt durations include validation/publication. Geometry and measurement each create a canonical disk-backed observation/point index."
+    },
+    "m10": {
+      "command_wall_seconds": 694.125,
+      "native_undistorter_seconds": 32.281,
+      "remaining_wall_seconds": 661.844,
+      "component_attempt_seconds": 466.37604,
+      "native_evidence": "project/runs/b4873e10-eb1c-480c-b8c3-2e31338c1dcc/attempts/a45b00b9-d62f-4af0-ada3-b0eee26367e0/process.jsonl",
+      "note": "Remainder includes copies, sparse transport, hashes, repeated sparse/image validation and publication. Per-function allocation of this remainder is not yet profiled."
+    }
+  }
+}

@@ -24,7 +24,9 @@ from splatforge.core.sfm_profiles import (
     ResolvedFeatureMatchingRoute,
     SfmQualityProfile,
 )
+from splatforge.core.source_participation import resolve_effective_sources
 from splatforge.core.validation_policy import ReconstructionValidationPolicy
+from splatforge.core.video_usage import usable_video_sources
 from splatforge.core.views import (
     CandidateEncodingSettings,
     CandidatePoolSettings,
@@ -161,8 +163,23 @@ def plan_reconstruction(
     )
     overview = facade.overview(root)
     warnings = []
-    if not overview.sources and request.views_run is None:
-        warnings.append("No registered sources or explicit published views run")
+    if request.views_run is None:
+        try:
+            source_ids = resolve_effective_sources(
+                (source.identity for source in overview.sources),
+                overview.document.source_participation,
+            ).processing_source_ids()
+            inventory = facade.service("media").list(root, document=overview.document)
+            sources = tuple(s for s in inventory.sources if s.source_id in source_ids)
+            if not usable_video_sources(sources, overview.document.video_usage):
+                warnings.append("No usable media: videos have no used intervals")
+        except ValueError as exc:
+            warnings.append(str(exc))
+    else:
+        try:
+            facade.service("pairs").validate_views_input(root, request.views_run)
+        except (ValueError, OSError, RuntimeError) as exc:
+            warnings.append("Chosen published views are unavailable or incompatible: " + str(exc))
     if request.pairing.method_id in {"pair_selection.retrieval", "pair_selection.hybrid"} and (
         request.retrieval_run is None
     ):

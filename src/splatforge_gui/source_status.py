@@ -49,6 +49,15 @@ class SourceSession:
                 checkedAt=result.checked_at.isoformat(),
             )
 
+    def relinked(self, sources) -> None:
+        for source in sources:
+            key = str(source.source_id), source.source_revision, source.content_sha256
+            self.evidence[key] = dict(
+                availability="Available", availabilityState="available",
+                availabilityDetail="Full content checked while relinking",
+                checkedLabel="Checked during relink", checkedAt=datetime.now(UTC).isoformat(),
+            )
+
     def project(self, row) -> dict:
         key = str(row.identity), row.values.get("sourceRevision", 1), row.values.get("sha256", "")
         return self.evidence.get(

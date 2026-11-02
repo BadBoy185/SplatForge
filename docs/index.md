@@ -26,6 +26,43 @@ reuses DEVELOPMENT for verification selection and evidence reporting.
 
 ## Current work
 
+- [Trim-aware materialization](plans/completed/2026-10-29-trim-materialization.md):
+  exact original-grid admission before scratch encoding, interval-aware bounds and generated-video evidence; manual acceptance remains open.
+- [M12c Prepare budget feedback](plans/completed/2026-10-29-m12c-prepare-budget-feedback.md):
+  corrected blocked-plan presentation after the user's 4K/Trim check, preserving
+  full-clip storage bounds and requiring explicit density edits.
+
+- [M12c direct Prepare settings](plans/completed/2026-10-29-m12c-direct-prepare-settings.md):
+  the user's direct-control decision replaces Prepare profiles; saved working method,
+  density, encoding and explicit optional filters, with open manual acceptance.
+
+- [M12c source scopes/provenance](plans/completed/2026-10-29-m12c-source-scopes-provenance.md):
+  display-only source/group scopes, bounded frame provenance and original video time;
+  short checks/review delivered, manual acceptance open.
+
+- [M12c prepared-image review](plans/completed/2026-10-29-m12c-image-review.md): saved
+  manual UUID decisions, independent batch/preview and immutable effective selection.
+
+- [M12c1 Prepare Data](plans/completed/2026-10-29-m12c1-prepare-data.md): first bounded
+  preparation/publication/reopen scenario; short targeted verification only.
+
+- [Project state](PROJECT_STATE.md): compact verified local checkout, evidence limits
+  and next bounded task; recheck against Git rather than treating it as authority.
+- [Agent workflow](AGENT_WORKFLOW.md): role configuration, file/resource ownership,
+  independent review and model-validation boundaries.
+- [M12b4 folder relink](plans/active/2026-10-29-m12b4-folder-relink.md): mandatory
+  Sources recovery implemented; manual acceptance open; final full run stopped by user.
+
+- [Saved video usage / Materials Trim API](VIDEO_USAGE.md): exact interval operations,
+  draft/Save, real frame preparation and implemented full-source Trim editor;
+  latest visual refinement accepted; functional manual scenarios remain unconfirmed.
+
+- [Interface alignment and Materials workspace](plans/active/2026-10-28-materials-workspace.md):
+  Projects/Create and latest Materials/Trim visual refinement accepted; functional
+  manual scenarios remain separate. M12b4 records the stopped old full run; M12c1
+  records current short verification without a new full run.
+- [Interface reference catalog](design/references/README.md): 13 supplied target
+  images, screen/state mapping, provenance and existing/future capability boundary.
 - [M12b3 Capture Metadata & Logical Source Groups](plans/active/2026-10-27-m12b3-capture-metadata-groups.md):
   saved capture evidence and portable organization, independent of calibration/recipes.
 - [Active plans](plans/active/README.md): selected bounded work only; no M13 task is
@@ -42,9 +79,21 @@ Research is evidence or a proposal, never implemented support or an adopted defa
 Existing paths are retained to preserve links and user work.
 
 - [Technology strategy](TECHNOLOGY_STRATEGY.md): candidate comparisons and adoption gates.
+- [Prepare technical backlog](TECHNOLOGY_STRATEGY.md#prepare-data-technical-backlog--2026-10-29):
+  local readiness inventory and gates for metrics/adaptive selection/masks; no implementation authorization.
 - [M7c benchmark ledger](M7C_BENCHMARK.md): candidate/license audit and missing VPR evidence.
 - [M11 evidence](M11_EVIDENCE.md): training candidate/license evidence, no universal preset.
 - [Legacy 3DGS research](LEGACY_3DGS_RESEARCH.md): read-only investigation and unavailable evidence.
+- [Tanks & Temples matrix](TANKS_AND_TEMPLES_BENCHMARK_MATRIX.md) and
+  [JSON](tanks-and-temples-benchmark-matrix.json): proposed comparison scope.
+- [Ignatius pilot](TANKS_AND_TEMPLES_PILOT.md) and
+  [JSON](tanks-and-temples-ignatius-pilot.json): bounded local observations, not general acceptance.
+- [Ignatius GPU follow-up](TANKS_AND_TEMPLES_GPU_PILOT.md): learned-feature pilot,
+  isolated CUDA/cuDSS/Caspar runtime and actual execution evidence;
+  [JSON](tanks-and-temples-ignatius-gpu-pilot.json) pins the measured results.
+- [Ignatius 30k experiment](TANKS_AND_TEMPLES_30K.md) and
+  [JSON](tanks-and-temples-ignatius-30k.json): one training-horizon comparison on
+  the exact original M10 dataset, including quality, time and retained failed check.
 
 ## Historical / completed implementation slices
 
@@ -70,6 +119,8 @@ do not reinterpret old acceptance results as current runtime evidence.
 | [M12b2 Sources workflow](plans/completed/2026-10-27-m12b2-folder-browser.md) | Accepted folder import/browser and corrective UX |
 | [M12b1 Sources and preview](plans/completed/2026-10-27-m12b1-sources-preview.md) | Accepted explicit import, source inspection and preview |
 | [Housekeeping](plans/completed/2026-10-26-repository-housekeeping.md) | Repository/documentation harness work, not a product milestone |
+| [Ignatius GPU pilot](plans/completed/2026-10-26-ignatius-gpu-methods.md) | Completed diagnostic experiment; GPU execution proven, full-scene quality limited |
+| [Ignatius 30k](plans/completed/2026-10-26-ignatius-30k.md) | One completed optimization run; measured/visual improvement, remaining background defects |
 
 ## Archive / legacy
 
@@ -81,3 +132,5 @@ do not reinterpret old acceptance results as current runtime evidence.
 No bulk move into `research/` or `archive/` is needed now. Classification here keeps
 old links stable; create those folders only when an actual relocation is worthwhile.
 History/research/archive are never mandatory context for an ordinary task.
+
+Current UI implementation: [Materials workspace redesign](plans/active/2026-10-28-materials-workspace.md).

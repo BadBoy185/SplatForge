@@ -19,6 +19,7 @@ from splatforge.core.media import ExecutableIdentity, MediaType, SourceOccurrenc
 
 if TYPE_CHECKING:
     from splatforge.core.execution import ArtifactHandle
+    from splatforge.core.video_usage import VideoUsageIntent
 
 FINGERPRINT_SCHEMA_VERSION = 1
 CANDIDATE_ARTIFACT_TYPE = "views.candidate_set"
@@ -265,19 +266,44 @@ class CandidateBudgetEstimate(FrozenModel):
     peak_workspace_bytes: int = Field(ge=1, strict=True)
 
 
+class CandidateBudgetExceeded(ValueError):
+    """Existing refusal with typed diagnostic values for application clients."""
+
+    def __init__(
+        self, message: str, *, resource: Literal["candidates", "candidate_bytes"],
+        estimated: int, limit: int,
+    ) -> None:
+        super().__init__(message)
+        self.resource, self.estimated, self.limit = resource, estimated, limit
+
+
 def estimate_candidate_budget(
     sources: tuple[SourceOccurrence, ...],
     *,
     settings: CandidatePoolSettings,
     limits: CandidateResourceLimits,
+    video_usage: VideoUsageIntent | None = None,
 ) -> CandidateBudgetEstimate:
-    """Conservatively bound retained pixels and small metadata before any decode."""
+    """Bound retained images and overlapping scratch before any pixel decode.
+
+    These are conservative upper bounds, not expected encoded sizes or exact
+    candidate counts. Restricted extraction writes only globally sampled frames
+    whose original presentation times belong to the saved interval union.
+    """
 
     if not sources:
         raise ValueError("At least one source is required")
+    # Kept local because video_usage's exact interval models use RationalValue.
+    from splatforge.core.video_usage import VideoSource, usable_video_sources
+
+    if video_usage is not None:
+        sources = usable_video_sources(sources, video_usage)
+        if not sources:
+            raise ValueError("No usable media: videos have no used intervals")
     estimates: list[SourceCandidateEstimate] = []
     total_count = 0
     total_bytes = 0
+    restricted_extraction = False
     for source in sources:
         if source.probe.width <= 0 or source.probe.height <= 0:
             raise ValueError(f"Source {source.source_id} has invalid dimensions")
@@ -302,6 +328,23 @@ def estimate_candidate_budget(
                 )
             sampled = duration * settings.candidate_fps.as_fraction()
             count = (sampled.numerator + sampled.denominator - 1) // sampled.denominator + 1
+            used_intervals = (
+                video_usage.resolve(VideoSource.from_source(source))
+                if video_usage is not None else None
+            )
+            if used_intervals is not None:
+                restricted_extraction = True
+                # Sampling does not restart at each interval. Bounding each finite
+                # interval independently is safe for every global sampling phase.
+                # One extra candidate per interval retains the existing numerical
+                # margin for FFmpeg's floating-point minimum-interval comparison.
+                restricted_count = 0
+                for item in used_intervals:
+                    sampled_interval = (
+                        item.end.as_fraction() - item.start.as_fraction()
+                    ) * settings.candidate_fps.as_fraction()
+                    restricted_count += math.ceil(sampled_interval) + 1
+                count = min(count, restricted_count)
         if count > MAX_VIEWS:
             raise ValueError(
                 f"Source {source.source_id} candidate estimate {count} exceeds "
@@ -324,19 +367,28 @@ def estimate_candidate_budget(
             )
         )
         if total_count > limits.max_candidates:
-            raise ValueError(
+            raise CandidateBudgetExceeded(
                 f"Candidate estimate for source {source.source_id} raises total to "
                 f"{total_count}, above max_candidates={limits.max_candidates}; "
-                "lower candidate FPS or select fewer sources"
+                "lower candidate FPS or select fewer sources",
+                resource="candidates", estimated=total_count, limit=limits.max_candidates,
             )
         if total_bytes > limits.max_candidate_bytes:
-            raise ValueError(
+            raise CandidateBudgetExceeded(
                 f"Candidate disk estimate for source {source.source_id} raises total to "
                 f"{total_bytes} bytes, above max_candidate_bytes="
-                f"{limits.max_candidate_bytes}; lower candidate FPS or increase the budget"
+                f"{limits.max_candidate_bytes}; lower candidate FPS or increase the budget",
+                resource="candidate_bytes", estimated=total_bytes,
+                limit=limits.max_candidate_bytes,
             )
     metadata_and_manifest = total_count * 4096 + 4 * 1024 * 1024
-    peak = total_bytes + metadata_and_manifest
+    # Restricted FFmpeg extraction uses one bounded, temporary admission script.
+    # Sources run sequentially, so only one such script can coexist with images.
+    admission_script = 8 * 1024 * 1024 if restricted_extraction else 0
+    # Previous sources' retained images coexist with this source's extracted
+    # images. Publication moves each image (and later the output directory) on
+    # the same volume, so these lifetimes require one aggregate image allocation.
+    peak = total_bytes + metadata_and_manifest + admission_script
     return CandidateBudgetEstimate(
         sources=tuple(estimates),
         total_candidates=total_count,
@@ -660,6 +712,7 @@ def candidate_recipe_key(
     sources: tuple[SourceOccurrence, ...],
     settings: CandidatePoolSettings,
     backend: ExecutableIdentity,
+    video_usage: VideoUsageIntent | None = None,
 ) -> str:
     source_records = []
     for source in sorted(sources, key=lambda item: (str(item.source_id), item.source_revision)):
@@ -692,6 +745,13 @@ def candidate_recipe_key(
         "backend_identity": backend.model_dump(mode="json"),
         "selected_sources": source_records,
     }
+    if video_usage is not None:
+        ids = {s.source_id for s in sources}
+        restrictions = [e.model_dump(mode="json") for e in sorted(
+            video_usage.entries, key=lambda e: str(e.source_id)) if e.source_id in ids]
+        if restrictions:
+            evidence["video_usage"] = {"schema_version": video_usage.schema_version,
+                                       "entries": restrictions}
     return sha256_bytes(canonical_json_bytes(evidence))
 
 

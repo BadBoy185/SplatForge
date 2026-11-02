@@ -16,7 +16,8 @@ SplatDialog {
         newName.text = "";
         manage.currentIndex = Math.max(0, manage.indexOfValue(vm.sources.selected.logicalGroupId || ""));
         rename.text = manage.currentIndex > 0 ? manage.currentText : "";
-        destination.currentIndex = Math.max(0, destination.indexOfValue(vm.sources.selected.logicalGroupId || ""));
+        const sameSource = vm.sources.selectedCount === 1 && vm.sources.selectedIds[0] === vm.sources.selectedId;
+        destination.currentIndex = Math.max(0, destination.indexOfValue(sameSource ? vm.sources.selected.logicalGroupId || "" : ""));
     }
     ColumnLayout {
         anchors.fill: parent
@@ -109,8 +110,9 @@ SplatDialog {
                 SplatLabel {
                     objectName: "groupSelectedSource"
                     visible: dialog.mode !== "create"
-                    text: dialog.vm.sources.selectedCount > 1 ? dialog.vm.sources.selectedCount + " selected sources"
-                          : dialog.vm.sources.selected.filename || "Select sources in List or Grid first."
+                    text: dialog.vm.sources.selectedCount > 0
+                          ? dialog.vm.sources.selectedCount + (dialog.vm.sources.selectedCount === 1 ? " selected source" : " selected sources")
+                          : "Select sources in List or Grid first."
                     Layout.fillWidth: true
                     elide: Text.ElideMiddle
                     wrapMode: Text.NoWrap
@@ -131,13 +133,10 @@ SplatDialog {
                         objectName: "moveSourceToGroup"
                         visible: dialog.mode !== "create"
                         text: destination.currentValue === "" ? "Ungroup" : "Move to Group"
-                        enabled: dialog.editable && (dialog.vm.sources.selectedCount > 0
-                                 || dialog.vm.sources.selectedId !== "")
+                        enabled: dialog.editable && dialog.vm.sources.selectedCount > 0
                                  && destination.currentIndex >= 0
                         onClicked: {
-                            if (dialog.vm.sources.selectedCount > 1)
-                                dialog.vm.assignSelectedGroup(destination.currentValue);
-                            else dialog.vm.assignSourceGroup(dialog.vm.sources.selectedId, destination.currentValue);
+                            dialog.vm.assignSelectedGroup(destination.currentValue);
                             if (dialog.mode === "move") dialog.close();
                         }
                     }

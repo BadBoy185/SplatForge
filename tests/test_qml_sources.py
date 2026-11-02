@@ -22,7 +22,7 @@ from test_qml_interaction import click, dispose  # noqa: E402
 from test_qml_workflows import open_project  # noqa: E402
 
 from splatforge.application.desktop import IndexRow  # noqa: E402
-from splatforge.bootstrap import build_gui_facade  # noqa: E402
+from splatforge.bootstrap import build_gui_facade, build_project_service  # noqa: E402
 from splatforge_gui.presentation import source_availability, source_description  # noqa: E402
 from splatforge_gui.qml_app import create_engine  # noqa: E402
 
@@ -83,17 +83,27 @@ def test_explicit_pickers_import_and_reopen_persisted_types(desktop, tmp_path, k
         assert all(r.values["type"] == expected for r in desktop._source.rows)
         assert all(r.values["availability"] == "Available" for r in desktop._source.rows)
         assert desktop.state["sourcesSummary"][kind] == count
+        # Opening the current project resumes its existing session. Switch away
+        # first so this exercises a genuine reopen and resets session evidence.
+        other = tmp_path / "Other project"
+        build_project_service().create(other, "Other")
+        desktop.openProject(str(other))
+        until(lambda: desktop.controller.root == other and not desktop.controller.executor.busy)
+        assert desktop.sources.count == 0
         desktop.openProject(str(root))
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: desktop.controller.root == root and not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         assert [r.identity for r in desktop._source.rows] == identities
         assert all(r.values["availabilityState"] == "neutral" for r in desktop._source.rows)
         assert all(r.values["type"] == expected for r in desktop._source.rows)
+        assert files.hash_reads == count
         assert [p.read_bytes() for p in paths] == originals
         assert not desktop.controller.overview.index.artifacts
         assert not desktop.controller.overview.index.runs
         assert not engine.load_errors
     finally:
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         dispose(engine)
 
 
@@ -102,7 +112,7 @@ def test_import_failure_keeps_committed_rows_responsive_and_retryable(desktop, t
     _, probe = inject_media(desktop, root)
     old = photo(tmp_path / "old.png")
     desktop.addFiles([str(old)])
-    until(lambda: not desktop.controller.executor.busy)
+    until(lambda: not desktop.controller.executor.busy and not desktop.media.preview_executor.busy)
     assert desktop.sources.count == 1, desktop.state["error"]
     before = desktop.controller.overview.document
     identity = desktop._source.rows[0].identity
@@ -132,13 +142,15 @@ def test_import_failure_keeps_committed_rows_responsive_and_retryable(desktop, t
         assert desktop.sources.count == 1 and desktop._source.rows[0].identity == identity
         assert desktop.state["progress"]["title"] == "Adding source files…"
         release.set()
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         assert desktop.sources.count == 1 and desktop.controller.overview.document == before
         assert "could not be read" in desktop.state["error"]["message"]
         assert "Traceback" in desktop.state["error"]["details"]
         probe.probe = original_probe
         desktop.addFiles([str(new), str(second)])
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         assert desktop.sources.count == 3, desktop.state["error"]
     finally:
         release.set()
@@ -156,26 +168,36 @@ def test_source_check_uses_recorded_evidence_and_never_hashes_on_refresh(desktop
     engine = create_engine(desktop)
     window = engine.rootObjects()[0]
     try:
-        button = visual_item(window.contentItem(), "checkSourceFiles")
-        assert button.isEnabled() and button.opacity() == 1
-        assert button.property("kind") == "secondary"
+        click(window, "catalogOptions")
         click(window, "checkSourceFiles")
-        until(lambda: not desktop.controller.executor.busy)
+        button = visual_item(window.contentItem(), "runSourceCheck")
+        assert button.isEnabled() and button.opacity() == 1
+        assert button.property("kind") == "primary"
+        assert visual_item(window.contentItem(), "sourceCheckSummary").isVisible()
+        click(window, "runSourceCheck")
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         assert "All source files were available" in desktop.state["sourcesSummary"]["checkMessage"]
         assert all(
             r.values["availability"] == "Available" for r in desktop._source.rows
         )
         assert "no fresh content hash" in desktop._source.rows[0].values["verificationLabel"]
+        QTest.keyClick(window, Qt.Key.Key_Escape)
         paths[1].unlink()
         desktop.refresh()
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         # Refresh/reopen does not pretend to have checked the current source files.
         assert desktop._source.rows[1].values["availability"] == "Available"
+        click(window, "catalogOptions")
         click(window, "checkSourceFiles")
-        until(lambda: not desktop.controller.executor.busy)
+        click(window, "runSourceCheck")
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         assert desktop._source.rows[1].values["availability"] == "Missing"
         assert "1 source file was missing" in desktop.state["sourcesSummary"]["checkMessage"]
         assert files.hash_reads == hashes
+        QTest.keyClick(window, Qt.Key.Key_Escape)
         assert not engine.load_errors
     finally:
         dispose(engine)
@@ -212,6 +234,7 @@ def seed_preview_rows(desktop, tmp_path):
                           ("m.png", Qt.GlobalColor.blue)])
     video = IndexRow(identity=uuid4(), values={
         "filename": "clip.mp4", "type": "video", "description": "Video",
+        "locator": str(tmp_path / "clip.mp4"),
         "availability": "Not checked recently",
     })
     desktop._source.replace((rows[2], video, rows[0], rows[1]))
@@ -254,7 +277,8 @@ def test_preview_x_escape_arrows_boundaries_filename_and_selected_row(desktop, t
         assert not dialog.property("visible")
         assert not engine.load_errors
     finally:
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         dispose(engine)
 
 
@@ -269,7 +293,8 @@ def test_preview_failed_decode_is_inspectable_and_can_navigate(desktop, tmp_path
         desktop.media.previewSource(str(rows[0].identity))
         until(lambda: desktop.media.state["previewStatus"] == "Preview unavailable")
         assert desktop.media.state["largeImage"] == ""
-        assert "Traceback" in desktop.media.state["previewDetails"]
+        assert desktop.media.state["previewDetails"]
+        assert "Traceback" not in desktop.media.state["previewDetails"]
         assert desktop.sources.selectedId == str(rows[0].identity)
         assert engine.rootObjects()[0].findChild(QObject, "imageDialog").property("visible")
         desktop.media.stepPreview(1)
@@ -278,7 +303,8 @@ def test_preview_failed_decode_is_inspectable_and_can_navigate(desktop, tmp_path
         assert not desktop.media.state["previewDetails"]
         assert not engine.load_errors
     finally:
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         dispose(engine)
 
 
@@ -309,11 +335,12 @@ def test_preview_click_outside_closes(desktop, tmp_path):
         assert not desktop.media.state["largeImage"]
         assert not engine.load_errors
     finally:
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         dispose(engine)
 
 
-def test_thousands_of_sources_use_bounded_delegates_without_decoding(
+def test_thousands_of_sources_use_bounded_delegates_and_thumbnail_decodes(
     desktop, tmp_path, monkeypatch
 ):
     from splatforge_gui import thumbnails
@@ -339,10 +366,13 @@ def test_thousands_of_sources_use_bounded_delegates_without_decoding(
                      if c.objectName().startswith("source-")]
         assert 0 < len(delegates) < 30
         assert listing.property("currentIndex") == 1499
-        assert not decoded and not desktop.media.provider.large.width()
+        assert len(decoded) < 40 and not desktop.media.provider.large.width()
+        assert len(desktop.sources.thumbnails.jobs) <= 8
+        assert len(desktop.sources.thumbnails.queue) <= 100
         assert not engine.load_errors
     finally:
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         dispose(engine)
 
 
@@ -352,25 +382,27 @@ def test_preview_ignores_late_responses_after_navigation_and_close(desktop, tmp_
     open_project(desktop, tmp_path)
     rows = seed_preview_rows(desktop, tmp_path)
     entered, release = Event(), Event()
-    decode = qml_media.decode_thumbnail
+    decode = qml_media.decode_preview
 
-    def delayed(path, side):
+    def delayed(path):
         if path.name == "m.png":
             entered.set()
             assert release.wait(10)
-        return decode(path, side)
+        return decode(path)
 
-    monkeypatch.setattr(qml_media, "decode_thumbnail", delayed)
+    monkeypatch.setattr(qml_media, "decode_preview", delayed)
     try:
         desktop.media.previewSource(str(rows[0].identity))
         until(entered.is_set)
         assert desktop.media.state["largeImage"] == ""
         desktop.media.stepPreview(1)
         assert desktop.media.state["largeImage"] == ""
+        assert desktop.media._decode_pending is not None
+        release.set()
         until(lambda: desktop.media.state["previewStatus"] == "Ready")
         current = desktop.media.state["largeImage"]
-        release.set()
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         assert desktop.media.state["largeImage"] == current
         assert desktop.media.state["previewTitle"] == "z.png"
         entered.clear()
@@ -379,15 +411,19 @@ def test_preview_ignores_late_responses_after_navigation_and_close(desktop, tmp_
         until(entered.is_set)
         desktop.media.closePreview()
         release.set()
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
         assert desktop.media.state["largeImage"] == "" and desktop.media.state["previewIndex"] == 0
     finally:
         release.set()
-        until(lambda: not desktop.controller.executor.busy)
+        until(lambda: not desktop.controller.executor.busy
+              and not desktop.media.preview_executor.busy)
 
 
 @pytest.mark.parametrize("size", [(1024, 640), (1440, 900)])
 def test_sources_actions_footer_and_no_empty_pagination(desktop, tmp_path, size):
+    from test_qml_m12b3_corrective import row_menu
+
     root = open_project(desktop, tmp_path)
     inject_media(desktop, root)
     engine = create_engine(desktop)
@@ -400,25 +436,37 @@ def test_sources_actions_footer_and_no_empty_pagination(desktop, tmp_path, size)
                 if populated and not desktop.sources.count:
                     desktop.addFiles([str(photo(tmp_path / "source.png"))])
                     until(lambda: desktop.sources.count == 1)
-                    until(lambda: not desktop.controller.executor.busy)
+                    until(lambda: not desktop.controller.executor.busy
+                          and not desktop.media.preview_executor.busy)
                 QTest.qWait(30)
-                names = ["addPhotos", "addVideo", "addFolder", "sourcesContinue"]
-                if populated or desktop.sources.count:
-                    names.append("checkSourceFiles")
+                names = ["addPhotos", "addVideo", "addFolder", "materialViewer"]
                 for name in names:
                     item = visual_item(window.contentItem(), name)
-                    assert item and item.isVisible()
+                    assert item and item.isVisible(), name
                     point = item.mapToScene(QPointF(0, 0))
                     assert point.y() >= 0 and point.y() + item.height() <= window.height(), name
-                assert not visual_item(window.contentItem(), "sourcesContinue").isEnabled()
+                assert visual_item(window.contentItem(), "materialViewer").height() > 300
+                click(window, "catalogOptions")
+                check = visual_item(window.contentItem(), "checkSourceFiles")
+                assert check is not None and check.isVisible()
+                assert check.isEnabled() == bool(desktop.sources.count)
+                point = check.mapToScene(QPointF(0, 0))
+                assert point.y() >= 0 and point.y() + check.height() <= window.height()
+                QTest.keyClick(window, Qt.Key.Key_Escape)
                 pagination = visual_item(window.contentItem(), "viewsPagination")
                 assert pagination is None or not pagination.isVisible()
                 if desktop.sources.count:
                     row = desktop._source.rows[0]
-                    desktop.media.selectSource(str(row.identity))
-                    click(window, "sourceDetails")
+                    identity = str(row.identity)
+                    prefix = row_menu(desktop, window, identity)
+                    click(window, prefix + "details-" + identity)
+                    page = visual_item(window.contentItem(), "sourcesPage")
+                    dialog = page.findChild(QObject, "sourceDetailsDialog")
+                    assert dialog is not None
+                    assert dialog.property("visible")
                     assert not visual_item(window.contentItem(), "viewsPagination").isVisible()
                     QTest.keyClick(window, Qt.Key.Key_Escape)
+                    assert not dialog.property("visible")
                     def visible_labels(item):
                         texts = [str(item.property("text") or "")] if item.isVisible() else []
                         return texts + [s for c in item.childItems() for s in visible_labels(c)]

@@ -11,6 +11,7 @@ manifests and individual methods are separate; the prototype
 M12 adds no project/state/manifest schema version or GUI-owned numerical fields.
 M12b2a adds optional portable source participation intent as described below.
 M12b3 adds optional capture evidence and logical organization as described below.
+M12c review adds optional portable exact-run frame decision intent as described below.
 CLI and desktop use ProjectService for intent saves, including revision checks and
 unknown method/settings preservation. GUI edits remain drafts until Save; closing
 offers Save/Discard/Cancel. Run-only settings stay in existing immutable snapshots.
@@ -112,6 +113,43 @@ compares the committed revision under the writer lock, publishes exactly the nex
 revision and returns it to the caller. Stale saves are refused. Save refreshes
 `updated_at` while retaining project identity and creation time.
 
+### Video usage intent
+
+Optional `video_usage` is an independently versioned additive envelope in
+`project.json`: `schema_version: 1`, `entries: [...]`. Each entry binds
+`source_id`, `content_sha256`, `stream_index` and `intervals` to one registered
+video occurrence. Each interval stores `start`/`end` as canonical
+`{numerator: integer, denominator: positive integer}` seconds, using the existing
+RationalValue bounds (absolute component at most 9e18, reduced fraction).
+Intervals must be sorted, non-overlapping and non-adjacent on disk; editing
+canonicalizes unions before Save. Duplicate source entries are refused.
+
+No entry means the entire clip; an entry with `intervals: []` means no usable
+section. Reset removes the entry. Source participation remains independent.
+Project/state versions remain **1/4**, following the optional participation/group
+envelope convention: missing fields default without rewriting on Open; Save
+explicitly writes the new envelope. No SQL/inventory migration or eager rewrite.
+Older binaries may refuse the new project field. Unknown envelope extensions are
+preserved; unsupported schema versions remain inspectable and survive unrelated
+Save but refuse editing/current-source preparation. Unknown source UUID entries
+are retained historical intent and do not create new sources.
+
+Edits use the ordinary draft, dirty flag, Save/CAS/writer lease, atomic replacement
+and committed readback. Discard/Cancel retain their existing meanings; no separate
+Trim storage exists. Intervals change no originals, inventory revisions or published
+artifacts. Relink verifies identical bytes and retains source UUID/content/stream,
+so intervals survive a locator-only change. Different content is refused by relink;
+a future replacement that changes content or selected stream fails interval binding
+with `source_identity_changed` until explicit Reset. A new import has its own UUID
+and starts unrestricted even at the same path.
+
+NormalizedProbe additively records nullable `start_time` (selected stream, exact
+`start_pts * time_base` preferred) and `playback_start_time` (container start).
+Historical probes lacking these remain unknown; neither is guessed from FPS or
+from zero. No immutable historical inventory is rewritten. See
+[processing semantics](PIPELINE.md#used-video-intervals) and the
+[nonvisual Trim API](VIDEO_USAGE.md).
+
 ### Source participation intent (M12b2a)
 
 Optional `source_participation` in `project.json` is an independently versioned
@@ -136,6 +174,155 @@ Repeated import creates a new UUID occurrence, Included by default even when ano
 occurrence at that path/content is Excluded. Paths are locators, never exclusion keys.
 See [processing resolution](PIPELINE.md#stage-inputs-and-outputs) and
 [GUI behavior](GUI_DESIGN.md#m12b2a-source-participation).
+
+### Prepare Data desktop entry (M12c1)
+
+The desktop Prepare action resolves the saved frame-selection envelope independently
+of unrelated SfM slots. Candidate density/encoding, quality analysis defaults, resource
+limits and verification policy are explicit resolved run settings; no new project
+schema, hidden quality preset or second state store is introduced. Existing opaque
+settings and prototype fields remain preserved without new behavioral claims.
+
+Prepare checks expected project identity/revision under the existing ViewsService
+writer before creating its immutable run. That service resolves Included sources and
+saved video usage, owns attempts, cancellation, publication, validation and reuse.
+Retry starts a new run; it does not mutate an old publication or invoke fake-route
+execution retry. Normal recovery remains required for unresolved teardown/publication.
+
+The desktop result reader validates exact succeeded view-route bindings and their
+candidate/selected/quality lineage, including runs binding a cached publication.
+It offers at most 25 recent available results; failed/cancelled partial, evicted or
+corrupt sets are not ready choices. Direct summary inspection raises the underlying
+error. No pixel decoding is needed for summaries, but existing payload integrity
+checks still read bytes proportional to distinct candidate artifacts. Image browsing
+uses the existing bounded gallery. Source intent, original bytes and publication
+immutability are unaffected. See [presentation](GUI_DESIGN.md#prepare-data-and-selected-images-m12c1).
+
+### Direct Prepare settings (M12c)
+
+The user's 2026-10-29 decision replaces Prepare quality profiles with explicit working
+parameters. The selector remains in `settings.frame_selection.settings` using its
+existing method ID/schema. The same extensible method envelope stores an optional
+`prepare_data` object: `schema_version: 1`, typed `candidate` settings and typed
+`quality` settings (null for Fixed). Unrelated envelope/extension fields survive.
+When converting prototype scalar settings, `prepare_data.legacy_settings` preserves
+their original opaque dictionary; `max_frames`/`reject_blur` gain no new behavior.
+No top-level project schema, second state store or migration-on-open is introduced.
+
+Absent extension retains legacy saved intent/default resolution. Unknown selector,
+settings schema or preparation extension version refuses Prepare without rewriting
+it or blocking unrelated saves. The form parses exact interval/FPS and numerical
+strings through pure application functions; a validated whole form joins the existing
+project draft and ProjectService atomic revision-checked Save. Invalid raw edits use
+the same Save/Discard/Cancel flow. Failed saves retain raw edits and staged intent
+without a success claim, including when a field is changed back to its saved value.
+
+Resolve against actual Included sources and used video intervals before creating a
+request. Fixed consumes no quality settings; disabled minimum sharpness is None;
+disabled dHash parameters resolve to existing defaults 4/8. JPEG/PNG settings use the
+existing mutually exclusive encoding normalization. Photo-only requests canonically
+resolve candidate/target FPS to 1 and disable video dHash (4/8); saved valid video
+intent remains available for later mixed input. This normalizes resolved metadata
+before recipe construction, rather than identifying different artifacts with one key.
+Historical contract-1 requests/metadata are read exactly and never normalized in place.
+
+Plan/run verify exact saved project identity/revision and resolved request, then use
+the existing ViewsService writer/snapshot. Editing never starts processing. Running
+controls refuse edits; attempt settings remain immutable. Changing settings affects
+only their actual future consumers, preserving originals, Trim, automatic/effective
+publications and exact-set manual review heads. Historical results disclose their
+own frozen settings, independent of the form. See [GUI](GUI_DESIGN.md#direct-prepare-settings-m12c)
+and [pipeline](PIPELINE.md#direct-prepare-settings).
+
+### Prepared image decisions (M12c review)
+
+`ProjectDocument.frame_review` is optional portable intent, defaulting to an empty
+version-1 envelope. It preserves unknown future envelope/entry data on unrelated
+saves; unsupported review versions refuse review rather than losing decisions.
+Each binding records exact preparation run, candidate and automatic selection
+artifact UUIDs/digests, canonical stable-view UUID decisions and the effective run.
+Cache-hit preparation runs have independent bindings even when their artifacts match.
+No filename, page index, locator or source-participation field identifies a decision.
+
+Only explicit include/exclude overrides are stored. Automatic means absence of an
+override. Effective membership starts with automatic selected UUIDs, adds forced
+includes and removes forced excludes. Selected/Rejected partition all candidates.
+Reset removes an override; resetting every decision restores the original run.
+
+Apply validates the complete batch, expected project UUID/revision and review digest
+under the existing writer lease, and refuses active/unresolved work. A changed review
+publishes a validated immutable `views.selected_set` with internal method
+`frame_selection.manual_review` v1 through the existing `views.review` route,
+attempts, manifests and index. Its lineage binds candidate and automatic artifacts;
+the payload retains canonical decisions and effective UUID order. The run binds
+the unchanged candidate publication and the new selected publication. Its explicit
+run UUID is usable by existing selected-view consumers; it is not an automatic
+method-slot choice or a global current input.
+
+Only after publication succeeds does the existing atomic metadata CAS replace the
+project's review head. A metadata-write failure leaves the old head authoritative
+and may leave a valid unreferenced historical review publication. A crash during
+publication uses normal attempt/orphan recovery; recovery never commits unsaved
+review intent. Readback validates the saved head against the exact publication.
+Originals, extracted pixels and automatic artifacts are never changed or removed.
+Semantics/fingerprints are owned by [pipeline](PIPELINE.md#prepared-image-review).
+
+### Prepared source scopes and provenance (M12c)
+
+Source scopes/provenance extend the existing `frame_review.page` read model only;
+there is no project/state/publication schema change or new saved processing setting.
+Scope keys identify All sources, source UUIDs, current logical group UUIDs or the
+existing derived device/fallback sections. Logical organization uses current saved
+project intent; frozen source/camera groups retain their original numerical meaning.
+Only prepared source identities contribute candidate membership. Empty saved groups
+have genuine zero counts, while absent legacy read-model counts remain unavailable.
+
+The reader intersects scope and effective membership before paging (maximum 100
+items). Whole-run candidate/automatic/effective/manual counts retain their original
+meaning; separate scope counts and the tab-intersection total name their universes.
+Scope selection, pagination and preview write no intent/run/publication and do not
+enter any fingerprint. Manual mutations still validate the complete explicit UUID
+batch through the existing exact-run binding and writer/CAS contract.
+
+Per-frame provenance joins the candidate source UUID/revision/content identity to
+the frozen automatic preparation route's source records. Original filename and
+locator at preparation come from this historical record; current inventory locator
+is exposed separately only for the matching source UUID/revision/content. A missing
+or different current record does not relabel the historical source. Current user
+group labels may change presentation without rewriting that history.
+
+The candidate's exact `FrameTimestamp` provides original video PTS/time_base.
+Automatic reason/score comes only from recorded selection evidence; unavailable
+reasons/scores stay unavailable. Current-check outcome/time is persisted evidence,
+not a new source check, and may predate a locator update. No original is opened,
+decoded, hashed or probed for this metadata. Existing immutable artifact integrity
+validation and saved metadata I/O remain required; the reader constructs provenance
+and pixel references for the returned page only. UI scope state stays ephemeral.
+See [presentation](GUI_DESIGN.md#prepared-source-scopes-and-provenance-m12c).
+
+### Folder relinking (M12b4)
+
+Folder relink is an explicit metadata operation over every registered occurrence
+under a chosen recorded folder, including excluded sources and nested paths.
+Preview is read-only: it retains project UUID/revision, inventory reference/content
+digest, relative-path mapping and full-content match diagnostics. It writes neither
+project nor verification history. The old folder/drive may be unavailable.
+
+Apply reconstructs that complete scope from the committed inventory, rejects stale
+provenance, fully hashes replacement candidates again and validates held source
+leases and path containment before the existing inventory CAS publication. Every
+scoped occurrence must match; no partial folder commit, rename guessing or content
+replacement occurs. Replacement paths reject symlink/junction/reparse traversal
+and ambiguous Windows case collisions. Exact repeated occurrences retain their IDs.
+
+One new immutable inventory and project revision publish all new locators together.
+Source UUID/revision/content/probe/capture, logical/calibration groups, participation,
+video usage and historical artifacts remain preserved. No schema or numerical cache
+key changes. Cancellation before publication leaves the old reference authoritative;
+an after-inventory/before-project fault follows the existing orphan/retry contract.
+Cancellation after publication cannot roll it back. Originals are never written.
+See [presentation](GUI_DESIGN.md#folder-relinking-m12b4) and the
+[bounded plan](plans/active/2026-10-29-m12b4-folder-relink.md).
 
 ### Capture evidence and logical source groups (M12b3)
 

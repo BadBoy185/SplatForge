@@ -32,11 +32,13 @@ class WorkflowViewModel(QObject):
         self._choices = {k: [] for k in self._inputs}
         self._report, self._metrics = None, None
         self._signature, self._project_id = None, None
+        self._source_intent = None
         self._resume_token, self._resume_ready, self._resume_reason = None, False, "Not checked"
         self._capability = None
         self._plans, self._details, self._messages = {}, {}, {}
         self._pending = {}
         self.controller.changed.connect(self.overview)
+        self.controller.dirty_changed.connect(self._intent_changed)
         self.controller.completed.connect(self.completed)
         self.controller.error.connect(self.failed)
         desktop._exact.applied.connect(self.apply_exact)
@@ -61,6 +63,7 @@ class WorkflowViewModel(QObject):
         return render(
             {
                 "generation": self.controller.generation,
+                "sourceParticipation": self._source_signature(),
                 "inputs": self._inputs,
                 "machine": self.desktop._machine,
                 "runtime_environment": self.runtime_environment,
@@ -339,17 +342,43 @@ class WorkflowViewModel(QObject):
                 if key in {"dataset", "checkpoint"}:
                     self.invalidate_resume()
         signature = (self.controller.draft or value.document).settings.model_dump_json()
+        source_intent = self._source_signature()
+        if self._source_intent != source_intent:
+            self._source_intent = source_intent
+            if self.controller.request is None or self.controller.request.views_run is None:
+                self.controller.reconstruction_plan = None
+                self._plans.pop("reconstruction", None)
+                self._details.pop("reconstruction", None)
+                self._messages["reconstruction"] = "Source selection changed. Run Plan again."
         if self._signature != signature or self.controller.request is None:
             self._signature = signature
             self.controller.request = self.controller.reconstruction_plan = None
+            self._plans.pop("reconstruction", None)
             self.controller.configure_reconstruction()
         self.changed.emit()
+
+    def _source_signature(self) -> tuple:
+        overview = self.controller.overview
+        if overview is None or (self.controller.request is not None
+                                and self.controller.request.views_run is not None):
+            return ()
+        document = self.controller.draft or overview.document
+        return (document.source_participation.model_dump_json(),
+                document.video_usage.model_dump_json(),
+                tuple(str(s.identity) for s in overview.sources))
+
+    def _intent_changed(self, _dirty: bool) -> None:
+        if self.controller.overview is not None:
+            self.overview(self.controller.overview)
 
     def completed(self, name: str, value) -> None:
         if (
             name in {"reconstruction_plan", "dataset_plan", "training_plan", "trainer_capability"}
             and self._pending.pop(name, None) != self._snapshot()
         ):
+            if name == "reconstruction_plan":
+                self.controller.reconstruction_plan = None
+                self.changed.emit()
             return
         if name == "request_unavailable":
             self._messages["reconstruction"] = "Saved methods unavailable: " + str(value)

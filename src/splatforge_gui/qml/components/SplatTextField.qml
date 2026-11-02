@@ -12,11 +12,11 @@ TextField {
     selectedTextColor: Theme.text
     font.family: Theme.font
     font.pixelSize: Theme.body
-    leftPadding: 12
-    rightPadding: 12
+    leftPadding: Theme.controlInset
+    rightPadding: Theme.controlInset
     selectByMouse: true
     background: Rectangle {
-        radius: Theme.radius
+        radius: Theme.controlRadius
         color: Theme.background
         border.width: control.activeFocus ? 2 : 1
         border.color: control.activeFocus ? Theme.accent : control.hovered ? Theme.strong :

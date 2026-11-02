@@ -23,6 +23,7 @@ def create_engine(view_model: DesktopViewModel) -> QQmlApplicationEngine:
     QGuiApplication.instance().aboutToQuit.connect(engine.deleteLater)
     engine.addImportPath(str(Path(__file__).parent / "qml"))
     engine.addImageProvider("media", view_model._media.provider)
+    engine.addImageProvider("filmstrip", view_model._video_usage.filmstrip.provider)
     engine.setInitialProperties({"vm": view_model})
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
     if not engine.rootObjects():

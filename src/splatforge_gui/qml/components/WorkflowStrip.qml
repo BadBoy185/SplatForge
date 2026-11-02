@@ -37,7 +37,7 @@ SplatCard {
                                                                                                  2], ["Validate",
                                                                                                       "validation",
                                                                                                       "check", 2],
-                    ["Dataset", "dataset", "dataset", 3], ["Train", "training", "train", 4], ["Result",
+                    ["Dataset", "dataset", "dataset", 3], ["Splat", "training", "cube", 4], ["Result",
                                                                                               "scene", "results",
                                                                                               5]]
                 delegate: ColumnLayout {

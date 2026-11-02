@@ -19,7 +19,7 @@ from test_qml import app as app  # noqa: E402
 from test_qml import desktop as desktop  # noqa: E402
 from test_qml import until, visual_item  # noqa: E402
 from test_qml_interaction import click, dispose  # noqa: E402
-from test_qml_source_participation import idle  # noqa: E402
+from test_qml_source_participation import idle, row_menu  # noqa: E402
 from test_qml_sources import inject_media  # noqa: E402
 from test_qml_workflows import open_project  # noqa: E402
 
@@ -133,8 +133,9 @@ def test_device_sections_scope_both_browsers_and_saved_details(desktop, tmp_path
         assert not visual_item(window.contentItem(), "sourceTechnicalDetails").property("expanded")
         click(window, "closeSourceDetails")
         choose(engine, picker, "unknown")
-        desktop.media.selectSource(str(desktop.sources.rows[0].identity))
-        click(window, "sourceDetails")
+        identity = str(desktop.sources.rows[0].identity)
+        prefix = row_menu(desktop, window, identity)
+        click(window, prefix + "details-" + identity)
         idle(desktop)
         assert (
             visual_item(window.contentItem(), "sourceHumanDevice").property("text")
@@ -142,8 +143,9 @@ def test_device_sections_scope_both_browsers_and_saved_details(desktop, tmp_path
         )
         click(window, "closeSourceDetails")
         choose(engine, picker, "videos")
-        desktop.media.selectSource(str(desktop.sources.rows[0].identity))
-        click(window, "sourceDetails")
+        identity = str(desktop.sources.rows[0].identity)
+        prefix = row_menu(desktop, window, identity)
+        click(window, prefix + "details-" + identity)
         idle(desktop)
         assert visual_item(window.contentItem(), "sourceHumanType").property("text") == "Video"
         assert "02:03" in visual_item(window.contentItem(), "sourceHumanDuration").property("text")
@@ -335,8 +337,9 @@ def test_1500_grouped_sources_remain_virtualized_in_both_themes(desktop, tmp_pat
             assert len(desktop.sources.thumbnails.cache) <= 128
         desktop.setSourceSection("device/dji fc220")
         assert desktop.sources.count == 751
-        if view == "List":
-            assert not desktop.sources.thumbnails.pending
+        assert len(desktop.sources.thumbnails.pending) <= 108
+        assert len(desktop.sources.thumbnails.jobs) <= 8
+        assert len(desktop.sources.thumbnails.queue) <= 100
         assert not engine.load_errors
     finally:
         dispose(engine)

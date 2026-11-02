@@ -326,8 +326,13 @@ class ColmapMappingAdapter(ColmapMatchingAdapter):
                         self.failure = "Redirected mapping workspace"
                         return True
                     if path.is_file():
+                        try:
+                            size = path.stat().st_size
+                        except FileNotFoundError:
+                            # SQLite can remove a journal after enumeration/is_file.
+                            # Required inputs and final payloads are checked separately.
+                            continue
                         files += 1
-                        size = path.stat().st_size
                         total += size
                         if path.is_relative_to(output / "sparse"):
                             sparse_bytes += size

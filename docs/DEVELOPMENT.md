@@ -33,10 +33,17 @@ verification when failures or uncovered consumers justify it, not after every ed
 
 ### Full verification
 
-Run once for the final tree before milestone completion, merge/release, changes
-crossing many boundaries, an explicit user request, or when affected checks cannot
-provide confidence. A small bounded change can finish with affected evidence if no
-full gate applies. Report that scope explicitly.
+Full pytest/full verify, broad long-running suites and heavy benchmarks require a
+separate direct user request, including at milestone, merge/release or architectural
+boundaries. "Continue", "check" or "implement the next stage" does not authorize
+them. Default to short targeted tests and relevant lint/QML/docs checks; in known
+slow files select nodes. Do not evade the rule through batches, subagents or background
+runs. If a longer check would help, prepare its exact command and purpose without
+launching it. Diagnose and stop unexpectedly long owned runs rather than retrying
+blindly. Report full verification as unrun; that alone does not block user-authorized
+development. These restrictions apply to every agent and future session.
+
+The following full commands are a reference, **not authorization to execute**:
 
 ```powershell
 python -m pytest
@@ -53,8 +60,9 @@ native/GPU workloads implicitly. Documentation moves alone do not require full p
 Record the command, tree/revision plus relevant dirty files, environment, outcome
 and skips. User-supplied full results count when those details establish that they
 cover the same relevant tree/environment. Attribute them to the user. Reuse valid
-results; rerun after changes that invalidate their coverage, not just because a new
-internal step occurred. Never claim a check passed without an actual result, and
+results; run short affected checks after changes that invalidate their coverage.
+Long reruns still require a separate direct request. Never claim a check passed
+without an actual result, and
 never present affected checks as full verification.
 
 ### Documentation link check
@@ -477,7 +485,7 @@ is hard-coded: zero history starts unavailable, then uses live evidence.
 | Exhaustive pairs | `pairs.emitted_pairs_v1`: known `n*(n-1)/2` total; bounded generation batches |
 | Sequential pairs | `pairs.selected_views_v1`: known selected views classified/processed, including photos without invented chronology; successful samples additionally retain actual generated pair count |
 
-FFmpeg uses `-progress` in a private scratch file and generic owner-loop polling (at
+Unrestricted FFmpeg extraction uses `-progress` in a private scratch file and generic owner-loop polling (at
 most 4 Hz); ProcessRunner knows no FFmpeg syntax. Parsing reads at most 64 KiB per
 poll, bounds partial lines/fields and uses complete structured records only. Source
 duration progress normalizes integer `out_time_us` to its first report, conservatively
@@ -486,6 +494,11 @@ do not become filename-based progress. `showinfo`, pixels, timestamps and recipe
 unchanged. Poll/callback failures disable or degrade telemetry without altering process
 containment, timeout, cancellation or numerical output. Scratch is removed after the
 owned invocation when possible; it is not an artifact or prediction-history payload.
+Restricted Trim extraction instead reports start, completed metadata pass and
+completed validated image pass. It creates no append-only progress file, preserving
+the bounded storage plan for small Trim unions on long clips. The contained runner
+still polls cancellation during each pass. Phase-callback failures degrade telemetry
+under the same rule; pass milestones do not claim a within-pass decoder percentage.
 
 Persist `progress.snapshot` events at most twice per monotonic second: at least .5s
 between updates plus 1% progress, phase change, or a 1s heartbeat. Initial, stage-start,

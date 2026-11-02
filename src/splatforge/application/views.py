@@ -22,7 +22,7 @@ from splatforge.application.media_contracts import (
     StrictSourceUnavailableError,
 )
 from splatforge.application.progress import ProgressSession, ProgressSupport
-from splatforge.application.projects import ProjectError
+from splatforge.application.projects import ProjectError, StaleProjectRevisionError
 from splatforge.application.views_contracts import (
     CandidateMaterializer,
     FFmpegCancelledError,
@@ -84,6 +84,7 @@ from splatforge.core.quality import (
     validate_sharpest_against_inputs,
     validate_sharpest_candidate_density,
 )
+from splatforge.core.video_usage import VideoSource, usable_video_sources
 from splatforge.core.views import (
     CANDIDATE_ARTIFACT_TYPE,
     FFMPEG_ADAPTER_VERSION,
@@ -209,6 +210,8 @@ class ViewsService:
         resource_limits: CandidateResourceLimits,
         verification_policy: VerificationPolicyId,
         source_ids: set[UUID] | None = None,
+        expected_project_id: UUID | None = None,
+        expected_revision: int | None = None,
     ) -> ViewsRunResult:
         if isinstance(selection_settings, FixedFpsSettings):
             validate_fps_density(candidate_settings, selection_settings)
@@ -238,6 +241,11 @@ class ViewsService:
 
         with self._execution.writer(root, owner_token=owner_token, operation="views-prepare"):
             project = self._execution.inspect_project(root)
+            if ((expected_project_id is not None
+                 and project.document.project_id != expected_project_id)
+                    or (expected_revision is not None
+                        and project.document.revision != expected_revision)):
+                raise StaleProjectRevisionError("Project changed; refresh the Prepare Data plan")
             if project.state_version != 4:
                 if project.state_version in {1, 2, 3}:
                     raise StateUpgradeRequiredError(
@@ -262,6 +270,9 @@ class ViewsService:
             except ValueError as exc:
                 raise ProjectError(str(exc)) from exc
             selected_sources = self._select_sources(inventory, selected_ids)
+            selected_sources = usable_video_sources(selected_sources, project_copy.video_usage)
+            if not selected_sources:
+                raise ProjectError("No usable media: videos have no used intervals")
             for source in selected_sources:
                 if source.extension == ".png" and source.probe.orientation is None:
                     raise ProjectError(
@@ -459,6 +470,7 @@ class ViewsService:
             sources=route.sources,
             settings=node.settings,
             backend=route.ffmpeg_backend,
+            video_usage=snapshot.project_intent.video_usage,
         )
         cached = self._execution.find_cache(
             root,
@@ -545,6 +557,7 @@ class ViewsService:
                 route.sources,
                 settings=node.settings,
                 limits=route.resource_limits,
+                video_usage=snapshot.project_intent.video_usage,
             )
             free = self._workspace.free_bytes(Path(attempt.workspace))
             if estimate.peak_workspace_bytes > free:
@@ -712,6 +725,8 @@ class ViewsService:
                     f"its predecode estimate {source_estimate.candidate_count}"
                 )
             occurrences: defaultdict[tuple[int, int, int], int] = defaultdict(int)
+            used_intervals = (snapshot.project_intent.video_usage.resolve(
+                VideoSource.from_source(source)) if source.media_type == MediaType.VIDEO else None)
             for frame in frames:
                 if source.media_type == MediaType.PHOTO:
                     view_id = deterministic_photo_view_id(source)
@@ -735,6 +750,11 @@ class ViewsService:
                         occurrence_index=occurrence,
                     )
                     timestamp = FrameTimestamp(pts=frame.pts, time_base=frame.time_base)
+                    if used_intervals is not None and not any(
+                        item.start.as_fraction() <= timestamp.seconds() < item.end.as_fraction()
+                        for item in used_intervals
+                    ):
+                        continue
                     frame_identity = (
                         f"pts:{frame.pts}@{frame.time_base.numerator}/{frame.time_base.denominator}"
                     )
@@ -827,6 +847,10 @@ class ViewsService:
                 ),
             )
         )
+        if not ordered:
+            raise ProjectError(
+                "No candidate frames in used intervals at the configured sampling rate"
+            )
         candidate = CandidateViewSet(
             backend=route.ffmpeg_backend,
             settings=route.candidate.settings,
@@ -948,6 +972,9 @@ class ViewsService:
                     route.candidate.settings,
                     timeout_seconds=route.resource_limits.per_source_timeout_seconds,
                     expected_backend=route.ffmpeg_backend,
+                    used_intervals=(snapshot.project_intent.video_usage.resolve(
+                        VideoSource.from_source(source)
+                    ) if source.media_type == MediaType.VIDEO else None),
                     cancellation=bridge,
                     evidence_sink=evidence_sink,
                     progress_sink=progress_sink,

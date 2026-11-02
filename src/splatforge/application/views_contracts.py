@@ -16,6 +16,7 @@ from splatforge.core.quality import (
     SharpestSelectedViewSet,
     ViewQualityMeasurement,
 )
+from splatforge.core.video_usage import VideoInterval
 from splatforge.core.views import (
     CandidatePoolSettings,
     CandidateView,
@@ -100,6 +101,7 @@ class CandidateMaterializer(Protocol):
         *,
         timeout_seconds: int,
         expected_backend: ExecutableIdentity,
+        used_intervals: tuple[VideoInterval, ...] | None = None,
         cancellation: CancellationSignal | None = None,
         evidence_sink: Callable[[ProcessInvocationEvidence], None] | None = None,
         progress_sink: Callable[[MaterializationProgress], None] | None = None,

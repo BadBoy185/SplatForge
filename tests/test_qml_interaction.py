@@ -28,6 +28,9 @@ from splatforge_gui.qml_app import create_engine  # noqa: E402
 def click(window, name):
     from test_qml import visual_item
 
+    # Layout polish is queued after model changes. Hit-test the displayed frame,
+    # rather than coordinates from the preceding properties/filter layout.
+    QTest.qWait(40)
     item = visual_item(window.contentItem(), name)
     assert item is not None and item.isVisible() and item.isEnabled(), name
     center = item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
@@ -60,7 +63,7 @@ def test_populated_pages_dialogs_history_and_preview(desktop, publications):
                 for page in range(7):
                     desktop.navigate(page)
                     QTest.qWait(15)
-    click(window, "nav-Home")
+    click(window, "nav-Projects")
     assert desktop.state["page"] == 0
     QTest.keyClick(window, Qt.Key.Key_Comma, Qt.KeyboardModifier.ControlModifier)
     QTest.qWait(30)
@@ -131,6 +134,17 @@ def test_external_operation_remains_responsive_until_confirmed_cancel(desktop, t
         timer.setInterval(5)
         timer.timeout.connect(lambda: ticks.append(1))
         timer.start()
+        generation = desktop.controller.generation
+        click(window, "nav-Projects")
+        assert desktop.state["page"] == 0 and not future.done()
+        assert desktop.state["progress"]["visible"]
+        desktop.openProject(str(tmp_path / "Blocked while active"))
+        assert "active work" in desktop.state["entryError"]
+        assert desktop.controller.root == root and not future.done()
+        desktop.openProject(str(root))
+        until(lambda: desktop.state["page"] == 1)
+        assert desktop.controller.generation == generation and not future.done()
+        click(window, "workspaceMore")
         click(window, "nav-Diagnostics")
         QTest.qWait(50)
         assert len(ticks) >= 2 and not future.done()

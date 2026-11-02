@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from splatforge.application.desktop import GuiFacade
+    from splatforge.application.desktop_prepare import PrepareService
+    from splatforge.application.frame_review import FrameReviewService
 
 from splatforge.adapters.colmap_capabilities import ColmapCapabilityAdapter
 from splatforge.adapters.colmap_features import ColmapFeatureAdapter
@@ -26,6 +28,7 @@ from splatforge.adapters.process_runner import ExecutableResolver, LocalProcessR
 from splatforge.adapters.project_backup import LocalMigrationBackupPreparer
 from splatforge.adapters.project_storage import LocalProjectStore
 from splatforge.adapters.quality import PillowQualityAdapter
+from splatforge.adapters.relink_paths import LocalRelinkPathGuard
 from splatforge.adapters.retrieval_artifacts import LocalRetrievalAdapter
 from splatforge.adapters.source_files import LocalSourceFiles
 from splatforge.adapters.state_schema import LocalStateSchemaUpgrader
@@ -38,6 +41,7 @@ from splatforge.application.features import FeaturesService
 from splatforge.application.mapping import MappingService
 from splatforge.application.matching import MatchingService
 from splatforge.application.media import MediaService
+from splatforge.application.media_relink import FolderRelinkService
 from splatforge.application.pairs import PairsService
 from splatforge.application.progress import PerformanceService, ProgressSupport
 from splatforge.application.progress_reader import RunProgressService
@@ -102,6 +106,7 @@ def build_gui_facade() -> "GuiFacade":
     """Optional desktop composition without importing Qt into the backend."""
     from splatforge.adapters.desktop_reader import LocalDesktopReader
     from splatforge.adapters.media_scanner import LocalMediaScanner
+    from splatforge.adapters.video_preview import FFmpegVideoPreview
     from splatforge.application.desktop import GuiFacade
 
     return GuiFacade(LocalDesktopReader(), {
@@ -115,6 +120,10 @@ def build_gui_facade() -> "GuiFacade":
         "training": build_training_service, "cleanup": build_cleanup_service,
         "doctor": build_doctor_service,
         "media_scanner": LocalMediaScanner,
+        "folder_relink": build_folder_relink_service,
+        "video_preview": FFmpegVideoPreview,
+        "prepare_data": build_prepare_data_service,
+        "frame_review": build_frame_review_service,
     })
 
 
@@ -134,6 +143,14 @@ def build_media_service(*, ffprobe_path: str | None = None) -> MediaService:
     )
 
 
+def build_folder_relink_service() -> FolderRelinkService:
+    return FolderRelinkService(
+        LocalMediaRepository(project_store=LocalProjectStore()),
+        LocalSourceFiles(),
+        LocalRelinkPathGuard(),
+    )
+
+
 def build_views_service(
     *, ffmpeg_path: str | None = None, performance_path: Path | None = None,
 ) -> ViewsService:
@@ -149,6 +166,23 @@ def build_views_service(
         PillowQualityAdapter(),
         progress=build_progress_support(performance_path),
     )
+
+
+def build_prepare_data_service(*, performance_path: Path | None = None) -> "PrepareService":
+    from splatforge.adapters.desktop_prepare import LocalPrepareReader
+    from splatforge.application.desktop_prepare import PrepareService
+
+    return PrepareService(
+        LocalPrepareReader(), build_media_service(),
+        build_views_service(performance_path=performance_path),
+    )
+
+
+def build_frame_review_service() -> "FrameReviewService":
+    from splatforge.adapters.frame_review import LocalFrameReviewRepository
+    from splatforge.application.frame_review import FrameReviewService
+
+    return FrameReviewService(LocalFrameReviewRepository())
 
 
 def build_pairs_service(*, performance_path: Path | None = None) -> PairsService:

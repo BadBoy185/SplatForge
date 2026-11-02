@@ -8,25 +8,25 @@ Button {
     property string kind: "secondary"
     property string iconName: ""
     implicitHeight: Theme.control
-    implicitWidth: Math.max(implicitContentWidth + 28, 36)
-    leftPadding: text === "" ? 9 : 14
-    rightPadding: text === "" ? 9 : 14
-    spacing: 8
+    implicitWidth: text === "" ? Theme.control : Math.max(implicitContentWidth + leftPadding + rightPadding, Theme.control)
+    leftPadding: text === "" ? (Theme.control - Theme.icon) / 2 : Theme.controlInset
+    rightPadding: leftPadding
+    spacing: Theme.space
     font.family: Theme.font
     font.pixelSize: Theme.body
-    font.weight: Font.DemiBold
+    font.weight: kind === "primary" ? Font.DemiBold : Font.Normal
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     icon.source: iconName ? Qt.resolvedUrl("../icons/" + iconName + ".svg") : ""
-    icon.width: 18
-    icon.height: 18
+    icon.width: Theme.icon
+    icon.height: Theme.icon
     icon.color: !enabled ? Theme.muted : kind === "primary" ? Theme.accentText : kind === "danger"
                                                               ? Theme.danger : Theme.text
     palette.buttonText: icon.color
     opacity: enabled ? 1 : 0.45
     Accessible.name: text
     background: Rectangle {
-        radius: Theme.radius
+        radius: Theme.controlRadius
         color: control.kind === "primary" ? (control.down ? Theme.accentPressed : control.hovered
                                                             ? Theme.accentHover : Theme.accent) :
                                             control.down ? Theme.strong : control.hovered

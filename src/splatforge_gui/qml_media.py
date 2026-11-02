@@ -1,28 +1,30 @@
 """Lazy bounded image delivery. QML receives provider keys, never decoding instructions."""
 
-import traceback
 from uuid import UUID, uuid4
 
-from PySide6.QtCore import Property, QObject, Qt, Signal, Slot
+from PySide6.QtCore import Property, QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QImage
 from PySide6.QtQuick import QQuickImageProvider
 
 from splatforge.application.desktop import ThumbnailReference
 from splatforge_gui.presentation import guarded
 from splatforge_gui.qml_models import PresentationModel
-from splatforge_gui.thumbnails import ThumbnailModel, decode_thumbnail
+from splatforge_gui.tasks import TaskExecutor
+from splatforge_gui.thumbnails import ThumbnailModel, decode_preview
 
 
 class GalleryModel(ThumbnailModel):
     CaptionRole = int(Qt.ItemDataRole.UserRole) + 1
     ImageRole = CaptionRole + 1
     StatusRole = ImageRole + 1
+    ViewIdRole = StatusRole + 1
 
     def roleNames(self) -> dict:
         return {
             self.CaptionRole: b"caption",
             self.ImageRole: b"imageUrl",
             self.StatusRole: b"previewStatus",
+            self.ViewIdRole: b"viewId",
         }
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
@@ -31,6 +33,8 @@ class GalleryModel(ThumbnailModel):
         reference = self.references[index.row()]
         if role == self.CaptionRole:
             return reference.caption
+        if role == self.ViewIdRole:
+            return reference.identity
         if role in (self.ImageRole, self.StatusRole):
             if reference.identity in self.cache:
                 self.cache.move_to_end(reference.identity)
@@ -318,6 +322,7 @@ class SourceBrowserModel(PresentationModel):
         if active == self.thumbnails_active:
             return
         self.thumbnails_active = active
+        self.thumbnails.set_active(active)
         if self.rows:
             self.dataChanged.emit(self.index(0, 0), self.index(len(self.rows) - 1, 0),
                                   [self.ImageRole, self.StatusRole])
@@ -348,9 +353,20 @@ class MediaViewModel(QObject):
         self._preview_title, self._preview_status, self._preview_details = "", "", ""
         self._preview_description = ""
         self._source_gallery = False
+        self._workspace = False
+        self._video_url = ""
+        self._decode_active = False
+        self._decode_pending = None
+        self.preview_executor = TaskExecutor(self)
+        self.preview_executor.result.connect(lambda _, value: self.completed("qml_image", value))
+        self.preview_executor.finished.connect(self._decode_finished)
         self._review_mutation = None
         self._details_token = ""
         self._source_details = {"fields": [], "technical": ""}
+        self.details_timer = QTimer(self)
+        self.details_timer.setSingleShot(True)
+        self.details_timer.setInterval(100)
+        self.details_timer.timeout.connect(self.inspectSource)
         self.controller.completed.connect(self.completed)
         self.controller.changed.connect(self.overview)
         self.controller.busy_changed.connect(lambda _: self.changed.emit())
@@ -367,6 +383,10 @@ class MediaViewModel(QObject):
             "offset": self._offset,
             "count": len(self._gallery.references),
             "largeImage": self._large,
+            "videoUrl": self._video_url,
+            "embeddedPreview": self._workspace,
+            "previewKind": self._preview_source().get("type", "photo"),
+            "reviewLimit": "Review raster · up to 4096 px · zoom limited to loaded pixels",
             "message": self._message,
             "sourceDetails": self._source_details,
             "galleryRun": self._gallery_run,
@@ -429,7 +449,28 @@ class MediaViewModel(QObject):
 
         # Qt Controls owns pointer/keyboard delivery. Read the modifiers of that
         # event instead of placing an input surface over nested action buttons.
-        self.selectSource(identity, QGuiApplication.keyboardModifiers().value)
+        modifiers = QGuiApplication.keyboardModifiers().value
+        if (self._workspace and self._source_gallery
+                and self._preview_status in {"Ready", "Video"}
+                and 0 <= self._preview_index < len(self._gallery.references)
+                and self._gallery.references[self._preview_index].identity == identity):
+            self.desktop._source.selectWithModifiers(identity, modifiers)
+            self.changed.emit()
+            return
+        self.selectSource(identity, modifiers)
+        if self.desktop._source.selectedId:
+            self.showSource(self.desktop._source.selectedId)
+
+    @Slot(str)
+    def showSource(self, identity: str) -> None:
+        """Open the current material without replacing the independent batch set."""
+        self._token = uuid4().hex
+        self._workspace = True
+        self._source_gallery = True
+        self._gallery_run = ""
+        self._gallery.replace(self._photo_references())
+        self.preview(next((i for i, r in enumerate(self._gallery.references)
+                           if r.identity == identity), -1))
 
     @Slot(str)
     def focusSource(self, identity: str) -> None:
@@ -443,7 +484,9 @@ class MediaViewModel(QObject):
             return {}
         identity = self._gallery.references[self._preview_index].identity
         i = self.desktop._source._source_indices.get(identity)
-        return dict(self.desktop._source.rows[i].values) if i is not None else {}
+        if i is None:
+            return {}
+        return {**self.desktop._source.rows[i].values, "identity": identity}
 
     def _clear_review_mutation(self) -> None:
         self._review_mutation = None
@@ -471,8 +514,16 @@ class MediaViewModel(QObject):
         self._details_token = token = uuid4().hex
         self._source_details = {"fields": [], "technical": "Loading saved evidence…"}
         root = self.controller.root
+
+        def load(facade):
+            try:
+                return token, source, facade.source_details(root, UUID(source))
+            except (ValueError, OSError) as exc:
+                # Automatic properties must not interrupt media review with a modal.
+                return token, source, None, str(exc)
+
         self.controller.submit(
-            "qml_source_details", lambda f: (token, source, f.source_details(root, UUID(source))),
+            "qml_source_details", load,
         )
         self.changed.emit()
 
@@ -484,7 +535,7 @@ class MediaViewModel(QObject):
                 caption=source.values["filename"],
             )
             for source in self.desktop._source.rows
-            if source.values["type"] == "photo"
+            if self._workspace or source.values["type"] == "photo"
         )
 
     def sources_changed(self) -> None:
@@ -530,6 +581,7 @@ class MediaViewModel(QObject):
 
     @Slot(str)
     def previewSource(self, identity: str) -> None:
+        self._workspace = False
         self._source_gallery = True
         self._gallery_run = ""
         self._gallery.replace(self._photo_references())
@@ -540,17 +592,62 @@ class MediaViewModel(QObject):
 
     @Slot(str, int)
     @guarded
-    def loadGallery(self, run: str, offset: int) -> None:
+    def loadGallery(self, run: str, offset: int, *, local_errors: bool = False) -> None:
         if not run:
             return
         self.closePreview()
         self._source_gallery = False
+        self._workspace = False
         self._gallery.replace(())
         self._token, self._offset, self._gallery_run = uuid4().hex, max(0, offset), run
         token, root, start = self._token, self.controller.root, self._offset
-        self.controller.submit("qml_gallery", lambda f: (token, f.gallery(root, UUID(run), start)))
+        def read(facade):
+            try:
+                rows = facade.gallery(root, UUID(run), start)
+            except Exception as exc:
+                if not local_errors:
+                    raise
+                # Local consumers must correlate failures as well as successes.
+                return token, (), str(exc)
+            return token, rows
+
+        self.controller.submit("qml_gallery", read)
         self._message = "Loading materialized views…"
         self.changed.emit()
+
+    def clearGallery(self) -> None:
+        """Revoke a prepared-set request before returning to Materials sources."""
+        self._token = uuid4().hex
+        self._gallery_run = ""
+        self._source_gallery = self._workspace = False
+        self._gallery.replace(())
+        self.closePreview()
+
+    def setReviewGallery(self, run: str, offset: int, items: tuple) -> None:
+        """Present application-resolved rows; identity never depends on a page index."""
+        self._token = uuid4().hex
+        self.closePreview()
+        self._source_gallery = False
+        self._workspace = True
+        self._gallery_run, self._offset = run, offset
+        self._gallery.replace(tuple(
+            ThumbnailReference(identity=str(item.view_id), path=item.path, caption=item.caption)
+            for item in items
+        ))
+        self.changed.emit()
+
+    def showReviewFrame(self, identity: str) -> None:
+        """View one UUID without changing the source focus or review batch set."""
+        if self._source_gallery or not self._gallery_run:
+            return
+        self._workspace = True
+        index = next((i for i, row in enumerate(self._gallery.references)
+                      if row.identity == identity), -1)
+        if index >= 0:
+            self.preview(index)
+
+    def closeReviewFrame(self) -> None:
+        self.closePreview()
 
     @Slot(int)
     @guarded
@@ -561,6 +658,7 @@ class MediaViewModel(QObject):
         self._preview_token = token = uuid4().hex
         self._preview_index, self._preview_title = index, reference.caption
         self._large, self._preview_details = "", ""
+        self._video_url = ""
         self.provider.large = QImage()
         self._preview_status = "Loading preview…"
         if self._source_gallery:
@@ -571,16 +669,42 @@ class MediaViewModel(QObject):
             self.desktop._source.selected.get("description", "Photo preview")
             if self._source_gallery else "Photo preview"
         )
+        if self._workspace:
+            self.details_timer.start()
 
-        def decode(_):
-            try:
-                return token, decode_thumbnail(reference.path, 1024), ""
-            except Exception:
-                return token, QImage(), traceback.format_exc()
+        if self._preview_source().get("type") == "video":
+            from PySide6.QtCore import QUrl
 
-        self.controller.submit("qml_image", decode)
+            self._video_url = QUrl.fromLocalFile(str(reference.path)).toString()
+            self._preview_status = "Video"
+            self._decode_pending = None
+            self.changed.emit()
+            return
+        self._decode_pending = (token, reference.path)
+        self._start_decode()
         self.changed.emit()
-        self.desktop.dialogRequested.emit("image")
+        if not self._workspace:
+            self.desktop.dialogRequested.emit("image")
+
+    def _start_decode(self) -> None:
+        # One active decode and one latest pending request during rapid navigation.
+        if self._decode_active or self._decode_pending is None:
+            return
+        token, path = self._decode_pending
+        self._decode_pending = None
+        self._decode_active = True
+
+        def decode():
+            try:
+                return token, decode_preview(path), ""
+            except Exception as exc:
+                return token, QImage(), str(exc)
+
+        self.preview_executor.submit("photo_review", decode)
+
+    def _decode_finished(self, _identity: str) -> None:
+        self._decode_active = False
+        self._start_decode()
 
     @Slot(int)
     def stepPreview(self, step: int) -> None:
@@ -589,6 +713,12 @@ class MediaViewModel(QObject):
 
     @Slot()
     def closePreview(self) -> None:
+        self.details_timer.stop()
+        if self._workspace:
+            # The embedded inspector belongs to this review generation. Closing
+            # must revoke in-flight evidence, not only its deferred timer.
+            self._details_token = ""
+            self._source_details = {"fields": [], "technical": ""}
         self._review_mutation = None
         self._preview_token = uuid4().hex
         self._preview_index = -1
@@ -596,6 +726,8 @@ class MediaViewModel(QObject):
         self._large, self._preview_details, self._preview_status = "", "", ""
         self.provider.large = QImage()
         self.provider.large_identity = ""
+        self._video_url = ""
+        self._decode_pending = None
         self.changed.emit()
 
     def completed(self, name: str, value) -> None:
@@ -603,11 +735,17 @@ class MediaViewModel(QObject):
                 and value[1] == self.desktop._source.selectedId):
             from splatforge_gui.presentation import capture_details
 
-            self._source_details = capture_details(value[2])
+            self._source_details = (
+                {"fields": [], "technical": value[3],
+                 "error": "Saved properties unavailable: " + value[3]}
+                if len(value) == 4 else capture_details(value[2])
+            )
             self.changed.emit()
         elif name == "qml_gallery" and value[0] == self._token:
             self._gallery.replace(value[1])
-            self._message = f"{len(value[1])} views · offset {self._offset} · bounded previews"
+            self._message = value[2] if len(value) == 3 else (
+                f"{len(value[1])} views · offset {self._offset} · bounded previews"
+            )
             self.changed.emit()
         elif name == "qml_image" and value[0] == self._preview_token:
             self.provider.large = value[1]

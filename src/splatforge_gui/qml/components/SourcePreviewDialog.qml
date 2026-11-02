@@ -59,12 +59,9 @@ SplatDialog {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Image {
-                objectName: "previewImage"
+            PhotoViewport {
                 anchors.fill: parent
-                source: dialog.media.state.largeImage
-                cache: false
-                fillMode: Image.PreserveAspectFit
+                imageSource: dialog.media.state.largeImage
             }
             ColumnLayout {
                 anchors.centerIn: parent

@@ -14,7 +14,11 @@ from typing import Protocol
 
 from splatforge.adapters.colmap_capabilities import ColmapCapabilityAdapter
 from splatforge.adapters.colmap_runtime import scoped_runtime_environment
-from splatforge.adapters.feature_database import inspect_feature_database, seal_feature_database
+from splatforge.adapters.feature_database import (
+    enforce_sift_feature_budget,
+    inspect_feature_database,
+    seal_feature_database,
+)
 from splatforge.adapters.feature_progress import FeatureProgressReader
 from splatforge.adapters.local_models import local_model_argument, reports_cpu_fallback
 from splatforge.adapters.process_diagnostics import invocation_evidence
@@ -271,7 +275,7 @@ class ColmapFeatureAdapter:
         runtime = runtime_files(selection)
         numerical = digest_json(
             {
-                "adapter_version": 1,
+                "adapter_version": 2 if isinstance(settings, SiftExtractionSettings) else 1,
                 "executable_sha256": selection.identity.sha256,
                 "version": selection.identity.version_line,
                 "runtime_profile": selection.runtime_layout.profile
@@ -466,16 +470,22 @@ class ColmapFeatureAdapter:
             reader.poll()
         schema = backend.database
         seal_feature_database(database)
+        expected_schema = (
+            schema.sqlite_user_version,
+            schema.sqlite_application_id,
+            schema.tables,
+        )
+        if isinstance(settings, SiftExtractionSettings):
+            enforce_sift_feature_budget(
+                database, tuple(summaries), settings,
+                maximum_bytes=maximum_database_bytes, expected_schema=expected_schema,
+            )
         checked, mapping = inspect_feature_database(
             database,
             tuple(summaries),
             settings,
             maximum_bytes=maximum_database_bytes,
-            expected_schema=(
-                schema.sqlite_user_version,
-                schema.sqlite_application_id,
-                schema.tables,
-            ),
+            expected_schema=expected_schema,
         )
         with (output / "backend_mapping.json").open("xb") as stream:
             stream.write(canonical_json_bytes(mapping.model_dump(mode="json")) + b"\n")

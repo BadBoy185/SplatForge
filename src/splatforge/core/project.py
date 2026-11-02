@@ -7,9 +7,11 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, field_validator
 
+from splatforge.core.frame_review import FrameReviewIntent
 from splatforge.core.logical_source_groups import LogicalSourceGroups
 from splatforge.core.models import PipelineConfig
 from splatforge.core.source_participation import SourceParticipationIntent
+from splatforge.core.video_usage import VideoUsageIntent
 
 
 class MethodSettingsEnvelope(BaseModel):
@@ -58,6 +60,8 @@ class ProjectDocument(BaseModel):
         default_factory=SourceParticipationIntent,
     )
     logical_source_groups: LogicalSourceGroups = Field(default_factory=LogicalSourceGroups)
+    video_usage: VideoUsageIntent = Field(default_factory=VideoUsageIntent)
+    frame_review: FrameReviewIntent = Field(default_factory=FrameReviewIntent)
 
     @field_validator("created_at", "updated_at")
     @classmethod

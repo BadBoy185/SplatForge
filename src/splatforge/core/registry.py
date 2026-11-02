@@ -49,7 +49,10 @@ class MethodRegistry:
                 raise ValueError(f"{method_id} belongs to {method.stage}, expected {stage}")
 
         family = extractor.descriptor_family
-        if matcher.accepts_descriptor_families and family not in matcher.accepts_descriptor_families:
+        if (
+            matcher.accepts_descriptor_families
+            and family not in matcher.accepts_descriptor_families
+        ):
             accepted = ", ".join(sorted(matcher.accepts_descriptor_families))
             raise ValueError(
                 f"Incompatible feature pipeline: extractor {extractor.id} outputs "

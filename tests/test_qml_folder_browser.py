@@ -226,7 +226,7 @@ def test_grid_1500_sources_is_lazy_bounded_and_shares_selection(desktop, tmp_pat
     window.resize(1024, 640)
     try:
         QTest.qWait(50)
-        assert not decoded
+        assert len(decoded) < 40  # List now includes bounded thumbnails too.
         click(window, "sourceGridMode")
         grid = visual_item(window.contentItem(), "sourceGrid")
         until(lambda: bool(decoded) and not desktop._source.thumbnails.executor.busy)
@@ -301,7 +301,7 @@ def test_last_project_parent_only_changes_after_success(desktop, tmp_path):
         dispose(engine)
 
 
-def test_grid_double_click_reuses_photo_popup_and_order(desktop, tmp_path):
+def test_grid_double_click_opens_embedded_viewer_and_order(desktop, tmp_path):
     open_project(desktop, tmp_path)
     rows = seed_preview_rows(desktop, tmp_path)
     desktop.setSourceView("Grid")
@@ -314,10 +314,11 @@ def test_grid_double_click_reuses_photo_popup_and_order(desktop, tmp_path):
         point = tile.mapToScene(QPointF(tile.width() / 2, tile.height() / 2)).toPoint()
         QTest.mouseDClick(window, Qt.MouseButton.LeftButton, pos=point)
         until(lambda: desktop.media.state["previewStatus"] == "Ready")
-        assert window.findChild(QObject, "imageDialog").property("visible")
+        assert not window.findChild(QObject, "imageDialog").property("visible")
+        assert desktop.media.state["embeddedPreview"]
         assert desktop.media.state["previewTitle"] == "m.png"
         assert desktop.sources.selectedId == str(rows[0].identity)
-        click(window, "nextImage")
+        click(window, "materialNext")
         until(lambda: desktop.media.state["previewStatus"] == "Ready")
         assert desktop.media.state["previewTitle"] == "z.png"
         assert desktop.sources.selectedId == str(rows[1].identity)

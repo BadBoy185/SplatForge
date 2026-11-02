@@ -13,6 +13,7 @@ members or promises that every stage already has an implementation.
 | ViewPreparation | Inventory and decoding/preprocessing settings | CandidateViewSet: stable view IDs, images, dimensions, source mapping, timestamps/time base, orientation/crop/resize transforms, camera references |
 | QualityAssessment | Candidate views and scoring settings | QualityReport: per-view scores, metric versions, units and unavailable-score reasons; never deletes images |
 | FrameSelection | Candidate views, optional quality report and selection policy | SelectedViewSet plus acceptance/rejection reasons, deterministic tie-breaking and selection order |
+| PreparedImageReview (application decision) | Exact automatic preparation run, candidate/automatic selection publications and explicit include/exclude UUID decisions | Separate immutable reviewed selected set, canonical UUID membership and complete candidate/automatic lineage; no pixel or automatic-result mutation |
 | Masking | Selected views, supplied masks or segmentation inputs | MaskSet with view IDs, dimensions, coordinate alignment and explicit pixel semantics; no mask is an explicit absent input |
 | FeatureExtraction | Selected pixels, optional future SfM masks, method/model settings | LocalFeatureSet: descriptor signature, coordinate convention and payload format; M7a implements the unmasked route |
 | RetrievalRepresentation | Selected pixels/metadata and explicitly prepared offline global descriptors | RetrievalRepresentationSet v1: corpus/pixel/model/preprocess/runtime identity and immutable flat index; production inference selection pending |
@@ -132,6 +133,85 @@ previews changes data, implement a separately fingerprinted conversion. A datase
 export is available without training; migrate the prototype `training.none` meaning
 to an explicit dataset-only target without discarding saved user intent.
 
+### Direct Prepare settings
+
+The desktop exposes existing Fixed FPS and Sharpest routes directly; no Fast/Medium/
+High/Max mapping or new method is defined. One exact target interval resolves to
+target FPS; candidate density is independent. Fixed requires candidate >= target
+and no quality settings; Sharpest video requires candidate >= 2 * target and the
+existing quality stage even when both optional rejection filters are off. Photos
+remain individual candidates; dHash suppression is within each video only.
+
+Minimum sharpness None and explicit zero differ. Disabled dHash parameters resolve
+to defaults 4/8; inactive encoding/quality settings normalize before the immutable
+route is built. Photo-only desktop requests use neutral FPS1/1 and disable video
+dHash, while saved video intent remains intact. All resolved values are stored in
+the frozen route/artifact metadata and existing per-stage recipe functions consume
+those same values. Existing contract-1 keys/artifacts are not silently reinterpreted.
+
+Candidate rate/encoding affect candidate pixels and actual consumers; analysis max
+side affects quality/Sharpest consumers; thresholds/dHash policy affect selection.
+Downstream reuse follows each existing consumer's identity contract. Form edits alone
+create no run/invalidation or deletion; previous publications/review heads remain
+usable historical inputs. Original PTS and Trim/source participation contracts remain.
+See [persistence](PROJECT_FORMAT.md#direct-prepare-settings-m12c) and
+[technical backlog](TECHNOLOGY_STRATEGY.md#prepare-data-technical-backlog--2026-10-29).
+
+## Used video intervals
+
+Saved video restrictions use **absolute source presentation seconds**:
+`PTS * time_base`, exact RationalValue/Fraction arithmetic, with half-open
+`[start, end)` membership. A frame at end is excluded; at start it is admitted.
+Edits merge overlaps and adjacency, sort unions and reject zero/reversed/nonfinite
+bounds. Known stream start/duration bound edits; unknown metadata supplies no
+invented bound. Negative source times are valid when the source timeline has them.
+Subtracting a portion from unrestricted intent requires known stream start and
+duration; otherwise the caller must first specify finite used intervals.
+
+An absent source entry uses the full clip; an explicit empty union contributes no
+frames. Reset removes the entry. Resolve source Exclude first, then drop explicitly
+empty videos under the same writer lease before freezing the run. Other sources
+continue; a wholly unusable selection refuses before run creation. Current-source
+Plan uses the same resolver. Interval edits revoke its readiness, including in-flight
+responses; unsaved interval drafts must be saved before Plan/Prepare. An explicitly
+selected historical views_run instead validates its own published contract, independent
+of today's interval or participation intent.
+
+Preparation preserves the existing presentation-time minimum-interval candidate
+sampling over the original stream, then tests each sampled frame's exact PTS against
+the saved union **before encoding any scratch candidate image**. Restricted videos
+use a bounded metadata-only pass over the unchanged sampling filter, exact rational
+membership, then a second pass retaining the admitted original candidate indexes.
+The second pass verifies PTS/time_base against that metadata. There is no seek/concat,
+FPS-derived frame identity or time renumbering. Both passes may decode the full clip;
+this is an image-storage optimization, not a decoder-work reduction. Metadata overflow
+refuses preparation. Existing contained progress/cancellation and source verification
+still apply. Restricted extraction reports completed-pass milestones rather than
+writing an append-only per-frame progress file; decoding within a pass has no finer
+percentage. Unknown source duration still refuses unbounded decoding,
+even if finite used intervals were saved; no duration is inferred from their endpoints.
+Restricted candidates feed quality, both selectors and downstream consumers.
+Existing source-local selection grids,
+nearest-unique policy and empty-slot diagnostics remain; gaps in source time remain
+gaps, not a new continuous capture. A nonempty union can contain no sampled frame:
+preparation then reports no candidates rather than publishing false success.
+
+Candidate recipes include only restrictions of the resolved source set, bound to
+UUID/content/stream. Unrestricted recipes retain their previous identity. Altering
+restrictions rebuilds the aggregate candidate publication; no superset-payload reuse
+is claimed. Matching candidate/quality semantic digests retain their existing downstream
+reuse, and Reset can reuse the exact earlier unrestricted candidate. Publications and
+historical runs are never edited or globally marked invalid.
+The 2026-10-29 materialization optimization changes execution only: method, adapter
+semantic version, recipe keys and contract-1 payload semantics remain unchanged.
+
+Player position is an integer count of milliseconds from **container playback start**,
+which can differ from selected-stream start: source_seconds = playback_start + ms/1000.
+The inverse rounds to nearest millisecond, ties toward later time, for Qt seek only;
+persisted endpoints and processing remain exact. Missing origin yields an explicit
+error. VFR and nonzero/negative origins require no FPS conversion. See
+[persistence](PROJECT_FORMAT.md#video-usage-intent) and [Trim API](VIDEO_USAGE.md).
+
 ## View and camera rules
 
 M12's optional desktop GUI is another client of these unchanged stage contracts.
@@ -170,7 +250,21 @@ to DatasetPreparation and must update cameras and image references together.
 
 Candidate storage must be budgeted before decoding: frame count, pixels, scratch and
 retained output bytes. M3 starts with bounded materialized candidates, not every full
-resolution frame by default. The contract may also carry exact source-frame locators
+resolution frame by default. Plan and execution use the same saved/frozen Trim and
+settings. For each restricted video the count bound is the lesser of the full-clip
+bound and the sum of `ceil(interval duration * candidate FPS) + 1` for its canonical
+used intervals. This bounds the original grid without restarting it at interval edges.
+Explicitly empty videos contribute nothing. Bounds use exact rational arithmetic;
+unknown duration still refuses, and unknown origin is never replaced by zero.
+JPEG and PNG share a conservative eight-bytes-per-pixel plus 64 KiB image allowance;
+encoding quality/compression do not imply a known expected size. Peak workspace
+includes simultaneously retained images and extraction scratch plus bounded metadata.
+Restricted runs reserve an additional 8 MiB for the bounded admission-filter script;
+the existing 4 MiB attempt diagnostic allowance remains.
+Images move into publication on the same volume, so that move does not require a
+second image allocation. Existing publications consume existing disk space; no bound
+is a measurement of free space, which execution checks separately. Limits are not
+automatically raised. The contract may also carry exact source-frame locators
 and analysis proxies for a later streaming/scoring route. Mark pixel availability
 explicitly; before feature extraction publish materialized selected views using a
 declared adapter operation with its decoding settings and source verification. Do not
@@ -294,6 +388,18 @@ fresh verified SIFT. Validate exact expected images, keypoint/descriptor presenc
 counts/shapes/types, finite data, pixel bounds and empty match/geometry tables. Only the
 owned attempt database is WAL-checkpointed and sealed after confirmed process teardown.
 Published reads are immutable and create no sidecars.
+
+COLMAP's SIFT `max_num_features` retains whole scale levels and multiple orientations,
+so native rows can exceed the requested count. SIFT adapter version 2 validates the
+entire sealed attempt database against the 100,000-row structural bound, then applies
+`native_prefix_hard_cap_v1`: retain the first `max_features` native rows with exactly
+the same keypoint/descriptor indices, transactionally, before normal publication
+validation. Invalid discarded tails still fail. Published artifacts are never edited;
+learned extractors still reject over-budget output. The SIFT-only backend identity
+change invalidates extraction and its actual consumers, preserving view/PairSet caches.
+Live SIFT progress counts retained rows under the same hard cap. This policy follows
+the native ordering; it does not introduce a feature-score ranking.
+See the pinned [COLMAP SIFT implementation](https://github.com/colmap/colmap/blob/bd1fcf6/src/colmap/feature/sift.cc).
 
 Semantic identity streams every ordered keypoint/descriptor byte into per-view digests
 in UUID order and includes numerical settings/signature/model/backend/input identity.
@@ -566,6 +672,33 @@ verification policy before reuse and report uncertainty/change diagnostics; poli
 changes alone do not alter numerical keys when the same content is established.
 See [verification policies](PROJECT_FORMAT.md#source-verification-policies).
 
+## Prepared image review
+
+The internal `frame_selection.manual_review` v1 contract overlays explicit include
+and exclude decisions on an exact automatic selection. Reset removes an override.
+It consumes all materialized candidates, including automatically unselected frames;
+it does not reopen originals or rerun decoding/quality/automatic selection.
+Its `views.review` route publishes through the ordinary attempt/validation protocol.
+The new effective run binds the original candidate and the reviewed selected set,
+so existing explicit views-run consumers receive the resolved membership.
+
+Canonical decisions, method/contract version and exact consumed candidate/automatic
+semantics enter the recipe and reviewed content digest. Effective-run UUID and
+timestamps do not enter those fingerprints. Consumers retain their existing declared
+projections: membership changes alter the selected universe/selection semantics and
+invalidate dependent features/retrieval/pairs and descendants; unrelated candidate
+pixels, quality and historical outputs remain reusable. An explicit historical
+automatic run remains usable as that historical input. This scenario introduces no
+global current-input choice; M12d currentness/lineage presentation remains later work.
+See [saved-head atomicity](PROJECT_FORMAT.md#prepared-image-decisions-m12c-review).
+
+Source scopes and provenance are read projections over that exact prepared run.
+They do not change membership, source participation, group calibration semantics,
+automatic/effective artifacts or fingerprints. Video provenance retains the exact
+candidate PTS/time_base on the source timeline after Trim. Current locator/logical
+organization is display evidence kept separate from frozen source provenance.
+See [read-model ownership](PROJECT_FORMAT.md#prepared-source-scopes-and-provenance-m12c).
+
 ## Invalidation examples
 
 These rules assume separate stages; a declared coupled execution unit invalidates
@@ -587,6 +720,7 @@ as a unit. Re-evaluate affected descendants only, and preserve unchanged branche
 | SfM mask | Features and consumers; mask-aware retrieval if declared | Decoded views and unrelated pair selection |
 | Training-only mask | DatasetPreparation/training according to declared use | SfM |
 | Selection threshold using existing scores | Selection; PairSelection only if its selected-view projection changes | Candidate pixels, quality scores and PairSets with identical pairing universes |
+| Prepared-image manual membership | Reviewed selection and actual selected-universe consumers/descendants | Candidate pixels, quality, automatic selection and historical outputs |
 | Sharpest target FPS with an explicitly unchanged candidate FPS | Sharpest selection and consumers | Candidate pixels and QualityReport |
 | Duplicate threshold/lookback or minimum sharpness | Sharpest selection and consumers | Candidate pixels and QualityReport |
 | Quality maximum side or quality method/backend version | QualityReport, sharpest selection and consumers | Candidate pixels |
@@ -631,6 +765,9 @@ valid model becomes one component and every unregistered input view stays explic
 Native overlapping hypotheses cannot be represented as disjoint components, so any
 multiple-model output fails. Incremental uses verified cameras directly, without Global's
 optional calibration, and reuses the same private DB/publication/Reader boundary.
+While native mapping owns the workspace, resource polling tolerates an optional
+file disappearing between enumeration and stat (for example a SQLite journal).
+The required private database and final published payload remain strictly checked.
 Caspar requires compiled support, a concrete validated CUDA device, PINHOLE/SIMPLE_RADIAL
 input and compatible refinement settings; no mapper/BA fallback occurs. No portable
 ReconstructionSet semantics change. See [M8b1](M8B1.md).

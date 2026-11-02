@@ -28,7 +28,18 @@ from splatforge_gui.qml_bridge import DesktopViewModel  # noqa: E402
 
 
 def idle(vm):
-    until(lambda: not vm.controller.executor.busy and not vm.controller.mutating)
+    until(lambda: not vm.controller.executor.busy and not vm.controller.mutating
+          and not vm.media.preview_executor.busy)
+
+
+def row_menu(vm, window, identity):
+    prefix = "tile-" if vm.state["sourceView"] == "Grid" else ""
+    row_name = ("tile-" if prefix else "source-") + identity
+    until(lambda: visual_item(window.contentItem(), row_name) is not None)
+    row = visual_item(window.contentItem(), row_name)
+    row.forceActiveFocus(Qt.FocusReason.TabFocusReason)
+    click(window, prefix + "actions-" + identity)
+    return prefix
 
 
 def populated(vm, tmp_path):
@@ -52,7 +63,8 @@ def test_exclude_restore_filters_details_preview_and_availability(desktop, tmp_p
     identity = str(row.identity)
     try:
         desktop.media.selectSource(identity)
-        click(window, "sourceParticipation")
+        prefix = row_menu(desktop, window, identity)
+        click(window, prefix + "participation-" + identity)
         idle(desktop)
         assert desktop.sources.count == 1 and desktop.sources.selectedId == ""
         assert desktop.state["sourcesSummary"] == {
@@ -69,7 +81,8 @@ def test_exclude_restore_filters_details_preview_and_availability(desktop, tmp_p
         desktop.media.selectSource(identity)
         assert desktop.sources.selected["isIncluded"] is False
         assert desktop.sources.selected["availabilityState"] == "available"
-        click(window, "sourceDetails")
+        prefix = row_menu(desktop, window, identity)
+        click(window, prefix + "details-" + identity)
         assert "Excluded" in visual_item(window.contentItem(), "sourceParticipationLabel").property(
             "text"
         )
@@ -85,7 +98,8 @@ def test_exclude_restore_filters_details_preview_and_availability(desktop, tmp_p
         desktop.media.selectSource(identity)
         click(window, "sourceListMode" if view == "Grid" else "sourceGridMode")
         assert desktop.sources.selectedId == identity
-        click(window, "sourceDetails")
+        prefix = row_menu(desktop, window, identity)
+        click(window, prefix + "details-" + identity)
         click(window, "detailsParticipation")
         idle(desktop)
         assert desktop.sources.selected["isIncluded"] is True
@@ -94,7 +108,8 @@ def test_exclude_restore_filters_details_preview_and_availability(desktop, tmp_p
         assert desktop.sources.count == 0
         empty = visual_item(window.contentItem(), "participationEmptyState")
         assert empty.isVisible() and empty.property("text") == "No excluded sources."
-        assert not visual_item(window.contentItem(), "sourcesEmptyState").isVisible()
+        import_empty = visual_item(window.contentItem(), "sourcesEmptyState")
+        assert import_empty is None or not import_empty.isVisible()
         hashes = files.hash_reads
         click(window, "filterIncluded")
         assert desktop.sources.count == 2 and files.hash_reads == hashes
@@ -264,6 +279,7 @@ def test_keyboard_selection_and_participation_filters(desktop, tmp_path):
         assert item.property("visualFocus")
         QTest.keyClick(window, Qt.Key.Key_Space)
         assert desktop.sources.selectedId == str(rows[0].identity)
+        click(window, "catalogOptions")
         action = visual_item(window.contentItem(), "sourceParticipation")
         action.forceActiveFocus(Qt.FocusReason.TabFocusReason)
         QTest.keyClick(window, Qt.Key.Key_Space)
@@ -286,7 +302,7 @@ def test_future_participation_version_is_inspectable_but_cannot_process(desktop,
         update={"schema_version": 99},
     )
     projects.save(root, document)
-    desktop.openProject(str(root))
+    desktop.controller.open(root)  # Explicit reload of the externally edited document.
     idle(desktop)
     engine = create_engine(desktop)
     window = engine.rootObjects()[0]
@@ -295,8 +311,14 @@ def test_future_participation_version_is_inspectable_but_cannot_process(desktop,
         assert not desktop.state["participationSupported"]
         assert "unsupported version" in desktop.state["participationWarnings"][0]
         desktop.media.selectSource(str(rows[0].identity))
+        click(window, "catalogOptions")
         assert not visual_item(window.contentItem(), "sourceParticipation").isEnabled()
-        click(window, "sourceDetails")
+        QTest.keyClick(window, Qt.Key.Key_Escape)
+        identity = str(rows[0].identity)
+        prefix = row_menu(desktop, window, identity)
+        participation = visual_item(window.contentItem(), prefix + "participation-" + identity)
+        assert not participation.isEnabled()
+        click(window, prefix + "details-" + identity)
         assert not visual_item(window.contentItem(), "detailsParticipation").isEnabled()
         assert not engine.load_errors
         click(window, "closeSourceDetails")

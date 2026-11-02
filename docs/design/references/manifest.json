@@ -1,0 +1,80 @@
+[
+  {
+    "attachment": 3,
+    "source": "SplatForge_ недавние проекты.png",
+    "file": "01-projects.png",
+    "sha256": "4489AFB1FB9765B0E37548B8D128A1FB46BEB85DC6E9963B90BA84EA79AECF21"
+  },
+  {
+    "attachment": 2,
+    "source": "Создание проекта Apartment scan в SplatForge-1.png",
+    "file": "02-create-project.png",
+    "sha256": "8F0C66EE1B5F52789A9EBC6E4233BC16985152C1716E510219D64C960292A606"
+  },
+  {
+    "attachment": 1,
+    "source": "SplatForge_ обзор материалов Apartment scan-2.png",
+    "file": "03-materials-review.png",
+    "sha256": "937BC0284219AD397E64FF24D5DEEEE290A8DF634308D147BDDA1B220615AC4A"
+  },
+  {
+    "attachment": 10,
+    "source": "Обрезка материалов для скана квартиры-3.png",
+    "file": "04-video-trim.png",
+    "sha256": "B3056FAC9FAB0FA448F0623F40F232AEA750ECD0F70794C19AAA6D4A1A2DB209"
+  },
+  {
+    "attachment": 9,
+    "source": "Настройка покрытия двух фишай-объективов-4.png",
+    "file": "05-lens-coverage.png",
+    "sha256": "9A2B2144A4EF4E7A38CF53B2E52AE0068F97BFB2B70D45BA3C8EFD896F2A17A2"
+  },
+  {
+    "attachment": 8,
+    "source": "Редактор масок материалов для скана квартиры-5.png",
+    "file": "06-masks-tracking.png",
+    "sha256": "5E40CB3D61E49652F7F5834C904DAEC9780512190C60BEB0EB19419460D4DC52"
+  },
+  {
+    "attachment": 4,
+    "source": "Редактор масок SplatForge для 360° видео.png",
+    "file": "06b-masks-layer-settings.png",
+    "sha256": "F9DC68FBAA03DCA472AA6AA2AF7CF437BA4F3329EE231F6221FB2E91CA6BD169"
+  },
+  {
+    "attachment": 7,
+    "source": "Просмотр подготовленных кадров квартиры-6.png",
+    "file": "07-prepared-frames.png",
+    "sha256": "9691EACE95752FF09CC5645AAA2EADB929BE42749041B24D05121A386497B890"
+  },
+  {
+    "attachment": 13,
+    "source": "Идёт реконструкция скана квартиры-7.png",
+    "file": "08-reconstruction-running.png",
+    "sha256": "9939FCFFCD6FFAECD74F923558654D2BD3CE786C0D7FF49177BA9415098C2B99"
+  },
+  {
+    "attachment": 12,
+    "source": "Обзор разреженной реконструкции квартиры-8.png",
+    "file": "09-reconstruction-review.png",
+    "sha256": "D507D82369FE65D508D43D2015261136A9D866DF04C5543C3E48A8A755A13634"
+  },
+  {
+    "attachment": 6,
+    "source": "Запуск обучения Gaussian Splat для квартиры-9.png",
+    "file": "10-splat-training.png",
+    "sha256": "36798352F3C1661CD78F00C3F3647108E303A0284C331C4218BF8CD3F5AB1AB6"
+  },
+  {
+    "attachment": 11,
+    "source": "Результаты и экспорт Gaussian-сцены-10.png",
+    "file": "11-results-export.png",
+    "sha256": "4BFB45BE1F63A14488F0A25267A15B080B555A335BC03AC80A857FB067FB63B8"
+  },
+  {
+    "attachment": 5,
+    "source": "Настройки и диагностика SplatForge-11.png",
+    "file": "12-settings-diagnostics.png",
+    "sha256": "E2C8AC7F986E5DDBF215928AC14C68B126C6583C99AEEBD64233BB97EA3259DA"
+  }
+]

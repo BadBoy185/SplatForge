@@ -8,9 +8,11 @@ from PySide6.QtCore import Property, QObject, QStringListModel, QTimer, QUrl, Si
 from PySide6.QtGui import QGuiApplication
 
 from splatforge_gui.controller import ProjectController
+from splatforge_gui.folder_relink_vm import FolderRelinkViewModel
 from splatforge_gui.inspection_vm import InspectionViewModel
 from splatforge_gui.models import ARTIFACT_COLUMNS, RUN_COLUMNS, SOURCE_COLUMNS
 from splatforge_gui.preferences import Preferences
+from splatforge_gui.prepare_vm import PrepareViewModel
 from splatforge_gui.presentation import (
     artifact_name,
     guarded,
@@ -27,6 +29,7 @@ from splatforge_gui.qml_dialogs import ComponentSelectionModel, ExactSettingsMod
 from splatforge_gui.qml_media import MediaViewModel, SourceBrowserModel
 from splatforge_gui.qml_models import PresentationModel
 from splatforge_gui.source_status import SourceSession
+from splatforge_gui.video_usage_vm import VideoUsageViewModel
 from splatforge_gui.workflow_vm import WorkflowViewModel
 
 
@@ -47,6 +50,12 @@ class DesktopViewModel(QObject):
         self._exact = ExactSettingsModel(self)
         self._components = ComponentSelectionModel(self)
         self._page = 0
+        self._session_page = 1
+        self._entry_kind = ""
+        self._entry_pending = False
+        self._entry_error = ""
+        self._open_token = ""
+        self._recents_loading = True
         self._metrics, self._project, self._error = {}, {}, {}
         self._recents = []
         self._locate_path, self._locate_token = "", ""
@@ -61,7 +70,7 @@ class DesktopViewModel(QObject):
         self._source_view = self.preferences.get("source_view_mode", "List")
         if self._source_view not in {"List", "Grid"}:
             self._source_view = "List"
-        self._source.set_thumbnails_active(self._source_view == "Grid" and self._page == 1)
+        self._source.set_thumbnails_active(self._page == 1)
         self._notice = ""
         self._participation_pending = None
         self._groups_pending = None
@@ -74,6 +83,7 @@ class DesktopViewModel(QObject):
         }
         self._workflow = WorkflowViewModel(self)
         self._media = MediaViewModel(self)
+        self._video_usage = VideoUsageViewModel(self)
         self._inspection = InspectionViewModel(self)
         self.controller.changed.connect(self._overview)
         self.controller.progress_changed.connect(lambda _: self.changed.emit())
@@ -82,9 +92,19 @@ class DesktopViewModel(QObject):
         self.controller.dirty_changed.connect(lambda _: self.changed.emit())
         self.controller.error.connect(self._failed)
         self.controller.completed.connect(self._completed)
+        self._folder_relink = FolderRelinkViewModel(self)
+        self._prepare = PrepareViewModel(self)
         self.controller.scan_progress.connect(self._scanning)
         self._source.countChanged.connect(self._source_count_changed)
         self.refresh_recents()
+
+    @Property(QObject, constant=True)
+    def prepare(self) -> QObject:
+        return self._prepare
+
+    @Property(QObject, constant=True)
+    def folderRelink(self) -> QObject:
+        return self._folder_relink
 
     @Property(QObject, constant=True)
     def inspection(self) -> QObject:
@@ -93,6 +113,10 @@ class DesktopViewModel(QObject):
     @Property(QObject, constant=True)
     def media(self) -> QObject:
         return self._media
+
+    @Property(QObject, constant=True)
+    def videoUsage(self) -> QObject:
+        return self._video_usage
 
     @Property(QObject, constant=True)
     def workflow(self) -> QObject:
@@ -130,11 +154,15 @@ class DesktopViewModel(QObject):
     def state(self) -> dict:
         return {
             "page": self._page,
+            "entryPending": self._entry_pending,
+            "entryOperation": self._entry_kind,
+            "entryError": self._entry_error,
+            "recentsLoading": self._recents_loading,
             "mode": self._mode,
             "theme": self._theme,
             "hasProject": self.controller.overview is not None,
             "project": self._project,
-            "dirty": self.controller.dirty,
+            "dirty": self.controller.dirty or self._has_prepare_edits(),
             "busy": self.controller.mutating or bool(self.controller.active),
             "exclusive": self.controller.mutating,
             "unresolved": self.controller.has_unresolved,
@@ -285,7 +313,7 @@ class DesktopViewModel(QObject):
     def setSourceView(self, value: str) -> None:
         if value in {"List", "Grid"}:
             self._source_view = value
-            self._source.set_thumbnails_active(value == "Grid" and self._page == 1)
+            self._source.set_thumbnails_active(self._page == 1)
             self.preferences.set("source_view_mode", value)
             self.changed.emit()
 
@@ -304,10 +332,30 @@ class DesktopViewModel(QObject):
     def navigate(self, page: int) -> None:
         if 0 <= page <= 6:
             self._page = page
-            self._source.set_thumbnails_active(self._source_view == "Grid" and page == 1)
+            if page and self.controller.overview:
+                self._session_page = page
+            self._source.set_thumbnails_active(page == 1 and not self._prepare.state["active"])
             if self.controller.overview:
                 self.preferences.set("page", page)
             self.changed.emit()
+
+    @Slot()
+    def resumeProject(self) -> None:
+        """Return to the retained session without reopening or saving it."""
+        if self.controller.overview:
+            self._entry_error = ""
+            self.navigate(self._session_page)
+
+    @Slot()
+    def beginCreate(self) -> None:
+        self._entry_error = ""
+        self.navigate(0)
+
+    @Slot(str, result=bool)
+    def isCurrentProject(self, path: str) -> bool:
+        return self.controller.root is not None and os.path.normcase(
+            os.path.abspath(self.local_path(path))
+        ) == os.path.normcase(str(self.controller.root))
 
     @Slot(str)
     def setMode(self, mode: str) -> None:
@@ -349,7 +397,7 @@ class DesktopViewModel(QObject):
     def _switch(self, callback) -> None:
         if self.controller.mutating or self.controller.active:
             raise ValueError("Finish or cancel active work before switching projects")
-        if self.controller.dirty:
+        if self.controller.dirty or self._has_prepare_edits():
             self._pending = callback
             self.dialogRequested.emit("unsaved")
         else:
@@ -358,49 +406,86 @@ class DesktopViewModel(QObject):
     @Slot(str)
     @guarded
     def openProject(self, path: str) -> None:
+        if self._entry_pending:
+            return
+        self.navigate(0)
         root = self.local_path(path)
+        self._entry_kind, self._entry_error, self._entry_pending = "open", "", True
+        if self.isCurrentProject(path):
+            # A remembered pathname can now denote another project. Validate identity
+            # off the UI thread before taking the no-reload resume route.
+            token = self._open_token = uuid4().hex
+            self.controller.submit(
+                "resume_project",
+                lambda f: (token, root, f.service("project").open(root).project_id),
+            )
+        else:
+            self._switch(lambda: self.controller.open(root))
+        self.changed.emit()
+
+    @guarded
+    def _switch_checked_open(self, root: Path) -> None:
+        self._entry_pending = True
         self._switch(lambda: self.controller.open(root))
 
     @Slot(str, str, result="QVariantMap")
     def projectDestination(self, location: str, name: str) -> dict:
         error = project_name_error(name)
         if error:
-            return {"path": "", "error": error, "valid": False}
+            return {"path": "", "error": error, "field": "name", "valid": False}
         try:
             if not location.strip():
                 raise ValueError("Choose a parent location for your project.")
             parent = self.local_path(location)
             if not parent.is_absolute():
                 raise ValueError("Choose an absolute parent location for your project.")
-            return {"path": str(parent / name), "error": "", "valid": True}
+            return {"path": str(parent / name), "error": "", "field": "", "valid": True}
         except ValueError as exc:
-            return {"path": "", "error": str(exc), "valid": False}
+            return {"path": "", "error": str(exc), "field": "location", "valid": False}
 
     @Slot(str, str)
     @guarded
     def createProject(self, location: str, name: str) -> None:
+        if self._entry_pending:
+            return
+        self._entry_kind, self._entry_error = "create", ""
         destination = self.projectDestination(location, name)
         if not destination["valid"]:
             raise ValueError(destination["error"])
         root = Path(destination["path"])
+        self._entry_pending = True
         self._switch(lambda: self.controller.create(root, name))
+        self.changed.emit()
 
     @Slot(str)
     def resolveUnsaved(self, choice: str) -> None:
         callback, self._pending = self._pending, None
         if choice == "save":
             self._after_save = callback
-            self.controller.save()
+            if not self.save():
+                self._after_save = None
+                self._entry_pending = False
         elif choice == "discard":
             self.controller.discard()
+            self._prepare._settings.discard()
             if callback:
                 callback()
         else:
+            self._entry_pending = False
             self._media._clear_review_mutation()
+            self.changed.emit()
 
-    @Slot()
-    def save(self) -> None:
+    def _has_prepare_edits(self) -> bool:
+        prepare = getattr(self, "_prepare", None)
+        return bool(prepare and prepare._settings.has_unsaved)
+
+    @Slot(result=bool)
+    @guarded
+    def save(self) -> bool:
+        if not self._prepare._settings.stage_for_save():
+            raise ValueError(self._prepare._settings.state["error"])
         self.controller.save()
+        return True
 
     @Slot()
     def refresh(self) -> None:
@@ -454,9 +539,11 @@ class DesktopViewModel(QObject):
             self.refresh_recents()
 
     def refresh_recents(self) -> None:
-        if self.controller.operation in {"save", "ingest"}:
+        if self.controller.operation in {"save", "ingest", "relink_apply", "prepare",
+                                         "frame_review_apply"}:
             return
         entries = self.preferences.entries()
+        self._recents_loading = True
 
         def read(facade):
             result = []
@@ -526,12 +613,47 @@ class DesktopViewModel(QObject):
     def verifySources(self) -> None:
         self.controller.verify_sources()
 
+    @Slot("QVariantList", result=bool)
+    def canDropMedia(self, urls: list) -> bool:
+        """Cheap drag admission only; the worker scanner owns actual discovery."""
+        if not self.state["canMutate"] or self._page != 1 or self._folder is not None:
+            return False
+        paths = self._drop_paths(urls)
+        if not paths:
+            return False
+        from splatforge.application.media_contracts import classify_media_path
+
+        # No enumeration, hashing or probing here. A directory metadata check is
+        # necessary for Explorer folders with dots in their names. Discovery and
+        # link/format/duplicate validation still run in the existing owned worker.
+        return any(classify_media_path(p) is not None or p.is_dir() for p in paths)
+
+    @staticmethod
+    def _drop_paths(urls: list) -> tuple[Path, ...]:
+        paths = []
+        for value in urls:
+            url = QUrl(str(value))
+            if url.isLocalFile():
+                path = Path(url.toLocalFile())
+            elif url.scheme() and not (len(url.scheme()) == 1 and str(value)[1:3] in {":/", ":\\"}):
+                return ()
+            else:
+                path = Path(str(value))
+            if not path.is_absolute():
+                return ()
+            paths.append(path)
+        return tuple(paths)
+
     @Slot("QVariantList")
     @guarded
     def dropUrls(self, urls: list) -> None:
-        paths = tuple(self.local_path(str(u)) for u in urls)
+        paths = self._drop_paths(urls)
         if self.controller.overview and self._page == 1 and paths:
+            if not self.canDropMedia(urls):
+                return
             self.cancelFolder()
+            if len(paths) == 1 and paths[0].is_dir():
+                self._folder_root = paths[0]
             self._scan_progress = {"entries": 0, "directories": 0}
             self.controller.scan_media(paths)
         elif len(paths) == 1 and paths[0].is_dir():
@@ -559,14 +681,19 @@ class DesktopViewModel(QObject):
         if self.controller.mutating or self.controller.active:
             self.dialogRequested.emit("activeClose")
             return False
-        if self.controller.dirty:
+        if self.controller.dirty or self._has_prepare_edits():
             self._pending = self.closeReady.emit
             self.dialogRequested.emit("unsaved")
             return False
         self.controller.timer.stop()
+        self._media.closePreview()
+        self._video_usage.filmstrip.stop()
+        self._source.set_thumbnails_active(False)
         if (self.controller.executor.busy or self._media._gallery.executor.busy
+                or self._media.preview_executor.busy
+                or self._video_usage.filmstrip.executor.busy
                 or self._source.thumbnails.executor.busy):
-            QTimer.singleShot(100, self.closeReady.emit)
+            QTimer.singleShot(100, self, self.closeReady.emit)
             return False
         return True
 
@@ -583,7 +710,6 @@ class DesktopViewModel(QObject):
             self.dialogRequested.emit("closeSourceDetails")
             self._participation_pending = None
             self._groups_pending = None
-        first = not self._project
         self._project = {
             "id": str(value.document.project_id),
             "name": value.document.label,
@@ -608,7 +734,7 @@ class DesktopViewModel(QObject):
                 }}) for r in value.index.artifacts
             )
         )
-        self._finish_overview(value, first)
+        self._finish_overview(value)
 
     def _project_sources(self, value) -> None:
         self._source.group_labels = {
@@ -643,7 +769,7 @@ class DesktopViewModel(QObject):
             self._groups_pending = None
             self._notice = "Source groups saved."
 
-    def _finish_overview(self, value, first: bool) -> None:
+    def _finish_overview(self, value) -> None:
         important = {
             "mapping.reconstruction_set",
             "dataset.prepared_set",
@@ -683,29 +809,47 @@ class DesktopViewModel(QObject):
             latestId=str(latest.identity) if latest else "",
         )
         self.refresh_recents()
-        if first:
-            self._page = max(0, min(6, int(self.preferences.get("page", 0))))
+        # Legacy page preferences never override the explicit entry route.
         self.changed.emit()
         if self._pending_close and not self.controller.mutating and not value.active:
             self._pending_close = False
             if self.controller.has_unresolved:
                 self.navigate(6)
             else:
-                QTimer.singleShot(0, self.closeReady.emit)
+                QTimer.singleShot(0, self, self.closeReady.emit)
 
     def _live_metrics(self, metrics: dict) -> None:
         self._metrics = metrics
         self.changed.emit()
 
     def _busy_changed(self, busy: bool) -> None:
-        if not busy and self._after_save and not self.controller.dirty:
+        if (not busy and self._after_save and not self.controller.dirty
+                and not self._has_prepare_edits()):
             callback, self._after_save = self._after_save, None
             # Result delivery and worker-finished delivery are distinct queued
             # events. A zero timer from completed alone can run before teardown.
-            QTimer.singleShot(0, callback)
+            QTimer.singleShot(0, self, callback)
         self.changed.emit()
 
     def _failed(self, error) -> None:
+        if error.stage in {"prepare", "prepare_plan", "prepare_history",
+                           "frame_review_page", "frame_review_apply"} or (
+            error.stage == "qml_gallery" and self._prepare.state["active"]
+        ):
+            self._pending_close = False
+            self.changed.emit()
+            return
+        if error.stage in {"relink_preview", "relink_apply"}:
+            # The owning dialog keeps recovery next to the checked mapping.
+            self._pending_close = False
+            self.changed.emit()
+            return
+        entry_failure = self._entry_pending or error.stage in {
+            "create", "open", "createProject", "openProject", "resume_project",
+            "locate_recent", "locateRecent",
+        }
+        if entry_failure:
+            self._entry_pending = False
         self._pending_close, self._after_save = False, None
         if error.stage == "save" and self._participation_pending is not None:
             self._participation_pending = None
@@ -725,11 +869,17 @@ class DesktopViewModel(QObject):
             "details": error.traceback,
             "stage": error.stage,
         }
+        if entry_failure:
+            self._entry_error = message
+            if error.stage in {"open", "resume_project"}:
+                self.refresh_recents()
         self.changed.emit()
-        self.dialogRequested.emit("error")
+        if not entry_failure:
+            self.dialogRequested.emit("error")
 
     def _completed(self, name: str, value) -> None:
         if name in {"create", "open"}:
+            self._entry_pending, self._entry_error = False, ""
             self._error, self._metrics, self._folder = {}, {}, None
             self.cancelFolder()
             self.dialogRequested.emit("closeFolder")
@@ -740,14 +890,26 @@ class DesktopViewModel(QObject):
             self.refresh_recents()
             if name == "create":
                 self.preferences.set("last_project_parent", str(self.controller.root.parent))
-                self.navigate(1)
+            self.navigate(1)
+            self.dialogRequested.emit("projectReady")
+        elif name == "resume_project":
+            token, root, identity = value
+            if token == self._open_token:
+                self._entry_pending = False
+                if (self.controller.overview
+                        and identity == self.controller.overview.document.project_id):
+                    self.resumeProject()
+                else:
+                    self._switch_checked_open(root)
         elif name == "recent_projects":
             if value[0] == self.preferences.entries():
+                self._recents_loading = False
                 self._recents = value[1]
                 for entry in value[1]:
                     if entry["available"]:
                         self.preferences.describe(entry["path"], entry["projectId"], entry["name"])
         elif name == "locate_recent":
+            self._entry_error = ""
             token, entry, target, document = value
             if token == self._locate_token and entry in self.preferences.entries():
                 self._recent_candidate = entry, target, document

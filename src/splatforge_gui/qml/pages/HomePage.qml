@@ -4,137 +4,110 @@ import QtQuick.Layouts
 import "../theme"
 import "../components"
 
-ColumnLayout {
+Item {
     id: page
     required property var vm
+    property bool showEntryError: true
     signal newProject
     signal openProject
-    spacing: 24
-    SplatPageHeader {
-        Layout.fillWidth: true
-        title: page.vm.state.hasProject ? page.vm.state.project.name : "SplatForge"
-        subtitle: page.vm.state.hasProject ? "Project overview" :
-                                             "Create a project or open an existing one."
-        SplatButton {
-            text: "Open Existing Project"
-            objectName: "openExistingProject"
-            iconName: "folder"
-            onClicked: page.openProject()
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 32
+        spacing: 24
+        SplatLabel {
+            text: "Projects"
+            font.pixelSize: Theme.title
+            font.weight: Font.DemiBold
         }
-        SplatButton {
-            text: "New Project"
-            objectName: "newProject"
-            iconName: "plus"
-            kind: page.vm.state.hasProject ? "secondary" : "primary"
-            onClicked: page.newProject()
-        }
-    }
-    RecentProjects {
-        vm: page.vm
-        Layout.fillWidth: true
-    }
-    SplatBanner {
-        visible: page.vm.state.unresolved
-        Layout.fillWidth: true
-        text: "Recovery required. An interrupted operation needs your attention before processing can continue."
-        action: "Review recovery"
-        onActivated: page.vm.navigate(6)
-    }
-    SplatCard {
-        visible: page.vm.state.hasProject
-        Layout.fillWidth: true
-        implicitHeight: 156
         RowLayout {
-            anchors.fill: parent
-            spacing: 24
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 10
-                SplatLabel {
-                    text: "NEXT IN YOUR WORKFLOW"
-                    color: Theme.accent
-                    font.pixelSize: Theme.caption
-                    font.letterSpacing: 1.5
-                }
-                SplatLabel {
-                    text: page.vm.state.project.nextTitle || "Start with your captures"
-                    font.pixelSize: Theme.section
-                    font.weight: Font.DemiBold
-                }
-                SplatLabel {
-                    text: page.vm.state.project.sourceCount > 0
-                          ? "Review your published workflow below. Plan verifies the exact inputs, methods and runtime before execution." :
-                            "Add perspective photos or video. Originals stay as read-only references."
-                    color: Theme.secondary
-                    Layout.fillWidth: true
-                }
-            }
+            spacing: 12
             SplatButton {
-                text: page.vm.state.project.nextAction || "Add sources"
-                iconName: "arrow"
+                text: "New project"
+                objectName: "newProject"
+                iconName: "plus"
                 kind: "primary"
-                onClicked: page.vm.navigate(page.vm.state.project.nextPage || 1)
-            }
-        }
-    }
-    WorkflowStrip {
-        visible: page.vm.state.hasProject
-        Layout.fillWidth: true
-        implicitHeight: 158
-        stages: page.vm.state.project.workflow || []
-        onActivated: p => page.vm.navigate(p)
-    }
-    RowLayout {
-        visible: page.vm.state.hasProject
-        spacing: 16
-        MetricCard {
-            Layout.fillWidth: true
-            label: "Source media"
-            value: String(page.vm.state.project.sourceCount || 0)
-            detail: "Originals referenced"
-        }
-        MetricCard {
-            Layout.fillWidth: true
-            label: "Published artifacts"
-            value: String(page.vm.state.project.artifactCount || 0)
-            detail: "Immutable project outputs"
-        }
-        MetricCard {
-            Layout.fillWidth: true
-            label: "Validation"
-            value: (page.vm.state.project.validation || "not_started").replace(/_/g, " ")
-            detail: "Latest recorded report"
-        }
-    }
-    SplatCard {
-        visible: page.vm.state.hasProject && !!page.vm.state.project.latestId
-        Layout.fillWidth: true
-        implicitHeight: 100
-        RowLayout {
-            anchors.fill: parent
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                SplatLabel {
-                    text: "LATEST PUBLISHED OUTPUT"
-                    color: Theme.muted
-                    font.pixelSize: Theme.caption
-                    font.letterSpacing: 1
-                }
-                SplatLabel {
-                    text: page.vm.state.project.latestTitle || ""
-                    font.pixelSize: Theme.section
-                    font.weight: Font.DemiBold
-                }
+                enabled: !page.vm.state.busy && !page.vm.state.entryPending
+                onClicked: page.newProject()
             }
             SplatButton {
-                text: "Inspect result"
-                iconName: "arrow"
-                onClicked: {
-                    page.vm.navigate(5);
-                    page.vm.inspection.inspectArtifact(page.vm.state.project.latestId);
+                text: "Open project…"
+                objectName: "openExistingProject"
+                iconName: "folder"
+                enabled: !page.vm.state.busy && !page.vm.state.entryPending
+                onClicked: page.openProject()
+            }
+            SplatLabel {
+                visible: page.vm.state.busy
+                text: page.vm.state.entryPending ? (page.vm.state.entryOperation === "create" ? "Creating project…" : "Opening project…") : "Finish or cancel active work before switching projects."
+                color: Theme.secondary
+                Layout.fillWidth: true
+            }
+        }
+        Rectangle {
+            visible: page.vm.state.hasProject
+            Layout.fillWidth: true
+            implicitHeight: 72
+            color: Theme.surface
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 16
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    SplatLabel {
+                        text: "Current session · " + (page.vm.state.project.name || "")
+                        font.weight: Font.DemiBold
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        wrapMode: Text.NoWrap
+                    }
+                    SplatLabel {
+                        text: page.vm.state.dirty ? "Unsaved changes" : page.vm.state.project.path || ""
+                        color: page.vm.state.dirty ? Theme.warning : Theme.secondary
+                        font.pixelSize: Theme.small
+                        Layout.fillWidth: true
+                        elide: Text.ElideMiddle
+                        wrapMode: Text.NoWrap
+                    }
+                }
+                SplatButton {
+                    visible: page.vm.state.dirty
+                    text: "Save"
+                    objectName: "saveCurrentProject"
+                    enabled: page.vm.state.canMutate
+                    onClicked: page.vm.save()
+                }
+                SplatButton {
+                    objectName: "resumeCurrentProject"
+                    text: page.vm.state.busy ? "Return to task" : "Return to project"
+                    onClicked: page.vm.resumeProject()
                 }
             }
+        }
+        SplatBanner {
+            visible: page.vm.state.unresolved
+            Layout.fillWidth: true
+            text: "Interrupted work needs attention before processing can continue."
+            action: "Review recovery"
+            onActivated: page.vm.navigate(6)
+        }
+        SplatLabel {
+            objectName: "projectEntryError"
+            visible: page.showEntryError && text !== ""
+            text: page.vm.state.entryError
+            color: Theme.danger
+            Layout.fillWidth: true
+        }
+        RecentProjects {
+            vm: page.vm
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
+        SplatLabel {
+            text: "Local projects · Files stay on this computer"
+            font.pixelSize: Theme.small
+            color: Theme.secondary
         }
     }
 }

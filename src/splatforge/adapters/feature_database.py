@@ -18,9 +18,11 @@ from splatforge.adapters.colmap_capabilities import inspect_colmap_database
 from splatforge.core.capabilities import DatabaseTableEvidence
 from splatforge.core.features import (
     MAX_FEATURE_DATABASE_BYTES,
+    MAX_FEATURES_PER_VIEW,
     FeatureSettings,
     FeatureViewSummary,
     LocalFeatureSet,
+    SiftExtractionSettings,
     descriptor_signature,
 )
 from splatforge.core.views import MAX_VIEWS, FrozenModel, canonical_json_bytes
@@ -36,6 +38,43 @@ def seal_feature_database(path: Path) -> None:
             raise ValueError("Feature database still has an active WAL owner")
         if db.execute("PRAGMA journal_mode=DELETE").fetchone()[0] != "delete":
             raise ValueError("Feature database could not enter a self-contained publication state")
+
+
+def enforce_sift_feature_budget(
+    path: Path,
+    summaries: tuple[FeatureViewSummary, ...],
+    settings: SiftExtractionSettings,
+    *,
+    expected_schema: tuple[int, int, tuple[DatabaseTableEvidence, ...]],
+    maximum_bytes: int = MAX_FEATURE_DATABASE_BYTES,
+) -> None:
+    """Cap paired native rows only in the sealed, unpublished extraction database.
+
+    COLMAP retains whole SIFT scale levels and multiple orientations, so its
+    max_num_features is not a hard row limit. Validate all native rows first,
+    including those beyond our budget; malformed tails must never be hidden.
+    The versioned native-prefix policy preserves keypoint/descriptor row pairing.
+    """
+    native_settings = settings.model_copy(update={"max_features": MAX_FEATURES_PER_VIEW})
+    checked, mapping = inspect_feature_database(
+        path, summaries, native_settings,
+        expected_schema=expected_schema, maximum_bytes=maximum_bytes,
+    )
+    oversized = {v.view_id for v in checked if v.feature_count > settings.max_features}
+    if not oversized:
+        return
+    with closing(sqlite3.connect(path, timeout=5)) as db, db:
+        for image in mapping.images:
+            if image.view_id not in oversized:
+                continue
+            db.execute(
+                "UPDATE keypoints SET rows=?, data=substr(data,1,?*cols*4) WHERE image_id=?",
+                (settings.max_features, settings.max_features, image.image_id),
+            )
+            db.execute(
+                "UPDATE descriptors SET rows=?, data=substr(data,1,?*cols) WHERE image_id=?",
+                (settings.max_features, settings.max_features, image.image_id),
+            )
 
 
 class FeatureImageMapping(FrozenModel):

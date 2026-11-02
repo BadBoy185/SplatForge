@@ -22,6 +22,7 @@ from splatforge.core.execution import (
     PairSelectionRoute,
     RunSnapshot,
 )
+from splatforge.core.frame_review import EffectiveSelection
 from splatforge.core.pairs import (
     ExhaustiveSettings,
     HybridPairSettings,
@@ -42,10 +43,9 @@ from splatforge.core.pairs import (
     project_pairing_universe,
     sequential_recipe_key,
 )
-from splatforge.core.quality import SharpestSelectedViewSet
 from splatforge.core.retrieval import RetrievalRepresentationSet, RetrievalResourceLimits
 from splatforge.core.retrieval_pairs import plan_retrieval_pairs, retrieval_pair_recipe_key
-from splatforge.core.views import CandidateViewSet, FrozenModel, SelectedViewSet
+from splatforge.core.views import CandidateViewSet, FrozenModel
 
 
 class PairRepository(ExecutionRepository, Protocol):
@@ -62,7 +62,7 @@ class PairRepository(ExecutionRepository, Protocol):
         root: Path,
         candidate: ArtifactHandle,
         selected: ArtifactHandle,
-    ) -> tuple[CandidateViewSet, SelectedViewSet | SharpestSelectedViewSet]: ...
+    ) -> tuple[CandidateViewSet, EffectiveSelection]: ...
 
     def load_pair_set(self, root: Path, handle: ArtifactHandle) -> PairSet: ...
 
@@ -111,6 +111,21 @@ class PairsService:
         self._workspace = workspace
         self._progress = progress or ProgressSupport()
         self._retrieval_adapter = retrieval_adapter
+
+    def validate_views_input(self, root: Path, views_run_id: UUID) -> int:
+        """Read/validate exact published pairing inputs without creating a run."""
+        repo = self._repository
+        candidate_handle = repo.resolve_run_output(
+            root, views_run_id, "candidate_views", "candidate_set"
+        )
+        selected_handle = repo.resolve_run_output(
+            root, views_run_id, "selected_views", "selected_set"
+        )
+        candidate, selected = repo.load_pairing_inputs(root, candidate_handle, selected_handle)
+        universe = project_pairing_universe(candidate, selected)
+        if not universe.views:
+            raise ValueError("The chosen published views run contains no selected frames")
+        return len(universe.views)
 
     def build(
         self,

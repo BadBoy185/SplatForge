@@ -9,7 +9,7 @@ SplatDialog {
     required property var vm
     property bool reviewing: false
     objectName: "importPreviewDialog"
-    title: "Import Folder"
+    title: "Import media"
     height: Math.min(reviewing ? 650 : 560, Overlay.overlay.height - 48)
     onOpened: reviewing = false
     onClosed: vm.cancelFolder()

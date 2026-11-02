@@ -27,6 +27,27 @@ def decode_thumbnail(path: Path, side: int = 192) -> QImage:
     )
 
 
+def decode_preview(path: Path) -> QImage:
+    """Bound review to 4096px/64MiB; never upscale smaller originals.
+
+    Plugins may decode before scaling; the 64MP input guard also bounds transient
+    memory. This detail-limited raster is not a full-resolution/tiled viewer.
+    """
+    if path.stat().st_size > 256 * 1024**2:
+        raise ValueError("Photo exceeds the 256 MiB review limit")
+    reader = QImageReader(str(path))
+    reader.setAutoTransform(True)
+    size = reader.size()
+    if not size.isValid() or size.width() * size.height() > 64000000:
+        raise ValueError("Photo is invalid or exceeds the 64 megapixel review limit")
+    if max(size.width(), size.height()) > 4096:
+        reader.setScaledSize(size.scaled(4096, 4096, Qt.AspectRatioMode.KeepAspectRatio))
+    image = reader.read()
+    if image.isNull():
+        raise ValueError(reader.errorString())
+    return image
+
+
 class ThumbnailModel(QAbstractListModel):
     request = Signal(str, object, int)
 
@@ -38,6 +59,7 @@ class ThumbnailModel(QAbstractListModel):
         self.executor = TaskExecutor(self)
         self.jobs = {}
         self.queue = deque()
+        self.active = True
         self.generation = 0
         self.namespace = uuid4().hex
         self._paths = {}
@@ -78,11 +100,26 @@ class ThumbnailModel(QAbstractListModel):
         self.queue.clear()
         self.endResetModel()
 
+    def set_active(self, active: bool) -> None:
+        if active == self.active:
+            return
+        self.active = active
+        if not active:
+            # Revoke queued Qt requests as well as the explicit waiting list.
+            # Submitted workers remain owned until their actual finished signal.
+            self.generation += 1
+            self.queue.clear()
+            self.pending.clear()
+
     @Slot(str, object, int)
     def _request(self, identity: str, path: Path, generation: int) -> None:
         if generation != self.generation or self._paths.get(identity) != path:
             return
-        if len(self.jobs) >= 8:
+        if not self.active:
+            self.pending.discard(identity)
+            return
+        # Keep unstarted work in our revocable queue instead of QThreadPool's.
+        if len(self.jobs) >= min(8, self.executor.pool.maxThreadCount()):
             if len(self.queue) < 100:
                 self.queue.append((identity, path, generation))
             else:
@@ -94,7 +131,7 @@ class ThumbnailModel(QAbstractListModel):
     @Slot(str)
     def _finished(self, key: str) -> None:
         self.jobs.pop(key, None)
-        if self.queue:
+        if self.active and self.queue:
             identity, path, generation = self.queue.popleft()
             self._request(identity, path, generation)
 

@@ -87,6 +87,24 @@ def test_work_model_cold_historical_live_and_performance_identity(tmp_path):
     )
 
 
+@pytest.mark.parametrize("variant,count,expected", [
+    ("SIFT", 12712, 8192),
+    ("SIFT", 100001, None),
+    ("ALIKED_N16ROT", 12712, None),
+])
+def test_sift_native_overflow_progress_counts_retained_rows(tmp_path, variant, count, expected):
+    seen = []
+    uid = UUID(int=1)
+    reader = FeatureProgressReader(tmp_path, frozenset((uid,)), variant, 8192, seen.append)
+    reader.line("Processed file [1/1]")
+    reader.line(f"Name: {uid}.jpg")
+    reader.line(f"Features: {count} ({variant})")
+    if expected is None:
+        assert not seen
+    else:
+        assert seen[-1].completed_views == 1 and seen[-1].features == expected
+
+
 def test_optional_events_and_history_failures_do_not_affect_features(tmp_path, monkeypatch):
     value, fixture = harness(tmp_path), NativeFixture(tmp_path)
     views = prepare(value)

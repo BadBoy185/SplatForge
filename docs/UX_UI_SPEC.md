@@ -179,7 +179,7 @@ Reconstruction must be treated as a valid final product, not merely an internal 
 
 The application has two primary levels:
 
-Home
+Projects / Recent projects (legacy internal name: Home)
 
 Used to:
 
@@ -189,18 +189,74 @@ Used to:
 
 Project Workspace
 
-Persistent left navigation:
+Primary workspace tabs (selected direction, 2026-10-28):
 
-Overview
-Sources
-Prepare
-Reconstruction
-Gaussian Splat
-Exports
-────────────
-Project Settings
+Materials / Reconstruction / Splat / Results
 
-The exact visual layout may evolve, but this v1 information architecture should remain stable.
+Projects is the normal first window after launch, even when a previous project/page
+is remembered. An explicit project launch argument remains an explicit Open request,
+not an implicit restoration. The existing backend Open checks still apply.
+
+A visible text button **Projects / Проекты** stays in the upper-left client header
+beside the product/project name in Materials, Reconstruction, Splat and Results.
+It is global navigation, never hidden in More/Settings or reduced to a logo click.
+Project tabs appear only while viewing the project workspace; Projects shows a
+compact retained-session row when one exists. Settings remains globally available.
+
+Materials combines the
+source catalog, current photo/video viewer and contextual tools, with transport
+below. List/Grid and batch selection share the catalog; current viewer actions
+apply to the displayed material only. Prepare remains a processing step within
+the Materials-to-Reconstruction flow, not an additional primary destination.
+Reconstruction owns camera reconstruction and review. Splat owns training. Results
+owns outputs/export; dataset preparation/export remains accessible there through
+the existing dataset screen. Overview, history, diagnostics and settings are
+secondary actions. Existing screen implementations remain available during this
+bounded migration; future controls are not presented as implemented.
+
+The selected layout, full screen map, proposed dimensions and capability boundaries
+are specified in [GUI design](GUI_DESIGN.md#reference-led-interface-contract--2026-10-28)
+and the [13-image reference catalog](design/references/README.md).
+Each workspace fills the available area; scrolling belongs to an individual panel.
+
+3.1 Return to Projects and session lifetime
+
+Returning to Projects is a presentation transition, not Close/Open or a project
+switch. Retain one current project session, its last section, draft and owned work.
+Stop/unload media playback and hidden presentation requests using existing lifetime
+guards; processing ownership and polling continue. Do not reread/reset the project
+just to show recents. This decision extends the existing navigate-without-switch
+behavior into an explicit visible contract, implemented by the bounded Projects
+entry slice on 2026-10-28. The active plan records Projects/Create layout acceptance;
+Materials/Trim and corrected M12b3 user acceptance remain separate and open.
+
+* Unsaved changes: preserve the in-memory draft and show the current project with
+  “Unsaved changes”, Save and Return to project on Projects. No silent Save/Discard.
+  Opening/creating another project or closing the app uses existing Save/Discard/
+  Cancel. Save must succeed, read back and release the mutation slot before switching;
+  failure stays in the current session with its error. Discard requires the user's
+  explicit choice and discards only that draft. Cancel leaves everything in place.
+* Active task or source mutation: Projects remains reachable and shows project name,
+  actual operation/progress and Return to task. Existing cancellation is available
+  only when canCancel allows it; navigation never requests it. Opening/creating a
+  different project is blocked with “Finish or cancel active work before switching
+  projects”. Cancellation remains pending until confirmed teardown. No background
+  multi-project processing or detached daemon is introduced.
+* Same project: activating the current-session row (or the matching recent entry)
+  resumes the retained section, draft, selection and task without a second Open.
+  Resolve identity through existing validated identity/path evidence; a same name
+  alone is insufficient. If the path now denotes another project, treat it as a
+  different Open request and apply the guards. Explicit refresh/reload is a separate
+  action, never an incidental consequence of Return.
+* Unresolved lifecycle: keep a visible recovery entry and existing retry/publication
+  blocks. Projects cannot suppress ownership checks. Closing the application still
+  follows existing active-close/dirty/reader-drain behavior; returning to Projects
+  is not permission to terminate workers or lose drafts.
+
+These choices reuse the single controller/session and
+[save/ownership contracts](PROJECT_FORMAT.md#storage-layout-and-ownership).
+The retained-session surface and same-project resume are explicit in the entry
+slice; no multi-project background-switch contract is introduced.
 
 Reconstruction Viewer opens within Reconstruction → Reconstruction Result / Review → 3D Reconstruction Viewer. A separate primary Viewer destination is not required in v1. Fullscreen remains tied to the inspected reconstruction and component; a universal Viewer may be considered later.
 
@@ -208,35 +264,28 @@ Do not expose every internal processing artifact as a navigation item.
 
 ⸻
 
-4. Home screen
+4. Projects screen
 
-The Home screen should be simple.
+New Project and Open Existing Project precede a calm list of recent projects.
+Each row shows the persisted project name, location, known last-opened time and
+honest availability/error text. Default rows have no preview. A missing thumbnail
+does not reserve a large blank card. Unknown timestamps are omitted or labeled
+unknown; no fabricated source counts, size, preview or processing-readiness badges.
+Future workflow status is optional and requires real indexed evidence; historical
+completion must not imply compatibility with current intent.
 
-Example:
+An empty list explains that no recent projects are recorded and keeps New/Open
+available. Loading is distinct from empty. Unavailable entries stay visible with
+Locate and Remove from list. Locate uses ProjectService and verifies saved project
+identity; legacy entries without identity require the existing explicit confirmation.
+Remove affects only recents, never project/source files. Distinguish unavailable
+project directory, invalid/newer-format project, different identity and missing
+original media; a recent-path check does not verify every original source.
 
-SplatForge
-Recent Projects
-────────────────────────
-Colorado Cabin
-Reconstruction ready
-Last opened Oct 26
-Lom Plešivec
-Gaussian Splat ready
-Last opened Oct 24
-[ New Project ]
-[ Open Existing Project ]
-
-Recent projects should show a meaningful project status, not internal state identifiers.
-
-Examples:
-
-* Sources added
-* Ready to prepare
-* Ready for reconstruction
-* Reconstruction needs attention
-* Ready for training
-* Gaussian Splat ready
-* Processing interrupted
+After a normal successful Create/Open, enter Materials. A retained current-session
+activation follows section 3.1 instead. Errors remain on Projects with the old
+session accessible, and recents update only on validated success. Replacing the
+overview-as-Home presentation must not remove history/recovery/dataset access.
 
 ⸻
 
@@ -262,6 +311,21 @@ D:\SplatForge Projects\Colorado Cabin
 
 Prevent accidental silent overwrite of existing projects.
 
+Use the existing Windows-safe single directory-name validator and absolute parent
+Location. Reject empty names, separators/control characters, reserved Windows names,
+trailing dot/space and excessive UTF-16 length as the current helper does. Destination
+preview is computed without I/O; ProjectService/storage performs actual validation,
+including nonempty-destination refusal, permissions and supported format rules.
+No new defaults silently rewrite existing projects. Originals remain in place.
+
+Before submission, Cancel/Esc returns to Projects without creating anything.
+Submit shows pending state, prevents duplicate submission and keeps the form/fields
+until success or error. Do not close the dialog optimistically. During the submitted
+Create/Open, do not offer a false cancellation contract; wait for result and retain
+existing app-close ownership checks. Show field errors locally and backend errors
+with a useful explanation, keeping inputs for correction. Successful persisted
+readback enters empty Materials, then updates recents/last successful parent.
+
 Primary action:
 
 [ Create Project ]
@@ -272,9 +336,9 @@ Primary action:
 
 The initial workflow is lightly guided:
 
-Create Project
+Projects → Create or Open Project
       ↓
-Sources
+Materials / Sources
       ↓
 Prepare
       ↓
@@ -284,11 +348,37 @@ Gaussian Splat
 
 The application should recommend the next logical action without locking the user into a strict wizard.
 
+The first implementation gate covers Projects → Create/Open → Materials → Projects.
+The bounded entry slice is implemented; further Materials redesign remains separate.
+The [active interface plan](plans/active/2026-10-28-materials-workspace.md) records
+its verification and keeps older incomplete verification/user-acceptance gates open.
+
 After the project has been processed at least once, the project should behave like a normal workspace and allow free navigation between stages.
 
 ⸻
 
 7. Sources
+
+Sources is the catalog within Materials (section 3). In the selected workspace,
+the source list/grid stays on the left, the current original photo/video occupies
+the center, contextual properties/tools sit on the right and transport/navigation
+sits below. Panels resize/collapse and own their scrolling. The main viewer is
+embedded; modal photo review remains a secondary published-view/detail route.
+The batch selection is independent of the displayed material. The viewer's action
+affects that material alone; batch actions display their selected count. No mask,
+tracking or saved interval control is shown as working before its persistence and
+processing contracts exist. Exact layout, palettes and review limits are owned by
+[GUI design](GUI_DESIGN.md#selected-materials-workspace--2026-10-28).
+
+Materials / Trim now edits saved video usage through the
+[exact interval API](VIDEO_USAGE.md): select a range, Include/Exclude, edit precise
+bounds, remove from used, or Use entire clip. The original timeline and video remain
+intact; current media, temporary range selection and batch membership are distinct.
+Empty usage stays empty until explicitly changed. Review includes the entire source
+by default; Play used ranges only is an explicit transient playback option.
+The full-duration ruler supports seek, handles, zoom/scroll and Fit timeline.
+Fields/gestures confirm into draft; project Save remains explicit. Photos cannot Trim.
+User acceptance is still open; implementation evidence belongs to the active plan.
 
 7.1 Empty state
 
@@ -476,6 +566,13 @@ E:\Colorado\Drone
 
 Do not make the user relink hundreds of individual files.
 
+The implemented M12b4 route is Materials → catalog menu → Locate source folder.
+Users explicitly choose the recorded/replacement folders, inspect complete content
+matches and confirm one atomic relink. Relative subpaths must stay the same;
+automatic location search and renamed-file inference remain unimplemented.
+See [presentation](GUI_DESIGN.md#folder-relinking-m12b4) and
+[identity/publication](PROJECT_FORMAT.md#folder-relinking-m12b4).
+
 ⸻
 
 14. Sources completed state
@@ -517,109 +614,91 @@ Prepare Data
 
 Do not name the primary stage after one backend operation such as Frame Extraction or Candidate Views.
 
+Implementation boundary (M12c1): the first desktop slice now provides explicit
+Prepare Data using saved frame intent and existing services, persisted result counts
+and read-only Selected image browsing. See [delivered behavior](GUI_DESIGN.md#prepare-data-and-selected-images-m12c1).
+Subsequent bounded Image Review and source-context work adds saved manual decisions
+and provenance. The 2026-10-29 decision below replaces Prepare profiles with direct
+settings; older profile examples do not define current behavior. Human acceptance
+remains separate from implementation evidence.
+
 ⸻
 
 16. Prepare screen
 
-Example:
+Decision — 2026-10-29: expose direct working settings; do not implement Fast / Medium /
+High / Max or their former Balanced/Maximum aliases for Prepare Data.
 
-Step 2 — Prepare Data
-SplatForge will prepare a clean image set
-for reconstruction.
-642 photos
-3 videos · 11m 42s
-Quality
-○ Fast
-● Balanced        Recommended
-○ High
-○ Maximum
-Estimated processing time
-≈ 6–9 min
-Estimated disk usage
-≈ 8 GB
-[ Advanced Settings ▾ ]
-                     [ Prepare Data ]
+Basic controls are visible immediately in the existing compact inspector:
+
+* one exclusive method selector: uniform Fixed FPS or Sharpest per interval;
+* one editable video target interval in exact seconds, with corresponding read-only FPS;
+* candidate sampling FPS, distinct from the final target density;
+* JPEG/PNG and the applicable encoding parameter.
+
+Use the current saved Included sources and used video intervals. Editing never starts
+processing. Save settings, Check saved plan and Prepare Data remain explicit actions.
+Do not invent processing-time estimates, quality guarantees or unsupported controls.
 
 ⸻
 
-17. Prepare presets
+17. Direct preparation settings
 
-Presets must represent real differences in the backend.
+The application parses decimal/fraction strings into the existing exact rational
+time model. Do not maintain two editable target interval/FPS fields. Fixed FPS
+requires candidate FPS >= target FPS and does not run quality assessment. Sharpest
+ranks candidates within each target interval; videos require candidate FPS >= 2 x
+target FPS, so inspection density and saved-frame density are different settings.
+More sampling does not guarantee better reconstruction.
 
-They must not be cosmetic labels.
-
-Typical behavior may vary by implementation but conceptually:
-
-Fast:
-
-* fewer candidate frames;
-* more aggressive reduction;
-* fastest analysis.
-
-Balanced:
-
-* recommended defaults;
-* good compromise.
-
-High:
-
-* more candidate frames;
-* stronger analysis;
-* less aggressive reduction.
-
-Maximum:
-
-* preserve more potentially useful information;
-* highest compute/storage cost.
-
-Advanced configuration remains available.
+Defaults come from actual saved intent or the existing typed backend defaults:
+legacy target 2 fps, derived candidates 2 fps for Fixed / 4 fps for Sharpest,
+JPEG qscale 2 / yuvj444p or PNG compression 6, analysis maximum side 1024.
+Existing projects retain saved intent; opening them applies no new numerical defaults.
+There is no preset layer or Reset to Balanced operation.
 
 ⸻
 
-18. Video handling
+18. Video and photo applicability
 
-Videos remain videos as source assets.
-
-Extracted frames are derived data.
-
-Do not pretend videos were imported as image folders.
-
-Standard UI:
-
-Drone videos
-3 videos · 11m 42s
-SplatForge will extract useful frames automatically.
-
-Optional:
-
-[ Change Frame Extraction ▾ ]
-
-Default user should not need to understand candidate_fps or target_fps.
+Videos remain source assets; extracted frames are derived data. Target/candidate
+rates apply only to included video with used footage. Photos are prepared once per
+source; time fields are disabled with an explanation for photo-only input. Saved
+video intent is retained for future mixed input, while the resolved photo-only request
+uses canonical inactive video settings. Original PTS/time_base and absolute Trim
+intervals remain unchanged.
 
 ⸻
 
-19. Prepare Advanced Settings
+19. Optional filters and analysis
 
-May contain controls such as:
+An explicit disclosure contains two independent functions supported by Sharpest:
 
-Video frame extraction
-● Automatic
-○ Fixed interval
-Frame rate
-[ 2.0 fps ]
-Image quality analysis
-☑ Blur detection
-☑ Duplicate / near-duplicate detection
-☑ Exposure checks
-Frame selection
-● Automatic
-○ Keep all usable frames
-Maximum image count
-[ Automatic ]
+* Minimum sharpness: checkbox off means no threshold (None); enabling requires an
+  explicit nonnegative value. Zero is a valid entered threshold, not a substitute
+  for absence. Edge variance measures high-frequency image content, not universal
+  blur or reconstruction suitability.
+* Suppress similar video frames: checkbox, Hamming distance 0..64 (default 4) and
+  recent accepted-frame lookback 1..64 (default 8). Existing Sharpest default is on.
+  dHash compares image appearance within each source video, not geometric viewpoint
+  redundancy. It does not suppress photographs or compare different sources.
 
-Advanced settings must include a clear way to restore a preset:
+The required Sharpest analysis proxy maximum side is an ordinary parameter,
+64..4096 px, default 1024. It does not change saved-image resolution. Fixed disables
+these filters and analysis with an explanation, and consumes no quality report.
+Disabled/inapplicable values do not affect the resolved request or create different
+recipes; resolved artifact metadata uses the same canonical values.
 
-[ Reset to Balanced ]
+Show field/validation/save errors with no success claim. Invalid raw input participates
+in the existing Save/Discard/Cancel decision; Save cannot silently persist an earlier
+valid value. A running operation pins saved request/revision and refuses form edits.
+Historical prepared sets disclose their own frozen settings, distinct from the form.
+
+Exposure, learned metrics, adaptive/geometry-informed selection, count caps and masks/
+tracking have no placeholder controls. Their actual status and integration gates are
+in the [technical backlog](TECHNOLOGY_STRATEGY.md#prepare-data-technical-backlog--2026-10-29).
+See [GUI behavior](GUI_DESIGN.md#direct-prepare-settings-m12c) and
+[saved intent](PROJECT_FORMAT.md#direct-prepare-settings-m12c).
 
 ⸻
 
@@ -716,6 +795,19 @@ Rejected:
 Keep Anyway
 
 Changes must be non-destructive and reversible.
+
+The delivered bounded [image-review contract](GUI_DESIGN.md#prepared-image-decisions-m12c-review)
+defines page-local batch scope, independent preview, immediate confirmed saves and
+stable-UUID navigation. Keep Anyway is a forced include; Reset to automatic is a
+separate operation that removes the manual override and may restore rejection.
+The [persistence contract](PROJECT_FORMAT.md#prepared-image-decisions-m12c-review)
+defines exact-set identity and immutable effective input. This does not complete all M12c.
+
+The bounded [source-context review](GUI_DESIGN.md#prepared-source-scopes-and-provenance-m12c)
+adds source/group display scopes and per-frame provenance. Scopes clear the current
+page batch/preview and never change saved participation or decisions. The inspector
+distinguishes original source time, historical preparation locator and current saved
+locator; unavailable metadata is not inferred from names or gallery positions.
 
 ⸻
 
@@ -1818,7 +1910,7 @@ Reconstruction
 [ View ]
 [ Stop ]
 
-Left navigation may also show:
+The active workspace tab may also show:
 
 Reconstruction
 ● 62%

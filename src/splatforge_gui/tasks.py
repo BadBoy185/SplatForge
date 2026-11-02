@@ -14,6 +14,7 @@ class TaskError:
     category: str
     traceback: str
     stage: str
+    request_token: str | None = None
 
 
 class _Signals(QObject):
@@ -24,9 +25,13 @@ class _Signals(QObject):
 
 
 class _Task(QRunnable):
-    def __init__(self, identity: str, stage: str, action: Callable, signals: _Signals) -> None:
+    def __init__(
+        self, identity: str, stage: str, action: Callable, signals: _Signals,
+        request_token: str | None = None,
+    ) -> None:
         super().__init__()
         self.identity, self.stage, self.action, self.signals = identity, stage, action, signals
+        self.request_token = request_token
 
     @Slot()
     def run(self) -> None:
@@ -36,7 +41,8 @@ class _Task(QRunnable):
         except Exception as exc:
             self.signals.error.emit(
                 self.identity,
-                TaskError(str(exc), type(exc).__name__, traceback.format_exc(), self.stage),
+                TaskError(str(exc), type(exc).__name__, traceback.format_exc(), self.stage,
+                          self.request_token),
             )
         finally:
             self.signals.finished.emit(self.identity)
@@ -56,7 +62,10 @@ class TaskExecutor(QObject):
         self.control_pool.setMaxThreadCount(2)
         self._signals: dict[str, _Signals] = {}
 
-    def submit(self, stage: str, action: Callable, *, control: bool = False) -> str:
+    def submit(
+        self, stage: str, action: Callable, *, control: bool = False,
+        request_token: str | None = None,
+    ) -> str:
         identity, signals = uuid4().hex, _Signals(self)
         self._signals[identity] = signals
         signals.started.connect(self.started, Qt.ConnectionType.QueuedConnection)
@@ -64,7 +73,7 @@ class TaskExecutor(QObject):
         signals.error.connect(self.error, Qt.ConnectionType.QueuedConnection)
         signals.finished.connect(self._finish, Qt.ConnectionType.QueuedConnection)
         pool = self.control_pool if control else self.pool
-        pool.start(_Task(identity, stage, action, signals))
+        pool.start(_Task(identity, stage, action, signals, request_token))
         return identity
 
     @Slot(str)

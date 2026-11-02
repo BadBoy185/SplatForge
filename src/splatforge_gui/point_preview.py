@@ -5,6 +5,7 @@ import math
 from PySide6.QtCore import Property, QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtQuick import QQuickPaintedItem
+from shiboken6 import isValid
 
 
 class PointPreview(QQuickPaintedItem):
@@ -28,7 +29,7 @@ class PointPreview(QQuickPaintedItem):
 
     @source.setter
     def source(self, value) -> None:
-        if self._source:
+        if self._source and isValid(self._source):
             self._source.previewChanged.disconnect(self._load)
         self._source = value
         if value:

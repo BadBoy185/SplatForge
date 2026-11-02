@@ -24,6 +24,7 @@ class ProjectController(QObject):
     scan_progress = Signal(int, object)
     import_observed = Signal(int, str, object)
     verification_observed = Signal(int, str, object)
+    relink_observed = Signal(int, str, object)
 
     def __init__(self, parent=None, factory: Callable = build_gui_facade) -> None:
         super().__init__(parent)
@@ -42,6 +43,9 @@ class ProjectController(QObject):
         self.reconstruction_plan = None
         self._pending_save = None
         self._pending_ingest = None
+        self._pending_relink = None
+        self._pending_prepare = None
+        self._pending_frame_review = None
         self.ingest_progress = None
         self.ingest_status = "idle"
         self._ingest_token = ""
@@ -65,7 +69,8 @@ class ProjectController(QObject):
         return bool(self.active) or (
             self.mutating
             and self.operation
-            in {"folder", "ingest", "verify", "reconstruction", "selection", "dataset", "training"}
+            in {"folder", "ingest", "verify", "reconstruction", "selection", "dataset", "training",
+                "relink_preview", "relink_apply", "prepare"}
         )
 
     @property
@@ -85,12 +90,14 @@ class ProjectController(QObject):
         *,
         mutation: bool = False,
         allow_unresolved: bool = False,
+        request_token: str | None = None,
     ) -> str:
-        if self.operation in {"save", "ingest"} and name != self.operation and not (
-            self.operation == "ingest" and name in {"image", "qml_image"}
-        ):
+        if (self.operation in {"save", "ingest", "relink_apply", "frame_review_apply"}
+                and name != self.operation
+                and not (self.operation == "ingest" and name in {"image", "qml_image"})):
             self.error.emit(
-                TaskError("Wait for the project metadata write to finish", "ProjectBusy", "", name)
+                TaskError("Wait for the project metadata write to finish", "ProjectBusy", "", name,
+                          request_token)
             )
             return ""
         if mutation and (
@@ -102,13 +109,15 @@ class ProjectController(QObject):
         ):
             self.error.emit(
                 TaskError(
-                    "Active/unresolved work blocks project mutations", "ProjectBusy", "", name
+                    "Active/unresolved work blocks project mutations", "ProjectBusy", "", name,
+                    request_token,
                 )
             )
             return ""
         if mutation and name not in {"create", "open"} and self.overview is None:
             self.error.emit(
-                TaskError("Open a project before starting this operation", "NoProject", "", name)
+                TaskError("Open a project before starting this operation", "NoProject", "", name,
+                          request_token)
             )
             return ""
         factory = self.factory
@@ -116,7 +125,8 @@ class ProjectController(QObject):
             self.ingest_cancel.clear()
             self.cancelled_runs.clear()
         identity = self.executor.submit(
-            name, lambda: action(factory()), control=name in {"cancel", "progress"}
+            name, lambda: action(factory()), control=name in {"cancel", "progress"},
+            request_token=request_token,
         )
         self.jobs[identity] = (name, mutation, self.generation)
         if mutation:
@@ -152,7 +162,8 @@ class ProjectController(QObject):
 
     def refresh(self) -> None:
         if self.root is None or self.refreshing or self.operation in {
-            "save", "ingest", "create", "open"
+            "save", "ingest", "relink_preview", "relink_apply", "prepare", "frame_review_apply",
+            "create", "open"
         }:
             return
         root = self.root
@@ -161,12 +172,16 @@ class ProjectController(QObject):
 
     @Slot()
     def poll(self) -> None:
-        if self.operation in {"ingest", "verify"}:
+        if self._pending_prepare is not None or self._pending_frame_review is not None:
+            return  # Drain existing readers before the reserved writer starts.
+        if self.operation in {
+            "ingest", "verify", "relink_preview", "relink_apply", "frame_review_apply",
+        }:
             # Re-evaluate observation age/ETA only; never advance completed work.
             self.progress_changed.emit(())
             return
         if self.root is None or self.polling or self.operation in {
-            "save", "ingest", "create", "open"
+            "save", "ingest", "relink_apply", "create", "open"
         }:
             return
         root = self.root
@@ -222,6 +237,65 @@ class ProjectController(QObject):
     def scan_folder(self, directory: Path) -> None:
         self.scan_media((directory,))
 
+    def preview_folder_relink(self, old: Path, new: Path, token: str) -> str:
+        from splatforge.application.media import CallbackCancellation
+
+        root, generation = self.root, self.generation
+        cancellation = CallbackCancellation(self.ingest_cancel.is_set)
+        return self.submit(
+            "relink_preview",
+            lambda f: (token, f.service("folder_relink").preview(
+                root, old, new, cancellation=cancellation,
+                progress=lambda value: self.relink_observed.emit(generation, token, value),
+            )),
+            mutation=True,
+        )
+
+    def apply_folder_relink(self, preview, token: str, readers_ready: Callable[[], bool]) -> bool:
+        if self.dirty:
+            self.error.emit(TaskError("Save or discard edits before relinking", "UnsavedProject",
+                                      "", "relink_apply"))
+            return False
+        if self.root is None or self.mutating or self.active or self.has_unresolved:
+            self.submit("relink_apply", lambda _: None, mutation=True)
+            return False
+        # Reserve the metadata writer before draining project reads and GUI decoders.
+        self._pending_relink = self.root, preview, token, readers_ready
+        self.mutating, self.operation = True, "relink_apply"
+        self.ingest_cancel.clear()
+        self.busy_changed.emit(True)
+        self._start_pending_relink()
+        return True
+
+    def _start_pending_relink(self) -> None:
+        from splatforge.application.media import CallbackCancellation
+
+        if self._pending_relink is None:
+            return
+        root, preview, token, readers_ready = self._pending_relink
+        if self.ingest_cancel.is_set():
+            self._pending_relink = None
+            self.mutating, self.operation = False, None
+            self.completed.emit("relink_cancelled", token)
+            self.busy_changed.emit(False)
+            self.refresh()
+            return
+        if self.jobs or not readers_ready():
+            QTimer.singleShot(50, self, self._start_pending_relink)
+            return
+        self._pending_relink = None
+        self.mutating, self.operation = False, None
+        cancellation = CallbackCancellation(self.ingest_cancel.is_set)
+        generation = self.generation
+        self.submit(
+            "relink_apply",
+            lambda f: (token, f.service("folder_relink").apply(
+                root, preview, cancellation=cancellation,
+                progress=lambda value: self.relink_observed.emit(generation, token, value),
+            )),
+            mutation=True,
+        )
+
     def scan_media(self, paths: tuple[Path, ...]) -> None:
         from splatforge.application.media import CallbackCancellation
 
@@ -235,6 +309,75 @@ class ProjectController(QObject):
             ),
             mutation=True,
         )
+
+    def prepare_data(self, plan, token: str, readers_ready: Callable[[], bool]) -> bool:
+        if self.dirty or self.root is None or self.mutating or self.active or self.has_unresolved:
+            self.error.emit(TaskError("Save edits and finish active work before preparing data",
+                                      "ProjectBusy", "", "prepare", request_token=token))
+            return False
+        self._pending_prepare = self.root, plan, token, readers_ready
+        self.mutating, self.operation = True, "prepare"
+        self.ingest_cancel.clear()
+        self.busy_changed.emit(True)
+        self._start_pending_prepare()
+        return True
+
+    def _start_pending_prepare(self) -> None:
+        if self._pending_prepare is None:
+            return
+        root, plan, token, readers_ready = self._pending_prepare
+        if self.ingest_cancel.is_set():
+            self._pending_prepare = None
+            self.mutating, self.operation = False, None
+            self.completed.emit("prepare_cancelled", token)
+            self.busy_changed.emit(False)
+            self.refresh()
+            return
+        if self.jobs or not readers_ready():
+            QTimer.singleShot(50, self, self._start_pending_prepare)
+            return
+        self._pending_prepare = None
+        self.mutating, self.operation = False, None
+
+        def checkpoint() -> None:
+            if self.ingest_cancel.is_set():
+                from splatforge.application.execution import ExecutionCancelledError
+
+                raise ExecutionCancelledError()
+
+        self.submit("prepare", lambda f: (token, f.service("prepare_data").run(
+            root, plan.request, expected_project_id=plan.project_id,
+            expected_revision=plan.project_revision, cancellation_check=checkpoint,
+        )), mutation=True, request_token=token)
+
+    def apply_frame_review(
+        self, action: Callable, readers_ready: Callable[[], bool], *,
+        request_token: str | None = None,
+    ) -> bool:
+        """Reserve a short metadata write, then drain owned readers before CAS."""
+        if self.dirty or self.root is None or self.mutating or self.active or self.has_unresolved:
+            self.error.emit(TaskError("Save edits and finish active work before reviewing frames",
+                                      "ProjectBusy", "", "frame_review_apply", request_token))
+            return False
+        self._pending_frame_review = action, readers_ready, self.generation, request_token
+        self.mutating, self.operation = True, "frame_review_apply"
+        self.busy_changed.emit(True)
+        self._start_pending_frame_review()
+        return True
+
+    def _start_pending_frame_review(self) -> None:
+        if self._pending_frame_review is None:
+            return
+        action, readers_ready, generation, request_token = self._pending_frame_review
+        if self.jobs or not readers_ready():
+            QTimer.singleShot(50, self, self._start_pending_frame_review)
+            return
+        self._pending_frame_review = None
+        self.mutating, self.operation = False, None
+        if generation != self.generation:
+            self.busy_changed.emit(False)
+            return
+        self.submit("frame_review_apply", action, mutation=True, request_token=request_token)
 
     def ingest(self, paths: tuple[Path, ...], *, folder_root: Path | None = None) -> None:
         root = self.root
@@ -410,6 +553,13 @@ class ProjectController(QObject):
         root, request = self.root, self.request
         if root is None or request is None:
             return
+        if (request.views_run is None and self.draft is not None and self.overview is not None
+                and self.draft.video_usage != self.overview.document.video_usage):
+            self.error.emit(TaskError(
+                "Save video interval changes before Plan or Prepare", "UnsavedVideoUsage", "",
+                "reconstruction",
+            ))
+            return
         resolution = None
         if not planning:
             plan = self.reconstruction_plan
@@ -419,6 +569,7 @@ class ProjectController(QObject):
             }
             if (
                 not plan
+                or not plan.get("runnable")
                 or plan["request"] != request.model_dump(mode="json")
                 or plan["tools"] != tools
             ):
@@ -570,7 +721,8 @@ class ProjectController(QObject):
             self.completed.emit("cancelled", "Folder scan cancelled")
             return
         if name == "refresh":
-            if self.operation in {"save", "ingest"}:
+            if self.operation in {"save", "ingest", "relink_preview", "relink_apply", "prepare",
+                                  "frame_review_apply"}:
                 return  # A fresh overview follows the reserved metadata write.
             self.overview, self.active = result, result.active
             self.changed.emit(result)
