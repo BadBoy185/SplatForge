@@ -260,6 +260,18 @@ FocusScope {
             }
             SplatButton { text: "Previous page"; enabled: review.reviewState.canPrevious; onClicked: review.presenter.previousPage() }
             SplatButton { text: "Next page"; enabled: review.reviewState.canNext; onClicked: review.presenter.nextPage() }
+            SplatButton {
+                objectName: "continueToReconstruction"
+                text: "Continue to Reconstruction →"
+                kind: "primary"
+                visible: review.reviewState.effectiveRun !== "" && review.reviewState.selectedTotal > 0
+                enabled: review.reviewState.canEdit && !review.reviewState.saving
+                onClicked: {
+                    review.vm.workflow.usePreparedRun(review.reviewState.effectiveRun,
+                                                      review.reviewState.selectedTotal);
+                    review.vm.navigate(2);
+                }
+            }
         }
     }
 }
