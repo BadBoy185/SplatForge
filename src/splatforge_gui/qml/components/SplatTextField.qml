@@ -5,6 +5,8 @@ import "../theme"
 
 TextField {
     id: control
+    property string editingBuffer: ""
+
     implicitHeight: Theme.control
     color: Theme.text
     placeholderTextColor: Theme.muted
@@ -15,6 +17,21 @@ TextField {
     leftPadding: Theme.controlInset
     rightPadding: Theme.controlInset
     selectByMouse: true
+
+    onActiveFocusChanged: {
+        if (activeFocus)
+            editingBuffer = text;
+    }
+    onTextEdited: editingBuffer = text
+    onTextChanged: {
+        if (!activeFocus)
+            return;
+        Qt.callLater(function() {
+            if (control.activeFocus && control.text !== control.editingBuffer)
+                control.text = control.editingBuffer;
+        });
+    }
+
     background: Rectangle {
         radius: Theme.controlRadius
         color: Theme.background
