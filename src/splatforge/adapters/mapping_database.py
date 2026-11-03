@@ -110,12 +110,11 @@ def inspect_mapping_input(
                     while chunk := blob.read((65536 // stride) * stride):
                         for values in struct.iter_unpack(f"<{cols}f", chunk):
                             x, y = values[:2]
-                            if not (
-                                math.isfinite(x)
-                                and math.isfinite(y)
-                                and 0 <= x <= w
-                                and 0 <= y <= h
-                            ):
+                            # M7 already validates extractor-specific coordinate semantics.
+                            # Native COLMAP SIFT can publish finite border keypoints outside
+                            # the nominal image rectangle, so M8 must not impose a stricter
+                            # generic bound than the validated upstream feature contract.
+                            if not (math.isfinite(x) and math.isfinite(y)):
                                 raise ValueError("mapping.corrupt_database: invalid keypoint")
                             keypoints.update(numerical_bytes((x, y)))
         if {r[0] for r in db.execute("SELECT image_id FROM keypoints")} != set(images):
