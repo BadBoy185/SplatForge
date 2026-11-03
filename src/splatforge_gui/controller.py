@@ -483,7 +483,7 @@ class ProjectController(QObject):
     def configure_reconstruction(self) -> None:
         from splatforge.application.desktop_workflow import reconstruction_request
 
-        if self.overview:
+        if self.overview and not any(job[0] == "request" for job in self.jobs.values()):
             document = self.draft or self.overview.document
             signature = document.settings.model_dump_json()
             self.submit("request", lambda f: (signature, reconstruction_request(document)))
