@@ -15,9 +15,12 @@ _QINT64_MAX = 2**63 - 1
 
 
 def plain(value):
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
-    return json.loads(json.dumps(value, default=str))
+    raw = (
+        value.model_dump(mode="json")
+        if hasattr(value, "model_dump")
+        else json.loads(json.dumps(value, default=str))
+    )
+    return qml_safe(raw)
 
 
 def qml_safe(value):
