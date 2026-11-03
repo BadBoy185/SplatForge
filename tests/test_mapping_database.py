@@ -5,6 +5,7 @@ import sqlite3
 import struct
 from contextlib import closing
 
+import pytest
 from mapping_helpers import mapping_inputs
 
 from splatforge.adapters.colmap_mapping import mapping_source
@@ -56,9 +57,43 @@ def test_numerical_projection_excludes_descriptors_raw_matches_paths_and_native_
     assert changed.geometry_digest == original.geometry_digest
 
 
-def test_classical_mapping_rejects_undeclared_pose_priors(tmp_path):
-    import pytest
+def test_mapping_projection_accepts_finite_border_keypoint(tmp_path):
+    value, _fixture, _features, _raw, verified = mapping_inputs(tmp_path)
+    source = value.execution.artifact_directory(value.root, verified.artifact)
+    mapping, allowed = mapping_source(source)
+    copied = tmp_path / "finite border state.db"
+    shutil.copyfile(source / "matches.db", copied)
 
+    with closing(sqlite3.connect(copied)) as db, db:
+        native, data = db.execute("SELECT image_id,data FROM keypoints LIMIT 1").fetchone()
+        db.execute(
+            "UPDATE keypoints SET data=? WHERE image_id=?",
+            (struct.pack("<f", 1_000_000.0) + data[4:], native),
+        )
+
+    result = inspect_mapping_input(copied, mapping, allowed_pairs=allowed)
+    assert result.keypoint_count > 0
+
+
+def test_mapping_projection_rejects_nonfinite_keypoint(tmp_path):
+    value, _fixture, _features, _raw, verified = mapping_inputs(tmp_path)
+    source = value.execution.artifact_directory(value.root, verified.artifact)
+    mapping, allowed = mapping_source(source)
+    copied = tmp_path / "nonfinite state.db"
+    shutil.copyfile(source / "matches.db", copied)
+
+    with closing(sqlite3.connect(copied)) as db, db:
+        native, data = db.execute("SELECT image_id,data FROM keypoints LIMIT 1").fetchone()
+        db.execute(
+            "UPDATE keypoints SET data=? WHERE image_id=?",
+            (struct.pack("<f", float("nan")) + data[4:], native),
+        )
+
+    with pytest.raises(ValueError, match="mapping.corrupt_database: invalid keypoint"):
+        inspect_mapping_input(copied, mapping, allowed_pairs=allowed)
+
+
+def test_classical_mapping_rejects_undeclared_pose_priors(tmp_path):
     value, _fixture, _features, _raw, verified = mapping_inputs(tmp_path)
     source = value.execution.artifact_directory(value.root, verified.artifact)
     mapping, allowed = mapping_source(source)
