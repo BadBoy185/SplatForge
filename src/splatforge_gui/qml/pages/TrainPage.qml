@@ -10,6 +10,7 @@ ColumnLayout {
     readonly property var work: vm.workflow
     readonly property var runtime: work.state.capability
     readonly property bool ready: !!runtime.python_version
+    readonly property bool runtimeConfigured: !!vm.state.machine.trainer_python
     readonly property var plan: work.state.plans.training || ({})
     spacing: 24
     SplatPageHeader {
@@ -18,14 +19,16 @@ ColumnLayout {
         Layout.fillWidth: true
         SplatButton {
             text: "Plan"
-            enabled: page.work.state.inputs.dataset !== "" && !page.vm.state.busy
+            enabled: page.runtimeConfigured && page.work.state.inputs.dataset !== ""
+                     && !page.vm.state.busy
             onClicked: page.work.action("planTraining")
         }
         SplatButton {
             text: "Run training"
             kind: "primary"
             iconName: "play"
-            enabled: page.work.state.inputs.dataset !== "" && page.vm.state.canMutate
+            enabled: page.runtimeConfigured && page.work.state.inputs.dataset !== ""
+                     && page.vm.state.canMutate
             onClicked: page.work.action("runTraining")
         }
     }
@@ -173,7 +176,7 @@ ColumnLayout {
                         Layout.fillWidth: true
                     }
                     SplatBadge {
-                        text: page.ready ? "Ready" : "Not checked"
+                        text: page.ready ? "Ready" : page.runtimeConfigured ? "Not checked" : "Not configured"
                     }
                 }
                 Repeater {
@@ -212,9 +215,14 @@ ColumnLayout {
                     maximumLineCount: 2
                     elide: Text.ElideMiddle
                 }
+                SplatBanner {
+                    visible: !page.runtimeConfigured
+                    Layout.fillWidth: true
+                    text: "Trainer Python is not configured. Open Settings and choose the Python executable from a separate Torch + CUDA + gsplat environment."
+                }
                 SplatButton {
                     text: "Probe trainer runtime"
-                    enabled: !page.vm.state.busy
+                    enabled: page.runtimeConfigured && !page.vm.state.busy
                     Layout.fillWidth: true
                     onClicked: page.work.action("probeTrainer")
                 }
@@ -269,13 +277,14 @@ ColumnLayout {
                 }
                 SplatButton {
                     text: "Check compatibility"
-                    enabled: page.work.state.inputs.dataset !== ""
+                    enabled: page.runtimeConfigured && page.work.state.inputs.dataset !== ""
                              && page.work.state.inputs.checkpoint !== ""
                     onClicked: page.work.action("checkResume")
                 }
                 SplatButton {
                     text: "Resume"
-                    enabled: page.work.state.resumeReady && page.vm.state.canMutate
+                    enabled: page.runtimeConfigured && page.work.state.resumeReady
+                             && page.vm.state.canMutate
                     onClicked: page.work.action("resumeTraining")
                 }
             }
@@ -295,6 +304,7 @@ ColumnLayout {
         }
         SplatButton {
             text: "Edit session runtime"
+            enabled: page.runtimeConfigured
             onClicked: page.work.editExact("runtime")
         }
     }
