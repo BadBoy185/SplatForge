@@ -10,11 +10,27 @@ from PySide6.QtCore import QDateTime, QTimeZone
 from splatforge.application.desktop import IndexRow
 from splatforge_gui.tasks import TaskError
 
+_QINT64_MIN = -(2**63)
+_QINT64_MAX = 2**63 - 1
+
 
 def plain(value):
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     return json.loads(json.dumps(value, default=str))
+
+
+def qml_safe(value):
+    """Keep backend values exact while making presentation trees QVariant-safe."""
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        return value if _QINT64_MIN <= value <= _QINT64_MAX else str(value)
+    if isinstance(value, dict):
+        return {str(key): qml_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [qml_safe(item) for item in value]
+    return value
 
 
 def capture_details(value: dict) -> dict:
@@ -118,34 +134,19 @@ def recent_opened_label(value: str) -> str:
         return "Last opened: Not recorded"
     try:
         parsed = datetime.fromisoformat(value)
-        zone = QTimeZone.systemTimeZone()
-        local = QDateTime.fromMSecsSinceEpoch(int(parsed.timestamp() * 1000), zone)
-        today = QDateTime.currentDateTimeUtc().toTimeZone(zone).date()
-        date = "Today" if local.date() == today else local.toString("dd MMM yyyy")
-        return "Last opened: " + date + ", " + local.toString("HH:mm")
-    except (ValueError, OverflowError):
-        return "Last opened: Not recorded"
+        if parsed.tzinfo:
+            parsed = parsed.astimezone()
+        return "Last opened: " + parsed.strftime("%d %b %Y, %H:%M")
+    except ValueError:
+        return "Last opened: " + value
 
 
 def verification_label(value: str) -> str:
-    """Format the facade's verified evidence without upgrading its assurance."""
+    if not value:
+        return "Not checked"
     parts = value.split(" · ")
     if len(parts) != 3:
         return value
-    outcome, assurance, checked = parts
-    description = {
-        "metadata_unchanged": "Metadata unchanged; no fresh content hash",
-        "content_verified": "Content hash verified",
-        "unavailable": "Verification evidence unavailable",
-    }.get(assurance, assurance.replace("_", " "))
-    return f"{outcome.replace('_', ' ').capitalize()} · {description} · {timestamp(checked)}"
-
-
-def source_availability(value: str) -> str:
-    """Describe recorded availability, without claiming a current filesystem check."""
-    parts = value.split(" · ")
-    if len(parts) != 3:
-        return "Not checked recently"
     return {
         "unchanged": "Available at last check",
         "missing": "Missing at last check",
