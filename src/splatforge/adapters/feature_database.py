@@ -57,8 +57,11 @@ def enforce_sift_feature_budget(
     """
     native_settings = settings.model_copy(update={"max_features": MAX_FEATURES_PER_VIEW})
     checked, mapping = inspect_feature_database(
-        path, summaries, native_settings,
-        expected_schema=expected_schema, maximum_bytes=maximum_bytes,
+        path,
+        summaries,
+        native_settings,
+        expected_schema=expected_schema,
+        maximum_bytes=maximum_bytes,
     )
     oversized = {v.view_id for v in checked if v.feature_count > settings.max_features}
     if not oversized:
@@ -114,6 +117,7 @@ def _blob_digest(
     width: int,
     height: int,
     floating: bool,
+    check_coordinates: bool,
 ) -> str:
     digest = hashlib.sha256()
     if connection.execute(
@@ -131,7 +135,7 @@ def _blob_digest(
                     value = values[0]
                     if not math.isfinite(value):
                         raise ValueError("Non-finite feature value")
-                    if table == "keypoints" and (
+                    if check_coordinates and table == "keypoints" and (
                         (offset % columns == 0 and not 0 <= value <= width)
                         or (offset % columns == 1 and not 0 <= value <= height)
                     ):
@@ -168,8 +172,10 @@ def inspect_feature_database(
             if count != len(summaries):
                 raise ValueError("Feature database has missing or unexpected images/features")
         for table in ("matches", "two_view_geometries"):
-            if (not allow_processing_state
-                    and db.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()):
+            if (
+                not allow_processing_state
+                and db.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+            ):
                 raise ValueError("M7a database must not contain matches or geometry")
         type_column = "type" in next(t.columns for t in schema[2] if t.name == "descriptors")
         if not type_column and settings.variant != "SIFT":
@@ -233,6 +239,11 @@ def inspect_feature_database(
                             width=width,
                             height=height,
                             floating=floating,
+                            # Native SIFTGPU is known to emit finite border keypoints a few
+                            # pixels outside the nominal image rectangle. COLMAP accepts and
+                            # consumes those coordinates, so reject only non-finite SIFT
+                            # payloads here. Learned extractors retain strict image bounds.
+                            check_coordinates=settings.variant != "SIFT",
                         )
                     )
                 )
