@@ -12,6 +12,8 @@ ColumnLayout {
     readonly property var state: work.state
     readonly property var plan: state.plans.reconstruction || ({})
     property bool expertOpen: false
+    property bool pipelineChecking: false
+    property string pipelineMessageBeforeCheck: ""
     spacing: 16
 
     function parseIntOr(text: string, fallback: int): int {
@@ -28,6 +30,18 @@ ColumnLayout {
             return "";
         return Math.floor(count * (count - 1) / 2).toLocaleString(Qt.locale(), "f", 0) + " pairs";
     }
+    function checkPipeline() {
+        if (pipelineChecking)
+            return;
+        pipelineMessageBeforeCheck = state.messages.reconstruction || "";
+        pipelineChecking = true;
+        work.action("planReconstruction");
+    }
+    onStateChanged: {
+        const message = state.messages.reconstruction || "";
+        if (pipelineChecking && (state.canReconstruct || message !== pipelineMessageBeforeCheck))
+            pipelineChecking = false;
+    }
 
     SplatPageHeader {
         title: "Reconstruction"
@@ -35,16 +49,17 @@ ColumnLayout {
         Layout.fillWidth: true
         SplatButton {
             objectName: "checkReconstructionPipeline"
-            text: "Check pipeline"
-            enabled: page.state.requestAvailable && page.state.hasPreparedInput && !page.vm.state.busy
-            onClicked: page.work.action("planReconstruction")
+            text: page.pipelineChecking ? "Checking…" : "Check pipeline"
+            enabled: page.state.requestAvailable && page.state.hasPreparedInput
+                     && !page.vm.state.busy && !page.pipelineChecking
+            onClicked: page.checkPipeline()
         }
         SplatButton {
             objectName: "runReconstruction"
             text: "Run reconstruction"
             iconName: "play"
             kind: "primary"
-            enabled: page.state.canReconstruct && page.vm.state.canMutate
+            enabled: page.state.canReconstruct && page.vm.state.canMutate && !page.pipelineChecking
             onClicked: page.work.action("runReconstruction")
         }
     }
@@ -104,10 +119,12 @@ ColumnLayout {
                     inputKind: "views"
                     Layout.preferredWidth: 330
                     enabled: page.state.choices.views.length > 0 && !page.vm.state.busy
+                             && !page.pipelineChecking
                 }
                 SplatButton {
                     text: "Materials"
                     kind: "ghost"
+                    enabled: !page.pipelineChecking
                     onClicked: page.vm.navigate(1)
                 }
             }
@@ -144,7 +161,7 @@ ColumnLayout {
                     valueRole: "value"
                     selectedValue: page.state.extractorVariant
                     Layout.fillWidth: true
-                    enabled: page.state.requestAvailable
+                    enabled: page.state.requestAvailable && !page.pipelineChecking
                     onActivated: page.work.setReconstruction("extractor", currentValue)
                     Accessible.name: "Feature extractor"
                 }
@@ -157,6 +174,7 @@ ColumnLayout {
                         textRole: "label"; valueRole: "value"
                         selectedValue: page.state.featureDevice
                         Layout.preferredWidth: 150
+                        enabled: !page.pipelineChecking
                         onActivated: page.work.setReconstruction("feature_device", currentValue)
                     }
                 }
@@ -168,6 +186,7 @@ ColumnLayout {
                         objectName: "featureMaxFeatures"
                         text: String(page.state.featureMaxFeatures)
                         validator: IntValidator { bottom: 1; top: 100000 }
+                        enabled: !page.pipelineChecking
                         onEditingFinished: page.work.setReconstructionInt("feature_max_features", page.parseIntOr(text, page.state.featureMaxFeatures))
                     }
                     SplatLabel { text: "Max image side"; color: Theme.secondary }
@@ -175,6 +194,7 @@ ColumnLayout {
                         objectName: "featureMaxImageSize"
                         text: String(page.state.featureMaxImageSize)
                         validator: IntValidator { bottom: 32; top: 32768 }
+                        enabled: !page.pipelineChecking
                         onEditingFinished: page.work.setReconstructionInt("feature_max_image_size", page.parseIntOr(text, page.state.featureMaxImageSize))
                     }
                 }
@@ -202,6 +222,7 @@ ColumnLayout {
                     textRole: "label"; valueRole: "value"
                     selectedValue: page.state.pairingMode
                     Layout.fillWidth: true
+                    enabled: !page.pipelineChecking
                     onActivated: {
                         if (currentValue === "advanced")
                             page.work.editExact("reconstruction");
@@ -225,6 +246,7 @@ ColumnLayout {
                         text: String(page.state.pairForwardNeighbors)
                         validator: IntValidator { bottom: 1; top: 1000 }
                         Layout.preferredWidth: 110
+                        enabled: !page.pipelineChecking
                         onEditingFinished: page.work.setReconstructionInt("pair_forward_neighbors", page.parseIntOr(text, page.state.pairForwardNeighbors))
                     }
                 }
@@ -260,6 +282,7 @@ ColumnLayout {
                     textRole: "label"; valueRole: "value"
                     selectedValue: page.state.matcherVariant
                     Layout.fillWidth: true
+                    enabled: !page.pipelineChecking
                     onActivated: page.work.setReconstruction("matcher", currentValue)
                     Accessible.name: "Feature matcher"
                 }
@@ -272,6 +295,7 @@ ColumnLayout {
                         textRole: "label"; valueRole: "value"
                         selectedValue: page.state.matchingDevice
                         Layout.preferredWidth: 150
+                        enabled: !page.pipelineChecking
                         onActivated: page.work.setReconstruction("matching_device", currentValue)
                     }
                 }
@@ -282,12 +306,14 @@ ColumnLayout {
                     SplatTextField {
                         text: String(page.state.matchingThreads)
                         validator: IntValidator { bottom: 1; top: 64 }
+                        enabled: !page.pipelineChecking
                         onEditingFinished: page.work.setReconstructionInt("matching_threads", page.parseIntOr(text, page.state.matchingThreads))
                     }
                     SplatLabel { text: "Max matches / pair"; color: Theme.secondary }
                     SplatTextField {
                         text: String(page.state.matchingMaxMatches)
                         validator: IntValidator { bottom: 1; top: 100000 }
+                        enabled: !page.pipelineChecking
                         onEditingFinished: page.work.setReconstructionInt("matching_max_matches", page.parseIntOr(text, page.state.matchingMaxMatches))
                     }
                 }
@@ -313,6 +339,7 @@ ColumnLayout {
                         objectName: "verificationMinInliers"
                         text: String(page.state.verificationMinInliers)
                         validator: IntValidator { bottom: 8; top: 100000 }
+                        enabled: !page.pipelineChecking
                         onEditingFinished: page.work.setReconstructionInt("verification_min_inliers", page.parseIntOr(text, page.state.verificationMinInliers))
                     }
                     SplatLabel { text: "Max error (px)"; color: Theme.secondary }
@@ -320,6 +347,7 @@ ColumnLayout {
                         objectName: "verificationMaxError"
                         text: String(page.state.verificationMaxError)
                         validator: DoubleValidator { bottom: 0.01; top: 100; decimals: 4 }
+                        enabled: !page.pipelineChecking
                         onEditingFinished: page.work.setReconstructionFloat("verification_max_error", page.parseFloatOr(text, page.state.verificationMaxError))
                     }
                 }
@@ -355,6 +383,7 @@ ColumnLayout {
                     textRole: "label"; valueRole: "value"
                     selectedValue: page.state.mapper
                     Layout.fillWidth: true
+                    enabled: !page.pipelineChecking
                     onActivated: page.work.setReconstruction("mapper", currentValue)
                 }
                 SplatComboBox {
@@ -366,6 +395,7 @@ ColumnLayout {
                     textRole: "label"; valueRole: "value"
                     selectedValue: page.state.calibrationPolicy
                     Layout.fillWidth: true
+                    enabled: !page.pipelineChecking
                     onActivated: page.work.setReconstruction("calibration", currentValue)
                 }
             }
@@ -376,19 +406,22 @@ ColumnLayout {
                 SplatTextField {
                     text: String(page.state.mappingThreads)
                     validator: IntValidator { bottom: 1; top: 64 }
+                    enabled: !page.pipelineChecking
                     onEditingFinished: page.work.setReconstructionInt("mapping_threads", page.parseIntOr(text, page.state.mappingThreads))
                 }
                 SplatLabel { text: "Min matches"; color: Theme.secondary }
                 SplatTextField {
                     text: String(page.state.mappingMinMatches)
                     validator: IntValidator { bottom: 8; top: 100000 }
-                    enabled: page.state.mapper !== "hierarchical" || page.state.mappingMinMatches > 0
+                    enabled: !page.pipelineChecking
+                             && (page.state.mapper !== "hierarchical" || page.state.mappingMinMatches > 0)
                     onEditingFinished: page.work.setReconstructionInt("mapping_min_matches", page.parseIntOr(text, page.state.mappingMinMatches))
                 }
                 SplatLabel { text: "Min model size"; color: Theme.secondary }
                 SplatTextField {
                     text: String(page.state.mappingMinModelSize)
                     validator: IntValidator { bottom: 3; top: 100000 }
+                    enabled: !page.pipelineChecking
                     onEditingFinished: page.work.setReconstructionInt("mapping_min_model_size", page.parseIntOr(text, page.state.mappingMinModelSize))
                 }
                 SplatLabel { text: "BA backend"; color: Theme.secondary; visible: page.state.mapper === "incremental" }
@@ -398,6 +431,7 @@ ColumnLayout {
                     model: [{label: "Ceres", value: "ceres"}, {label: "Caspar", value: "caspar"}]
                     textRole: "label"; valueRole: "value"
                     selectedValue: page.state.baBackend
+                    enabled: !page.pipelineChecking
                     onActivated: page.work.setReconstruction("ba_backend", currentValue)
                 }
                 SplatLabel { text: "GPU index"; color: Theme.secondary; visible: page.state.mapper === "incremental" && page.state.baBackend === "caspar" }
@@ -405,6 +439,7 @@ ColumnLayout {
                     visible: page.state.mapper === "incremental" && page.state.baBackend === "caspar"
                     text: String(page.state.baGpuIndex)
                     validator: IntValidator { bottom: 0; top: 31 }
+                    enabled: !page.pipelineChecking
                     onEditingFinished: page.work.setReconstructionInt("ba_gpu_index", page.parseIntOr(text, page.state.baGpuIndex))
                 }
             }
@@ -429,12 +464,15 @@ ColumnLayout {
                     Layout.fillWidth: true
                 }
                 SplatBadge {
-                    text: page.state.canReconstruct ? "Ready" : "Not checked"
-                    tone: page.state.canReconstruct ? Theme.success : Theme.muted
+                    text: page.pipelineChecking ? "Checking" : page.state.canReconstruct ? "Ready" : "Not checked"
+                    tone: page.state.canReconstruct ? Theme.success : page.pipelineChecking ? Theme.accent : Theme.muted
                 }
             }
             SplatLabel {
-                text: page.state.messages.reconstruction || "Choose the exact settings above, then Check pipeline."
+                text: page.pipelineChecking
+                      ? "Checking COLMAP, feature extraction, matching, verification and mapper capability…"
+                      : page.state.messages.reconstruction
+                        || "Choose the exact settings above, then Check pipeline."
                 color: page.state.canReconstruct ? Theme.text : Theme.secondary
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
@@ -457,32 +495,32 @@ ColumnLayout {
                 SplatButton {
                     text: page.expertOpen ? "Hide exact evidence" : "Show exact settings / evidence"
                     kind: "ghost"
-                    enabled: page.state.requestAvailable
+                    enabled: page.state.requestAvailable && !page.pipelineChecking
                     onClicked: page.expertOpen = !page.expertOpen
                 }
                 SplatButton {
                     text: "Edit exact JSON"
                     kind: "ghost"
-                    enabled: page.state.requestAvailable
+                    enabled: page.state.requestAvailable && !page.pipelineChecking
                     onClicked: page.work.editExact("reconstruction")
                 }
                 SplatButton {
                     text: "Save these methods as project defaults"
                     kind: "ghost"
-                    enabled: page.state.requestAvailable && page.vm.state.canMutate
+                    enabled: page.state.requestAvailable && page.vm.state.canMutate && !page.pipelineChecking
                     onClicked: page.work.action("stageIntent")
                 }
                 Item { Layout.fillWidth: true }
                 SplatButton {
-                    text: "Check pipeline"
-                    enabled: page.state.hasPreparedInput && !page.vm.state.busy
-                    onClicked: page.work.action("planReconstruction")
+                    text: page.pipelineChecking ? "Checking…" : "Check pipeline"
+                    enabled: page.state.hasPreparedInput && !page.vm.state.busy && !page.pipelineChecking
+                    onClicked: page.checkPipeline()
                 }
                 SplatButton {
                     text: "Run reconstruction"
                     iconName: "play"
                     kind: "primary"
-                    enabled: page.state.canReconstruct && page.vm.state.canMutate
+                    enabled: page.state.canReconstruct && page.vm.state.canMutate && !page.pipelineChecking
                     onClicked: page.work.action("runReconstruction")
                 }
             }
