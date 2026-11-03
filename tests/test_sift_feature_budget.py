@@ -39,6 +39,33 @@ def oversized_fixture(tmp_path, monkeypatch, *, corrupt_tail=False):
     return fixture
 
 
+def border_overshoot_fixture(tmp_path, monkeypatch):
+    fixture = NativeFixture(tmp_path)
+    original_run = fixture.run
+
+    def run(request, **kwargs):
+        result = original_run(request, **kwargs)
+        if request.argv[0] == "feature_extractor" and "work" in request.working_directory.parts:
+            database = Path(request.argv[request.argv.index("--database_path") + 1])
+            with closing(sqlite3.connect(database)) as db, db:
+                rows = db.execute(
+                    "SELECT k.image_id,k.rows,k.cols,k.data,c.width "
+                    "FROM keypoints k JOIN images i USING(image_id) "
+                    "JOIN cameras c ON c.camera_id=i.camera_id"
+                ).fetchall()
+                for image_id, count, columns, payload, width in rows:
+                    values = list(struct.unpack(f"<{count * columns}f", payload))
+                    values[0] = float(width) + 2.25
+                    db.execute(
+                        "UPDATE keypoints SET data=? WHERE image_id=?",
+                        (struct.pack(f"<{len(values)}f", *values), image_id),
+                    )
+        return result
+
+    monkeypatch.setattr(fixture, "run", run)
+    return fixture
+
+
 def test_native_sift_overflow_publishes_paired_prefix_and_reuses_cache(tmp_path, monkeypatch):
     value = harness(tmp_path)
     views = prepare(value)
@@ -65,6 +92,34 @@ def test_native_sift_overflow_publishes_paired_prefix_and_reuses_cache(tmp_path,
         value.root, views_run_id=views.run_id, settings=settings, colmap=fixture.exe,
     )
     assert second.cache_hit and second.feature_artifact == first.feature_artifact
+
+
+def test_native_sift_accepts_finite_colmap_border_overshoot(tmp_path, monkeypatch):
+    value = harness(tmp_path)
+    views = prepare(value)
+    fixture = border_overshoot_fixture(tmp_path, monkeypatch)
+    result = FeaturesService(value.execution, fixture.adapter()).extract(
+        value.root,
+        views_run_id=views.run_id,
+        settings=resolve_extraction_settings("SIFT"),
+        colmap=fixture.exe,
+    )
+    assert result.status == "succeeded"
+    assert result.feature_artifact is not None
+
+
+def test_learned_keypoints_still_require_published_image_bounds(tmp_path, monkeypatch):
+    value = harness(tmp_path)
+    views = prepare(value)
+    fixture = border_overshoot_fixture(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="Keypoint outside published image coordinates"):
+        FeaturesService(value.execution, fixture.adapter()).extract(
+            value.root,
+            views_run_id=views.run_id,
+            settings=resolve_extraction_settings("ALIKED_N16ROT"),
+            colmap=fixture.exe,
+            model_directory=fixture.model_root,
+        )
 
 
 def test_invalid_sift_tail_is_rejected_before_any_truncation(tmp_path, monkeypatch):
