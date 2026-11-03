@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 from splatforge.core.features import resolve_extraction_settings
-from splatforge.core.matching import resolve_matching_settings
+from splatforge.core.matching import MatchingResourceLimits, resolve_matching_settings
 from splatforge.core.media import VerificationPolicyId
 from splatforge.core.pairs import PairResourceLimits, PairSettings
 from splatforge.core.project import ProjectDocument
@@ -148,6 +148,31 @@ def reconstruction_request(document: ProjectDocument) -> ReconstructionRequest:
     )
 
 
+def _matching_budget_warning(
+    selected_count: int,
+    pair_count: int,
+    route: ResolvedFeatureMatchingRoute,
+) -> str | None:
+    """Bound the same worst-case raw correspondence count enforced by M7b."""
+    limits = MatchingResourceLimits()
+    features_per_pair = min(
+        route.choice.extractor.max_features,
+        route.choice.matcher.max_num_matches,
+    )
+    raw_upper = pair_count * features_per_pair
+    if raw_upper <= limits.max_raw_matches:
+        return None
+    safe_max = limits.max_raw_matches // pair_count if pair_count else 0
+    recommended = 1 << (safe_max.bit_length() - 1) if safe_max > 0 else 0
+    return (
+        f"Exhaustive matching budget is too high for {selected_count} views / "
+        f"{pair_count} pairs: worst-case raw correspondences={raw_upper:,} exceeds "
+        f"limit={limits.max_raw_matches:,}. Set Max matches / pair to "
+        f"{recommended:,} or lower (safe maximum {safe_max:,}), reduce feature count, "
+        "or choose a sparser pairing method."
+    )
+
+
 def plan_reconstruction(
     facade, root: Path, request: ReconstructionRequest, colmap: Path | None, models: Path | None
 ) -> dict:
@@ -163,6 +188,8 @@ def plan_reconstruction(
     )
     overview = facade.overview(root)
     warnings = []
+    selected_count = None
+    estimated_pair_count = None
     if request.views_run is None:
         try:
             source_ids = resolve_effective_sources(
@@ -177,9 +204,29 @@ def plan_reconstruction(
             warnings.append(str(exc))
     else:
         try:
-            facade.service("pairs").validate_views_input(root, request.views_run)
+            selected_count = facade.service("pairs").validate_views_input(
+                root, request.views_run
+            )
         except (ValueError, OSError, RuntimeError) as exc:
             warnings.append("Chosen published views are unavailable or incompatible: " + str(exc))
+    if (
+        selected_count is not None
+        and request.pairing.method_id == "pair_selection.exhaustive"
+    ):
+        estimated_pair_count = selected_count * (selected_count - 1) // 2
+        if estimated_pair_count > request.pair_limits.max_pairs:
+            warnings.append(
+                f"Exhaustive pairing would create {estimated_pair_count:,} pairs, above "
+                f"the configured limit of {request.pair_limits.max_pairs:,}."
+            )
+        else:
+            warning = _matching_budget_warning(
+                selected_count,
+                estimated_pair_count,
+                resolution,
+            )
+            if warning:
+                warnings.append(warning)
     if request.pairing.method_id in {"pair_selection.retrieval", "pair_selection.hybrid"} and (
         request.retrieval_run is None
     ):
@@ -204,10 +251,12 @@ def plan_reconstruction(
             if request.pairing.method_id.endswith("sequential")
             else "offline retrieval; production VPR remains pending"
         ),
-        "selected_views": "Known after view preparation"
-        if not request.views_run
-        else "Use exact selected-view artifact in the chosen run",
-        "pair_count": "Known after PairSet construction",
+        "selected_views": selected_count
+        if selected_count is not None
+        else "Known after view preparation",
+        "pair_count": estimated_pair_count
+        if estimated_pair_count is not None
+        else "Known after PairSet construction",
         "disk_estimate": "Unavailable: no aggregate reconstruction disk planner exists",
         "cache": "Validated independently by each existing stage during execution",
     }
